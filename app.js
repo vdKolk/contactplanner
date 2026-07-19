@@ -1494,6 +1494,8 @@ function handleidingModalHTML() {
       <div class="handleiding-inhoud">
 
         <h4>Excel importeren</h4>
+        <p><strong>De export maken in Scipio:</strong></p>
+        ${SCIPIO_UITLEG_HTML}
         <p>Je uploadt een Excel-export (bijv. uit Scipio). De app laat je zelf het tabblad en de rij met
         kolomnamen aanwijzen \u2014 handig als er een titel- of filterregel boven de echte koppen staat. Daarna
         koppel je kolommen aan velden (Regnr. en Naam zijn verplicht). <strong>Regnr.</strong> is het kenmerk
@@ -1753,6 +1755,20 @@ function mainHTML() {
   return "";
 }
 
+const SCIPIO_UITLEG_HTML = `
+  <ol class="uitleg-stappen">
+    <li>Open Scipio en ga naar <strong>Ledenadministratie \u2192 Selecties maken</strong>.</li>
+    <li>Klik op <strong>Zoeken</strong> en kies <strong>Ja</strong>, zodat de standaardselectie wordt gevuld.
+        Klik daarna op <strong>"Terug naar het selectiescherm"</strong>.</li>
+    <li>Ga naar <strong>Uitvoer</strong> en voeg met "Veld toevoegen" in elk geval <strong>Regnr.</strong> en
+        <strong>Huwelijksdatum</strong> toe aan de standaardvelden. Een complete uitvoerlijst voor deze app:
+        Status, Regnr., Naam, Roepnaam, Geslacht, Wijk/sectie, Adres (straat nr), Postcode, Plaatsnaam,
+        Geboortedatum, Gezinsrelatie, Burgerlijke staat, Huwelijksdatum, Kerkelijke staat, e-mail, Telefoon.</li>
+    <li>Klik op <strong>Opslaan</strong> en noem de selectie <strong>"Importselectie"</strong> \u2014 dan kun je
+        dezelfde selectie voortaan opnieuw gebruiken om de gegevens bij te werken.</li>
+    <li>Download de Excel (de knop met het Excel-icoon rechtsonder) en lees dat bestand hier in.</li>
+  </ol>`;
+
 function uploadHTML() {
   return `
   <div class="upload-wrap">
@@ -1765,6 +1781,10 @@ function uploadHTML() {
         schema's, notities \u2014 blijft bewaard op deze computer, ook bij een volgende import.
         Regnr. is het kenmerk waarmee personen worden herkend.
       </p>
+      <details class="uitleg-details">
+        <summary>Hoe maak ik deze Excel-export in Scipio?</summary>
+        ${SCIPIO_UITLEG_HTML}
+      </details>
       <input id="fileFirstUpload" type="file" accept=".xlsx,.xls" style="display:none" />
       <button class="btn-primary" id="btnFirstUpload">Kies Excel-bestand</button>
       <div style="margin-top:14px;">
