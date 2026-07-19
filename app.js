@@ -1761,13 +1761,15 @@ const SCIPIO_UITLEG_HTML = `
     <li>Klik op <strong>Zoeken</strong> en kies <strong>Ja</strong>, zodat de standaardselectie wordt gevuld.
         Klik daarna op <strong>"Terug naar het selectiescherm"</strong>.</li>
     <li>Ga naar <strong>Uitvoer</strong> en voeg met "Veld toevoegen" in elk geval <strong>Regnr.</strong> en
-        <strong>Huwelijksdatum</strong> toe aan de standaardvelden. Een complete uitvoerlijst voor deze app:
+        <strong>Huwelijksdatum</strong> toe aan de standaardvelden, zoals op de afbeelding hieronder.
+        De complete uitvoerlijst voor deze app:
         Status, Regnr., Naam, Roepnaam, Geslacht, Wijk/sectie, Adres (straat nr), Postcode, Plaatsnaam,
         Geboortedatum, Gezinsrelatie, Burgerlijke staat, Huwelijksdatum, Kerkelijke staat, e-mail, Telefoon.</li>
     <li>Klik op <strong>Opslaan</strong> en noem de selectie <strong>"Importselectie"</strong> \u2014 dan kun je
         dezelfde selectie voortaan opnieuw gebruiken om de gegevens bij te werken.</li>
     <li>Download de Excel (de knop met het Excel-icoon rechtsonder) en lees dat bestand hier in.</li>
-  </ol>`;
+  </ol>
+  <img class="uitleg-afbeelding" src="img/scipio-uitvoer.png" alt="Scipio: scherm Selecties maken, tabblad Uitvoer, met de toegevoegde velden Regnr. en Huwelijksdatum in de rechterlijst" loading="lazy" />`;
 
 function uploadHTML() {
   return `
