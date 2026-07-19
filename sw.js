@@ -6,7 +6,7 @@
      offline blijft werken.
    Verhoog CACHE_VERSIE bij elke wijziging aan de app-bestanden. */
 
-const CACHE_VERSIE = "contactplanner-v2";
+const CACHE_VERSIE = "contactplanner-v3";
 const KERN_BESTANDEN = [
   "./",
   "index.html",
@@ -16,6 +16,7 @@ const KERN_BESTANDEN = [
   "vendor/xlsx.full.min.js",
   "icons/icon-192.png",
   "icons/icon-512.png",
+  "img/scipio-uitvoer.png",
 ];
 
 self.addEventListener("install", (e) => {
@@ -36,7 +37,7 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
 
-  const cacheFirst = url.pathname.includes("/vendor/") || url.pathname.includes("/icons/");
+  const cacheFirst = url.pathname.includes("/vendor/") || url.pathname.includes("/icons/") || url.pathname.includes("/img/");
   if (cacheFirst) {
     e.respondWith(
       caches.match(e.request).then((hit) => hit || fetch(e.request).then((resp) => {

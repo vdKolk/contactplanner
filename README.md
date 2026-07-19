@@ -106,6 +106,7 @@ Statische site zonder build-stap — bewerk de bestanden en ververs de browser.
 | `sw.js` | Service worker: offline-cache |
 | `manifest.webmanifest` | PWA-manifest (naam, iconen, kleuren) |
 | `icons/` | App-iconen (192 en 512 px) |
+| `img/` | Afbeeldingen voor de uitleg (o.a. Scipio-uitvoerscherm) |
 | `vendor/xlsx.full.min.js` | [SheetJS Community Edition](https://sheetjs.com) **0.20.3**, vastgepind (van cdn.sheetjs.com — npm stopt bij 0.18.5 met bekende CVE's) |
 
 Gegevensopslag: IndexedDB met als kern de store `kluis` — daarin staan alle personen en
