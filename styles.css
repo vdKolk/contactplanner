@@ -4,9 +4,9 @@
   --border: #E4E7EC;
   --text: #101828;
   --text-soft: #667085;
-  --accent: #4F46E5;
-  --accent-soft: #EEF2FF;
-  --accent-hover: #4338CA;
+  --accent: #7F37FF; /* violet van het app-logo */
+  --accent-soft: #F3EBFF;
+  --accent-hover: #6B24E4;
   --green: #16A34A;
   --green-bg: #ECFDF3;
   --amber: #B45309;
