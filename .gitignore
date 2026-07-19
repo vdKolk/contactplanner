@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Ledengegevens horen NOOIT in deze (publieke) repository:
+# Excel-exporten uit de ledenadministratie
+*.xlsx
+*.xls
+# back-ups uit de app (bevatten alle persoons- en contactgegevens)
+contactplanner-backup-*.json
+backup*.json
