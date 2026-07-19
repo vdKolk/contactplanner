@@ -9,18 +9,24 @@ welke bijzondere momenten eraan komen.
 
 **Deze applicatie verstuurt niets naar internet.** Er is geen server en geen database: alle
 gegevens staan uitsluitend in de browseropslag (IndexedDB) van het apparaat waarop je de app
-gebruikt. Sluit je de browser, dan blijven de gegevens lokaal bewaard; een ander apparaat of
-een andere browser ziet ze niet.
+gebruikt, en worden daar **versleuteld** bewaard (AES-256-GCM; de sleutel wordt met PBKDF2
+afgeleid van de pin, de pin zelf wordt nergens opgeslagen). Sluit je de browser, dan blijven
+de gegevens lokaal bewaard; een ander apparaat of een andere browser ziet ze niet.
+Uitzondering op de versleuteling: een klein hulplijstje met verjaardagen/jubilea (naam +
+datum), zodat "Bijzondere momenten" ook vanaf het slotscherm te bekijken is.
 
 Daar horen twee verantwoordelijkheden bij:
 
-- **Maak regelmatig een back-up.** De gegevens bestaan alleen op jouw apparaat. De indicator
+- **Maak regelmatig een back-up.** De gegevens bestaan alleen op jouw apparaat, en een
+  vergeten pin betekent dat de versleutelde gegevens definitief onleesbaar zijn. De indicator
   rechtsboven in de app houdt je scherp: groen = alles staat in de laatste back-up, oranje =
   er zijn wijzigingen die nog niet in een back-up staan. Eén klik op de indicator downloadt
-  direct een nieuw back-upbestand (.json).
-- **Beveilig het apparaat zelf.** De pin van de app is een toegangsdrempel voor het scherm;
-  de gegevens staan onversleuteld in de browseropslag. Gebruik dus een eigen account met
-  schermvergrendeling en een versleutelde schijf.
+  direct een nieuw back-upbestand (.json). De back-up is bewust **onversleuteld** — dat is je
+  vangnet bij een vergeten pin — dus bewaar het bestand op een veilige plek.
+- **Beveilig het apparaat zelf.** Een korte cijferpin beschermt tegen meekijkers, maar is
+  offline te raden door wie het versleutelde bestand kopieert. Gebruik dus een eigen account
+  met schermvergrendeling en een versleutelde schijf, of kies een langere pin (alle tekens
+  zijn toegestaan).
 
 ⚠️ Ledengegevens (Excel-bestanden, back-up-json's) horen **nooit** in deze repository. De
 `.gitignore` weert ze, maar blijf er zelf ook op letten.
@@ -45,8 +51,9 @@ Daar horen twee verantwoordelijkheden bij:
   binnen 14 dagen iets aankomt.
 - **Afspraak inplannen** — e-mail- of WhatsApp-bericht met invulbaar sjabloon, en een
   Scipio-link per persoon.
-- **Pin-beveiliging** — na ontgrendelen een uur toegang; bijzondere momenten zijn ook zonder
-  pin in te zien (zonder gezinsdossiers).
+- **Pin-beveiliging met versleuteling** — de gegevens worden met een van de pin afgeleide
+  sleutel versleuteld opgeslagen; na ontgrendelen een uur toegang. Bijzondere momenten zijn
+  ook zonder pin in te zien (zonder gezinsdossiers).
 - **Offline en installeerbaar (PWA)** — eenmaal geopend werkt de app zonder internet en kun
   je hem via "Installeren" / "Zet op beginscherm" als losse app gebruiken.
 
@@ -56,7 +63,8 @@ De volledige uitleg staat in de app zelf: menu → **Handleiding**.
 
 1. Open de app (zie *Hosten* hieronder, of open `index.html` lokaal in een browser).
 2. Stel bij het eerste gebruik een pin in (minimaal 4 tekens). **Onthoud deze goed** — de
-   enige weg terug bij een vergeten pin is alle lokale gegevens wissen.
+   gegevens worden met deze pin versleuteld; bij een vergeten pin is de enige weg terug alle
+   lokale gegevens wissen en een back-up terugzetten.
 3. Kies een Excel-bestand met de ledengegevens, of zet een eerder gemaakte back-up (.json)
    terug. Regnr. en Naam zijn verplichte kolommen; Regnr. is het kenmerk waarmee personen
    bij een volgende import worden herkend.
@@ -74,7 +82,8 @@ neem je alles mee:
 
 In de back-up zitten alle personen, gezinsgegevens, contactmomenten, notities én (sinds
 back-upversie 3) de instellingen. Alleen de pin gaat bewust niet mee; die stel je op het
-nieuwe apparaat opnieuw in. Oudere back-upformaten blijven gewoon inleesbaar.
+nieuwe apparaat opnieuw in. Het bestand is bewust onversleuteld (vangnet bij een vergeten
+pin) — bewaar het veilig. Oudere back-upformaten blijven gewoon inleesbaar.
 
 ## Hosten op GitHub Pages
 
@@ -97,10 +106,13 @@ Statische site zonder build-stap — bewerk de bestanden en ververs de browser.
 | `sw.js` | Service worker: offline-cache |
 | `manifest.webmanifest` | PWA-manifest (naam, iconen, kleuren) |
 | `icons/` | App-iconen (192 en 512 px) |
-| `vendor/xlsx.full.min.js` | [SheetJS Community Edition](https://sheetjs.com) **0.18.5**, vastgepind |
+| `vendor/xlsx.full.min.js` | [SheetJS Community Edition](https://sheetjs.com) **0.20.3**, vastgepind (van cdn.sheetjs.com — npm stopt bij 0.18.5 met bekende CVE's) |
 
-Gegevensopslag: IndexedDB met drie stores — `personen`, `gezinsdata` (per gezin: schema,
-historie, notities) en `instellingen`.
+Gegevensopslag: IndexedDB met als kern de store `kluis` — daarin staan alle personen en
+gezinsgegevens als één AES-256-GCM-versleuteld blok. Daarnaast `instellingen` (onversleuteld:
+schema-instellingen, pin-zout, sleutelcontrole, mijlpalen-cache) en de legacy-stores
+`personen`/`gezinsdata` die alleen nog dienen voor de eenmalige migratie van oudere
+installaties en als vangnet in browsers zonder Web Crypto.
 
 **Belangrijk bij elke wijziging die je publiceert:** verhoog `CACHE_VERSIE` in `sw.js`
 (bijv. `contactplanner-v2`), anders blijven bestaande bezoekers op de oude offline-versie

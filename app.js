@@ -3,14 +3,22 @@
    opent — er wordt niets naar een server gestuurd, ook niet in de gehoste (GitHub Pages)
    versie. Excel wordt gebruikt om basisgegevens aan te leveren/te verversen; alles wat je
    in de app zelf toevoegt (contactmomenten, notities, schema) blijft bewaard.
+   De persoonsgegevens staan versleuteld (AES-256-GCM) in de "kluis"-store; de sleutel wordt
+   met PBKDF2 afgeleid van de pin. Back-ups (.json) zijn bewust ONversleuteld — dat is het
+   vangnet bij een vergeten pin. Uitzondering op de versleuteling: een kleine cache met
+   verjaardagen/jubilea, zodat "bijzondere momenten" ook op het slotscherm werkt.
    Let op: IndexedDB is gebonden aan de herkomst (origin) — wissel je van computer, browser
    of van lokaal bestand naar de online versie, neem dan je gegevens mee via een back-up. */
 
 const DB_NAME = "huisbezoekPlannerDB";
-const DB_VERSION = 3;
-const STORE_PERSONEN = "personen";
-const STORE_GEZINSDATA = "gezinsdata";
+const DB_VERSION = 4;
+const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
+const STORE_GEZINSDATA = "gezinsdata"; // idem
 const STORE_INSTELLINGEN = "instellingen";
+const STORE_KLUIS = "kluis"; // vanaf v4: alle persoonsgegevens als één versleuteld blok
+
+const PBKDF2_ITERATIES = 600000; // OWASP-richtlijn voor PBKDF2-HMAC-SHA256
+const SLEUTELCHECK_TEKST = "contactplanner-sleutelcheck-v1";
 
 const BASIS_VELDEN = [
   { key: "status", label: "Status", re: /^status$/i },
@@ -156,9 +164,16 @@ async function toggleMijlpaalGedaan(sleutel) {
   await veiligOpslaan(() => dbSetInstelling("mijlpaal-gedaan:" + sleutel, nu), "mijlpaal markeren");
 }
 
+// Vergrendeld zonder geladen gegevens (kluis dicht): val terug op de onversleutelde
+// mijlpalen-cache. In alle andere gevallen wordt live berekend, zoals voorheen.
+function mijlpalenBron() {
+  if (state.vergrendeld && !state.personen.length) return state.mijlpalenCache || [];
+  return berekenMijlpalen();
+}
+
 function heeftDringendeMijlpaal(alleenLezen) {
   const vandaag = todayISO();
-  return berekenMijlpalen().some((m) => {
+  return mijlpalenBron().some((m) => {
     if (alleenLezen && m.type === "gepland") return false;
     if (state.mijlpalenGedaan[m.sleutel]) return false;
     const dagenTot = Math.round((new Date(m.datum + "T00:00:00") - new Date(vandaag + "T00:00:00")) / 86400000);
@@ -196,7 +211,7 @@ function mijlpaalRijHTML(m, alleenLezen) {
 }
 
 function mijlpalenHTML(alleenLezen) {
-  const alle = berekenMijlpalen();
+  const alle = mijlpalenBron();
   const vandaag = todayISO();
   const metDagen = alle.map((m) => ({
     ...m,
@@ -255,7 +270,19 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_INSTELLINGEN)) {
         db.createObjectStore(STORE_INSTELLINGEN, { keyPath: "sleutel" });
       }
+      if (!db.objectStoreNames.contains(STORE_KLUIS)) {
+        db.createObjectStore(STORE_KLUIS, { keyPath: "naam" });
+      }
     };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGet(store, key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store, "readonly").objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -314,6 +341,54 @@ async function dbGetInstelling(sleutel) {
 
 async function dbSetInstelling(sleutel, waarde) {
   await dbPut(STORE_INSTELLINGEN, { sleutel, waarde });
+}
+
+async function dbDeleteInstelling(sleutel) {
+  await dbDelete(STORE_INSTELLINGEN, sleutel);
+}
+
+// ---------------- versleuteling (Web Crypto) ----------------
+// De persoonsgegevens worden als één blok versleuteld opgeslagen in de kluis-store.
+// De AES-sleutel wordt met PBKDF2 afgeleid van de pin en bestaat alleen in het geheugen;
+// tijdens het ontgrendelde uur staat hij daarnaast als niet-exporteerbare CryptoKey in de
+// instellingen-store, zodat een herlaadbeurt binnen dat uur geen pin vraagt.
+
+const cryptoRuntime = { sleutel: null };
+
+function versleutelingBeschikbaar() {
+  return !!(window.crypto && window.crypto.subtle && window.crypto.getRandomValues);
+}
+
+function bytesNaarB64(bytes) {
+  let s = "";
+  bytes.forEach((b) => { s += String.fromCharCode(b); });
+  return btoa(s);
+}
+
+function b64NaarBytes(s) {
+  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+}
+
+async function afleidenSleutel(pin, zoutBytes, iteraties) {
+  const basis = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: zoutBytes, iterations: iteraties || PBKDF2_ITERATIES, hash: "SHA-256" },
+    basis,
+    { name: "AES-GCM", length: 256 },
+    false, // niet exporteerbaar: de ruwe sleutelbytes zijn vanuit JavaScript niet uit te lezen
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function versleutelJSON(sleutel, obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, sleutel, new TextEncoder().encode(JSON.stringify(obj)));
+  return { iv: bytesNaarB64(iv), data: bytesNaarB64(new Uint8Array(cipher)) };
+}
+
+async function ontsleutelJSON(sleutel, pakket) {
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64NaarBytes(pakket.iv) }, sleutel, b64NaarBytes(pakket.data));
+  return JSON.parse(new TextDecoder().decode(plain));
 }
 
 function eenvoudigeHashOud(tekst) {
@@ -614,12 +689,16 @@ const state = {
   debugOpen: false,
   menuOpen: false,
   handleidingOpen: false,
-  // pin-beveiliging
+  // pin-beveiliging & versleuteling
   vergrendeld: true,
   lockMode: "invoeren", // instellen | invoeren
-  pinHash: null,
+  pinHash: null, // alleen nog in de onversleutelde (oude of Web Crypto-loze) situatie
+  pinZout: null, // base64-zout voor de sleutelafleiding
+  pinIteraties: null,
+  sleutelCheck: null, // versleutelde controlewaarde: klopt de pin?
   pinFout: "",
   mijlpalenZonderPin: false,
+  mijlpalenCache: [], // onversleutelde kopie van verjaardagen/jubilea voor het slotscherm
   // mijlpalen
   mijlpalenLeeftijdDrempel: 70,
   mijlpalenHuwelijksJaren: [25, 30, 40, 45, 50, 55, 60],
@@ -636,29 +715,126 @@ const state = {
 function findPersoon(regnr) { return state.personen.find((p) => p.regnr === regnr); }
 function findGezin(gezinsKey) { return computeGezinnen().find((g) => g.gezinsKey === gezinsKey); }
 
+// Schrijft de volledige gegevensset weg. Met sleutel: als één versleuteld blok in de kluis.
+// Zonder Web Crypto (zeldzaam): plat, zoals in eerdere versies, zodat de app blijft werken.
+async function bewaarGegevens() {
+  if (cryptoRuntime.sleutel) {
+    const pakket = await versleutelJSON(cryptoRuntime.sleutel, { personen: state.personen, gezinsdata: state.gezinsdata });
+    await dbPut(STORE_KLUIS, { naam: "gegevens", iv: pakket.iv, data: pakket.data });
+  } else {
+    await dbClearAll(STORE_PERSONEN);
+    await dbClearAll(STORE_GEZINSDATA);
+    await dbPutAll(STORE_PERSONEN, state.personen);
+    await dbPutAll(STORE_GEZINSDATA, Object.values(state.gezinsdata));
+  }
+  await werkMijlpalenCacheBij();
+}
+
+// Compacte, bewust ONversleutelde kopie van verjaardagen en jubilea (geen adressen, geen
+// geplande momenten), zodat het slotscherm "bijzondere momenten" kan tonen zonder pin.
+async function werkMijlpalenCacheBij() {
+  const cache = berekenMijlpalen()
+    .filter((m) => m.type !== "gepland")
+    .map(({ type, naam, roepnaam, omschrijving, datum, sleutel }) => ({ type, naam, roepnaam, omschrijving, datum, sleutel }));
+  state.mijlpalenCache = cache;
+  await dbSetInstelling("mijlpalenCache", cache);
+}
+
+async function laadUitKluis() {
+  const rec = await dbGet(STORE_KLUIS, "gegevens");
+  state.personen = [];
+  state.gezinsdata = {};
+  if (rec) {
+    const inhoud = await ontsleutelJSON(cryptoRuntime.sleutel, rec);
+    state.personen = inhoud.personen || [];
+    state.gezinsdata = inhoud.gezinsdata || {};
+  }
+  migreerOudeContactgegevens();
+  herstelLaatsteContactAlleGezinnen();
+  werkMijlpalenCacheBij().catch((e) => logDebug("fout", "Kon mijlpalen-cache niet bijwerken: " + e.message));
+  state.stage = state.personen.length ? "dashboard" : "upload";
+}
+
+// Zet de versleuteling op met een (nieuwe) pin: nieuw zout, nieuwe sleutel, controlewaarde,
+// en herversleutelt de huidige gegevens. Wist daarna de oude platte opslag (eenmalige migratie).
+async function activeerVersleuteling(pin) {
+  const zout = crypto.getRandomValues(new Uint8Array(16));
+  const sleutel = await afleidenSleutel(pin, zout, PBKDF2_ITERATIES);
+  cryptoRuntime.sleutel = sleutel;
+  // Volgorde is bewust: eerst de kluis vullen, dan pas de controlewaarde vastleggen en de
+  // platte opslag wissen. Breekt de migratie halverwege af, dan is er nooit gegevensverlies.
+  await bewaarGegevens();
+  state.pinZout = bytesNaarB64(zout);
+  state.pinIteraties = PBKDF2_ITERATIES;
+  state.sleutelCheck = await versleutelJSON(sleutel, SLEUTELCHECK_TEKST);
+  await dbSetInstelling("pinZout", state.pinZout);
+  await dbSetInstelling("pinIteraties", state.pinIteraties);
+  await dbSetInstelling("sleutelCheck", state.sleutelCheck);
+  await dbClearAll(STORE_PERSONEN);
+  await dbClearAll(STORE_GEZINSDATA);
+  await dbDeleteInstelling("pinHash");
+  state.pinHash = null;
+  try { await dbSetInstelling("sessieSleutel", sleutel); }
+  catch (e) { logDebug("fout", "Kon sessiesleutel niet bewaren (na herladen is de pin opnieuw nodig): " + e.message); }
+}
+
+// Controleert de pin en zet bij succes de sleutel klaar. Bestond er alleen nog een oude
+// pin-hash (onversleutelde situatie), dan wordt de versleuteling nu eenmalig geactiveerd.
+async function ontgrendelMetPin(pin) {
+  if (versleutelingBeschikbaar() && state.sleutelCheck) {
+    try {
+      const sleutel = await afleidenSleutel(pin, b64NaarBytes(state.pinZout), state.pinIteraties);
+      await ontsleutelJSON(sleutel, state.sleutelCheck);
+      cryptoRuntime.sleutel = sleutel;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  const juist = (await veiligeHash(pin)) === state.pinHash || eenvoudigeHashOud(pin) === state.pinHash;
+  if (!juist) return false;
+  if (versleutelingBeschikbaar()) {
+    logDebug("info", "Pin klopt — bestaande onversleutelde gegevens worden nu eenmalig versleuteld");
+    await activeerVersleuteling(pin);
+  }
+  return true;
+}
+
+async function naOntgrendeling() {
+  const ontgrendeldTot = Date.now() + 3600000;
+  await dbSetInstelling("ontgrendeldTot", ontgrendeldTot);
+  if (cryptoRuntime.sleutel) {
+    try { await dbSetInstelling("sessieSleutel", cryptoRuntime.sleutel); }
+    catch (e) { logDebug("fout", "Kon sessiesleutel niet bewaren (na herladen is de pin opnieuw nodig): " + e.message); }
+    if (!state.personen.length) await laadUitKluis();
+  }
+  state.vergrendeld = false;
+  state.pinFout = "";
+  plantAutoVergrendel(3600000);
+}
+
 async function persist(next) {
   state.personen = next;
-  await veiligOpslaan(() => dbPutAll(STORE_PERSONEN, next), "gegevens bijwerken");
+  await veiligOpslaan(bewaarGegevens, "gegevens bijwerken");
 }
 
 async function updatePersoon(regnr, patch) {
   const idx = state.personen.findIndex((p) => p.regnr === regnr);
   if (idx === -1) return;
-  const updated = { ...state.personen[idx], ...patch };
-  state.personen[idx] = updated;
-  await veiligOpslaan(() => dbPut(STORE_PERSONEN, updated), "persoonsgegevens bijwerken");
+  state.personen[idx] = { ...state.personen[idx], ...patch };
+  await veiligOpslaan(bewaarGegevens, "persoonsgegevens bijwerken");
 }
 
 async function updateGezinsdata(gezinsKey, patch) {
   const updated = { ...getGezinsdata(gezinsKey), ...patch, gezinsKey };
   state.gezinsdata[gezinsKey] = updated;
-  await veiligOpslaan(() => dbPut(STORE_GEZINSDATA, updated), "contactgegevens bijwerken");
+  await veiligOpslaan(bewaarGegevens, "contactgegevens bijwerken");
 }
 
 async function verwijderPersoon(regnr) {
   if (!confirm("Dit gezinslid verwijderen uit de lokale lijst?")) return;
   state.personen = state.personen.filter((p) => p.regnr !== regnr);
-  await veiligOpslaan(() => dbDelete(STORE_PERSONEN, regnr), "gezinslid verwijderen");
+  await veiligOpslaan(bewaarGegevens, "gezinslid verwijderen");
 }
 
 async function verwijderGezin(gezinsKey) {
@@ -669,10 +845,7 @@ async function verwijderGezin(gezinsKey) {
   state.personen = state.personen.filter((p) => !regnrs.has(p.regnr));
   delete state.gezinsdata[gezinsKey];
   state.selectedGezinsKey = null;
-  await veiligOpslaan(async () => {
-    await Promise.all(gezin.leden.map((p) => dbDelete(STORE_PERSONEN, p.regnr)));
-    await dbDelete(STORE_GEZINSDATA, gezinsKey);
-  }, "gezin verwijderen");
+  await veiligOpslaan(bewaarGegevens, "gezin verwijderen");
 }
 
 function herstelLaatsteContactAlleGezinnen() {
@@ -687,7 +860,7 @@ function herstelLaatsteContactAlleGezinnen() {
   });
   if (aangepast > 0) {
     logDebug("info", `Schema-herstel: laatste contact herberekend voor ${aangepast} gezin(nen) \u2014 alleen "Huisbezoek" telt nog mee voor het reguliere schema`);
-    dbPutAll(STORE_GEZINSDATA, Object.values(state.gezinsdata)).catch((e) => logDebug("fout", "Kon herstelde gezinsdata niet opslaan: " + e.message));
+    bewaarGegevens().catch((e) => logDebug("fout", "Kon herstelde gezinsdata niet opslaan: " + e.message));
   }
 }
 
@@ -716,7 +889,7 @@ function migreerOudeContactgegevens() {
     }
   });
   state.gezinsdata = migrated;
-  dbPutAll(STORE_GEZINSDATA, Object.values(migrated));
+  bewaarGegevens().catch((e) => logDebug("fout", "Kon gemigreerde gezinsdata niet opslaan: " + e.message));
   logDebug("info", `Migratie voltooid: ${Object.keys(migrated).length} gezin(nen) overgezet`);
 }
 
@@ -987,6 +1160,8 @@ function exporteerExcel() {
 function exporteerBackup() {
   // Versie 3: ook de instellingen gaan mee (behalve de pin — die stel je op een
   // nieuw apparaat opnieuw in). Versie 2 en ouder blijven inleesbaar.
+  // De back-up is bewust ONversleuteld: het is het vangnet bij een vergeten pin.
+  // Bewaar het bestand dus op een veilige plek.
   const payload = {
     versie: 3,
     personen: state.personen,
@@ -1046,10 +1221,7 @@ function handleBackupImport(e) {
         });
       }
       const gelukt = await veiligOpslaan(async () => {
-        await dbClearAll(STORE_PERSONEN);
-        await dbClearAll(STORE_GEZINSDATA);
-        await dbPutAll(STORE_PERSONEN, state.personen);
-        await dbPutAll(STORE_GEZINSDATA, Object.values(state.gezinsdata));
+        await bewaarGegevens();
         if (inst) {
           await dbSetInstelling("mijlpalenLeeftijdDrempel", state.mijlpalenLeeftijdDrempel);
           await dbSetInstelling("mijlpalenHuwelijksJaren", state.mijlpalenHuwelijksJaren);
@@ -1388,22 +1560,29 @@ function handleidingModalHTML() {
         <p>Bij elk gezinslid staat een "Scipio"-link die rechtstreeks naar de persoonskaart in Scipio gaat
         (op basis van het Regnr.).</p>
 
-        <h4>Pin-beveiliging</h4>
+        <h4>Pin-beveiliging en versleuteling</h4>
         <p>De hele app is met een pin beveiligd; na het invoeren heb je een uur toegang, daarna moet je 'm
-        opnieuw invoeren. Vanaf het slotscherm kun je zonder pin wel de verjaardagen en huwelijksjubilea uit
-        "Bijzondere momenten" bekijken (geplande momenten en gezinsdossiers blijven verborgen tot je volledig
-        ontgrendelt). Vergeet je de pin, dan is de enige weg terug: alle lokale gegevens wissen \u2014 zorg dus
-        voor een back-up. <strong>Goed om te weten:</strong> de pin is een toegangsdrempel voor het scherm;
-        de gegevens zelf staan onversleuteld in de browseropslag. Gebruik de app daarom alleen op een
-        apparaat dat zelf goed beveiligd is (eigen account, schermvergrendeling, versleutelde schijf).</p>
+        opnieuw invoeren. De gegevens staan bovendien <strong>versleuteld</strong> in de browseropslag
+        (AES-256; de sleutel wordt van de pin afgeleid en de pin zelf wordt nergens bewaard). Vanaf het
+        slotscherm kun je zonder pin wel de verjaardagen en huwelijksjubilea uit "Bijzondere momenten"
+        bekijken \u2014 die namen en datums staan daarvoor bewust onversleuteld in een klein hulplijstje;
+        geplande momenten en gezinsdossiers blijven verborgen tot je volledig ontgrendelt. Vergeet je de
+        pin, dan zijn de versleutelde gegevens definitief onleesbaar; de enige weg terug is alles wissen en
+        je back-up (.json) terugzetten \u2014 zorg dus voor een actuele back-up.
+        <strong>Goed om te weten:</strong> een korte cijferpin houdt een nieuwsgierige meekijker buiten,
+        maar is voor een vastberaden aanvaller te raden. Gebruik de app daarom nog steeds op een apparaat
+        dat zelf goed beveiligd is (eigen account, schermvergrendeling, versleutelde schijf), of kies een
+        langere pin \u2014 alle tekens zijn toegestaan.</p>
 
         <h4>Gegevens en systeem (dit menu)</h4>
         <p><strong>Nieuwe Excel-import</strong> ververst de basisgegevens. <strong>Exporteer naar Excel</strong> maakt
         een volledig exportbestand inclusief contactstatus. <strong>Back-up maken/terugzetten</strong> (.json) is je
         vangnet, want alle gegevens staan alleen lokaal in deze browser op deze computer; sinds versie 3
         gaan ook de instellingen (mijlpalen en automatisch schema) mee in de back-up — alleen de pin niet,
-        die stel je op een nieuw apparaat opnieuw in. De back-up is ook de manier om je gegevens mee te
-        nemen naar een andere computer, browser of naar de online versie. Rechtsboven in de balk zie je
+        die stel je op een nieuw apparaat opnieuw in. De back-up is bewust <strong>niet</strong> versleuteld:
+        zo kun je er ook bij een vergeten pin altijd mee verder. Bewaar het bestand dus op een veilige plek
+        (bijvoorbeeld een versleutelde schijf of wachtwoordkluis). De back-up is ook de manier om je
+        gegevens mee te nemen naar een andere computer, browser of naar de online versie. Rechtsboven in de balk zie je
         de back-upstatus: groen betekent dat alles in de laatste back-up staat, oranje dat er wijzigingen
         zijn van na de laatste back-up (of dat er nog nooit een is gemaakt) — klik erop om direct een
         back-up te downloaden. <strong>Instellingen</strong> bevat de
@@ -1474,7 +1653,7 @@ async function zetAlleGezinnenOpAuto() {
   if (!teWijzigen.length) return;
   if (!confirm(`Dit zet het terugkeerschema van ${teWijzigen.length} gezin(nen) om naar "Automatisch". Handmatig gekozen schema's worden daarbij overschreven. Doorgaan?`)) return;
   teWijzigen.forEach((k) => { state.gezinsdata[k] = { ...state.gezinsdata[k], schema: "auto" }; });
-  await veiligOpslaan(() => dbPutAll(STORE_GEZINSDATA, teWijzigen.map((k) => state.gezinsdata[k])), "alle gezinnen op automatisch zetten");
+  await veiligOpslaan(bewaarGegevens, "alle gezinnen op automatisch zetten");
   render();
 }
 
@@ -1517,10 +1696,10 @@ function topbarHTML() {
     <div class="topbar-links">
       <button class="hamburger-tile" id="btnHamburger" title="Menu">\u2630</button>
       <div class="brand">
-        <img class="brand-logo" src="icons/icon-192.png" alt="Contactplanner" />
+        <img class="brand-logo" src="icons/icon-192.png" alt="ContactPlanner" />
         <div>
-          <div class="brand-title">Contactplanner</div>
-          <div class="brand-sub">${aantalGezinnen} gezin${aantalGezinnen === 1 ? "" : "nen"} \u00b7 ${aantalPersonen} perso${aantalPersonen === 1 ? "on" : "nen"} \u00b7 lokaal opgeslagen</div>
+          <div class="brand-title">ContactPlanner</div>
+          <div class="brand-sub">${aantalGezinnen} gezin${aantalGezinnen === 1 ? "" : "nen"} \u00b7 ${aantalPersonen} perso${aantalPersonen === 1 ? "on" : "nen"} \u00b7 ${cryptoRuntime.sleutel ? "lokaal versleuteld opgeslagen" : "lokaal opgeslagen"}</div>
         </div>
       </div>
     </div>
@@ -2222,9 +2401,9 @@ function beperkteTopbarHTML() {
   return `
   <div class="topbar">
     <div class="brand">
-      <img class="brand-logo" src="icons/icon-192.png" alt="Contactplanner" />
+      <img class="brand-logo" src="icons/icon-192.png" alt="ContactPlanner" />
       <div>
-        <div class="brand-title">Contactplanner</div>
+        <div class="brand-title">ContactPlanner</div>
         <div class="brand-sub">Vergrendeld \u2014 alleen bijzondere momenten zichtbaar</div>
       </div>
     </div>
@@ -2239,12 +2418,17 @@ function attachMijlpalenEvents() {
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   if ($("#mijlpaalLeeftijd")) $("#mijlpaalLeeftijd").addEventListener("change", async (e) => {
     const n = parseInt(e.target.value, 10);
-    if (n > 0) { state.mijlpalenLeeftijdDrempel = n; await veiligOpslaan(() => dbSetInstelling("mijlpalenLeeftijdDrempel", n), "instelling opslaan"); }
+    if (n > 0) {
+      state.mijlpalenLeeftijdDrempel = n;
+      await veiligOpslaan(() => dbSetInstelling("mijlpalenLeeftijdDrempel", n), "instelling opslaan");
+      if (state.personen.length) werkMijlpalenCacheBij().catch((err) => logDebug("fout", "Kon mijlpalen-cache niet bijwerken: " + err.message));
+    }
   });
   if ($("#mijlpaalHuwelijksjaren")) $("#mijlpaalHuwelijksjaren").addEventListener("change", async (e) => {
     const jaren = e.target.value.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n) && n > 0);
     state.mijlpalenHuwelijksJaren = jaren;
     await veiligOpslaan(() => dbSetInstelling("mijlpalenHuwelijksJaren", jaren), "instelling opslaan");
+    if (state.personen.length) werkMijlpalenCacheBij().catch((err) => logDebug("fout", "Kon mijlpalen-cache niet bijwerken: " + err.message));
     render();
   });
   $$("[data-mijlpaal-filter]").forEach((el) => el.addEventListener("click", (e) => {
@@ -2443,6 +2627,8 @@ let autoVergrendelTimer = null;
 function plantAutoVergrendel(overMs) {
   if (autoVergrendelTimer) clearTimeout(autoVergrendelTimer);
   autoVergrendelTimer = setTimeout(() => {
+    cryptoRuntime.sleutel = null;
+    dbDeleteInstelling("sessieSleutel").catch((e) => logDebug("fout", "Kon sessiesleutel niet verwijderen: " + e.message));
     state.vergrendeld = true;
     state.lockMode = "invoeren";
     state.pinFout = "";
@@ -2454,7 +2640,8 @@ const PRIVACY_MELDING_HTML = `
   <div class="privacy-notice">
     <span class="privacy-icoon">\u{1F512}</span>
     <span><strong>Privacy is belangrijk.</strong> Deze applicatie verwerkt uw gegevens niet online en
-    verstuurt niets naar internet. Alle gegevens blijven lokaal op uw computer.</span>
+    verstuurt niets naar internet. Alle gegevens blijven lokaal op uw computer en worden daar
+    versleuteld opgeslagen (AES-256, sleutel afgeleid van uw pin).</span>
   </div>`;
 
 function lockScreenHTML() {
@@ -2462,13 +2649,14 @@ function lockScreenHTML() {
     return `
     <div class="upload-wrap">
       <div class="upload-card">
-        <img class="upload-logo" src="icons/icon-192.png" alt="Contactplanner" />
+        <img class="upload-logo" src="icons/icon-192.png" alt="ContactPlanner" />
         <div class="upload-title">Stel een pin in</div>
         <p class="upload-desc">
           Deze contactplanner bevat gevoelige pastorale gegevens. Stel een pin in (minimaal 4 tekens) om
-          toegang te beveiligen. Na het invoeren heb je \u00e9\u00e9n uur toegang; daarna is de pin opnieuw nodig.
-          Vergeet je de pin, dan is de enige weg terug alle lokale gegevens wissen \u2014 zorg dus voor een
-          back-up (.json) als je die nog niet hebt.
+          toegang te beveiligen; de gegevens worden bovendien met deze pin versleuteld opgeslagen.
+          Na het invoeren heb je \u00e9\u00e9n uur toegang; daarna is de pin opnieuw nodig.
+          Vergeet je de pin, dan is de enige weg terug alle lokale gegevens wissen en je back-up (.json)
+          terugzetten \u2014 zorg dus dat je die hebt.
         </p>
         ${PRIVACY_MELDING_HTML}
         <div class="field-row"><label>Nieuwe pin</label><input type="password" id="pinNieuw1" autocomplete="off" /></div>
@@ -2481,7 +2669,7 @@ function lockScreenHTML() {
   return `
     <div class="upload-wrap">
       <div class="upload-card">
-        <img class="upload-logo" src="icons/icon-192.png" alt="Contactplanner" />
+        <img class="upload-logo" src="icons/icon-192.png" alt="ContactPlanner" />
         <div class="upload-title">Vergrendeld</div>
         <p class="upload-desc">Voer je pin in om verder te gaan. Na het invoeren heb je weer \u00e9\u00e9n uur toegang.</p>
         ${PRIVACY_MELDING_HTML}
@@ -2502,38 +2690,35 @@ function attachLockEvents() {
     const p1 = $("#pinNieuw1").value, p2 = $("#pinNieuw2").value;
     if (p1.length < 4) { state.pinFout = "De pin moet minimaal 4 tekens lang zijn."; render(); return; }
     if (p1 !== p2) { state.pinFout = "De twee pins komen niet overeen."; render(); return; }
-    const hash = await veiligeHash(p1);
-    await dbSetInstelling("pinHash", hash);
-    const ontgrendeldTot = Date.now() + 3600000;
-    await dbSetInstelling("ontgrendeldTot", ontgrendeldTot);
-    state.pinHash = hash;
-    state.pinFout = "";
-    state.vergrendeld = false;
-    plantAutoVergrendel(3600000);
+    try {
+      if (versleutelingBeschikbaar()) {
+        await activeerVersleuteling(p1);
+      } else {
+        const hash = await veiligeHash(p1);
+        await dbSetInstelling("pinHash", hash);
+        state.pinHash = hash;
+      }
+      await naOntgrendeling();
+    } catch (e) {
+      logDebug("fout", "Pin instellen mislukt: " + e.message, { stack: e.stack });
+      state.pinFout = "Pin instellen is niet gelukt. Probeer het opnieuw of kijk bij Debug.";
+    }
     render();
   });
 
   if ($("#btnPinInvoeren")) $("#btnPinInvoeren").addEventListener("click", async () => {
     const p = $("#pinInvoer").value;
-    const nieuweHash = await veiligeHash(p);
-    let juist = nieuweHash === state.pinHash;
-    if (!juist && eenvoudigeHashOud(p) === state.pinHash) {
-      // Pin eerder met het oudere hash-formaat ingesteld: accepteren en stilzwijgend opwaarderen.
-      juist = true;
-      state.pinHash = nieuweHash;
-      await dbSetInstelling("pinHash", nieuweHash);
+    try {
+      if (await ontgrendelMetPin(p)) {
+        await naOntgrendeling();
+      } else {
+        state.pinFout = "Onjuiste pin. Probeer het opnieuw.";
+      }
+    } catch (e) {
+      logDebug("fout", "Ontgrendelen mislukt: " + e.message, { stack: e.stack });
+      state.pinFout = "Ontgrendelen is niet gelukt. Probeer het opnieuw of kijk bij Debug.";
     }
-    if (juist) {
-      const ontgrendeldTot = Date.now() + 3600000;
-      await dbSetInstelling("ontgrendeldTot", ontgrendeldTot);
-      state.pinFout = "";
-      state.vergrendeld = false;
-      plantAutoVergrendel(3600000);
-      render();
-    } else {
-      state.pinFout = "Onjuiste pin. Probeer het opnieuw.";
-      render();
-    }
+    render();
   });
   if ($("#pinInvoer")) $("#pinInvoer").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#btnPinInvoeren").click(); });
   if ($("#pinNieuw2")) $("#pinNieuw2").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#btnPinInstellen").click(); });
@@ -2548,12 +2733,19 @@ function attachLockEvents() {
     await dbClearAll(STORE_PERSONEN);
     await dbClearAll(STORE_GEZINSDATA);
     await dbClearAll(STORE_INSTELLINGEN);
+    await dbClearAll(STORE_KLUIS);
+    cryptoRuntime.sleutel = null;
     state.personen = [];
     state.gezinsdata = {};
     state.mijlpalenGedaan = {};
+    state.mijlpalenCache = [];
     state.pinHash = null;
+    state.pinZout = null;
+    state.pinIteraties = null;
+    state.sleutelCheck = null;
     state.pinFout = "";
     state.lockMode = "instellen";
+    state.stage = "upload";
     render();
   });
 }
@@ -2561,22 +2753,38 @@ function attachLockEvents() {
 async function pinWijzigen() {
   const huidige = prompt("Voer je huidige pin in:");
   if (huidige === null) return;
-  if ((await veiligeHash(huidige)) !== state.pinHash && eenvoudigeHashOud(huidige) !== state.pinHash) { alert("Onjuiste huidige pin."); return; }
+  let klopt = false;
+  if (versleutelingBeschikbaar() && state.sleutelCheck) {
+    try {
+      await ontsleutelJSON(await afleidenSleutel(huidige, b64NaarBytes(state.pinZout), state.pinIteraties), state.sleutelCheck);
+      klopt = true;
+    } catch (e) { /* onjuiste pin */ }
+  } else {
+    klopt = (await veiligeHash(huidige)) === state.pinHash || eenvoudigeHashOud(huidige) === state.pinHash;
+  }
+  if (!klopt) { alert("Onjuiste huidige pin."); return; }
   const nieuw1 = prompt("Nieuwe pin (minimaal 4 tekens):");
   if (nieuw1 === null) return;
   if (nieuw1.length < 4) { alert("De pin moet minimaal 4 tekens lang zijn."); return; }
   const nieuw2 = prompt("Herhaal de nieuwe pin:");
   if (nieuw2 === null) return;
   if (nieuw1 !== nieuw2) { alert("De twee pins komen niet overeen."); return; }
-  const hash = await veiligeHash(nieuw1);
-  state.pinHash = hash;
-  await veiligOpslaan(() => dbSetInstelling("pinHash", hash), "pin wijzigen");
+  if (versleutelingBeschikbaar()) {
+    // Nieuw zout + nieuwe sleutel; de gegevens worden direct herversleuteld.
+    if (!await veiligOpslaan(() => activeerVersleuteling(nieuw1), "pin wijzigen")) return;
+  } else {
+    const hash = await veiligeHash(nieuw1);
+    state.pinHash = hash;
+    if (!await veiligOpslaan(() => dbSetInstelling("pinHash", hash), "pin wijzigen")) return;
+  }
   alert("Pin gewijzigd.");
 }
 
 function vergrendelNu() {
   if (autoVergrendelTimer) clearTimeout(autoVergrendelTimer);
+  cryptoRuntime.sleutel = null;
   dbSetInstelling("ontgrendeldTot", 0).catch((e) => logDebug("fout", "Kon vergrendel-tijdstip niet opslaan: " + e.message));
+  dbDeleteInstelling("sessieSleutel").catch((e) => logDebug("fout", "Kon sessiesleutel niet verwijderen: " + e.message));
   state.vergrendeld = true;
   state.lockMode = "invoeren";
   state.pinFout = "";
@@ -2595,19 +2803,15 @@ function vergrendelNu() {
     return;
   }
   try {
-    const personen = await dbGetAll(STORE_PERSONEN);
-    const gezinsdataLijst = await dbGetAll(STORE_GEZINSDATA);
-    state.personen = personen;
-    gezinsdataLijst.forEach((g) => { state.gezinsdata[g.gezinsKey] = g; });
-    migreerOudeContactgegevens();
-    herstelLaatsteContactAlleGezinnen();
-    state.stage = personen.length ? "dashboard" : "upload";
-
     const instellingenLijst = await dbGetAll(STORE_INSTELLINGEN);
     const instellingenMap = {};
     instellingenLijst.forEach((r) => { instellingenMap[r.sleutel] = r.waarde; });
 
     state.pinHash = instellingenMap.pinHash || null;
+    state.pinZout = instellingenMap.pinZout || null;
+    state.pinIteraties = instellingenMap.pinIteraties || PBKDF2_ITERATIES;
+    state.sleutelCheck = instellingenMap.sleutelCheck || null;
+    if (Array.isArray(instellingenMap.mijlpalenCache)) state.mijlpalenCache = instellingenMap.mijlpalenCache;
     if (typeof instellingenMap.mijlpalenLeeftijdDrempel === "number") state.mijlpalenLeeftijdDrempel = instellingenMap.mijlpalenLeeftijdDrempel;
     if (Array.isArray(instellingenMap.mijlpalenHuwelijksJaren)) state.mijlpalenHuwelijksJaren = instellingenMap.mijlpalenHuwelijksJaren;
     if (typeof instellingenMap.laatsteWijzigingOp === "number") state.laatsteWijzigingOp = instellingenMap.laatsteWijzigingOp;
@@ -2622,15 +2826,50 @@ function vergrendelNu() {
 
     const nu = Date.now();
     const ontgrendeldTot = instellingenMap.ontgrendeldTot || 0;
-    if (!state.pinHash) {
-      state.vergrendeld = true;
-      state.lockMode = "instellen";
-    } else if (ontgrendeldTot > nu) {
-      state.vergrendeld = false;
-      plantAutoVergrendel(ontgrendeldTot - nu);
-    } else {
+
+    if (versleutelingBeschikbaar() && state.sleutelCheck) {
+      // Versleutelde modus: de gegevens worden pas geladen na ontgrendeling.
       state.vergrendeld = true;
       state.lockMode = "invoeren";
+      if (ontgrendeldTot > nu && instellingenMap.sessieSleutel) {
+        // Binnen het ontgrendelde uur herladen: sessiesleutel gebruiken, geen pin nodig.
+        try {
+          await ontsleutelJSON(instellingenMap.sessieSleutel, state.sleutelCheck);
+          cryptoRuntime.sleutel = instellingenMap.sessieSleutel;
+          await laadUitKluis();
+          state.vergrendeld = false;
+          plantAutoVergrendel(ontgrendeldTot - nu);
+        } catch (e) {
+          cryptoRuntime.sleutel = null;
+          logDebug("fout", "Bewaarde sessiesleutel is onbruikbaar; de pin is opnieuw nodig: " + e.message);
+        }
+      } else if (instellingenMap.sessieSleutel) {
+        dbDeleteInstelling("sessieSleutel").catch(() => {});
+      }
+    } else {
+      // Onversleutelde situatie: oude gegevens (nog te migreren bij de eerstvolgende
+      // pin-invoer) of een browser zonder Web Crypto.
+      if (state.sleutelCheck && !versleutelingBeschikbaar()) {
+        toonFoutBanner("De gegevens zijn versleuteld opgeslagen, maar deze browser ondersteunt de benodigde versleuteling niet. Open de app in een actuele browser (Chrome, Edge, Firefox of Safari).");
+      }
+      const personen = await dbGetAll(STORE_PERSONEN);
+      const gezinsdataLijst = await dbGetAll(STORE_GEZINSDATA);
+      state.personen = personen;
+      gezinsdataLijst.forEach((g) => { state.gezinsdata[g.gezinsKey] = g; });
+      migreerOudeContactgegevens();
+      herstelLaatsteContactAlleGezinnen();
+      state.stage = personen.length ? "dashboard" : "upload";
+
+      if (!state.pinHash && !state.sleutelCheck) {
+        state.vergrendeld = true;
+        state.lockMode = "instellen";
+      } else if (ontgrendeldTot > nu) {
+        state.vergrendeld = false;
+        plantAutoVergrendel(ontgrendeldTot - nu);
+      } else {
+        state.vergrendeld = true;
+        state.lockMode = "invoeren";
+      }
     }
   } catch (e) {
     logDebug("fout", "Kon lokale gegevens niet laden: " + e.message);
