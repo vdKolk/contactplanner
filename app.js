@@ -1244,7 +1244,7 @@ function handleBackupImport(e) {
       render();
     } catch (err) {
       logDebug("fout", "Kon back-up niet lezen: " + err.message);
-      alert("Kon deze back-up niet lezen. Is het een eerder geëxporteerd back-up (.json) bestand?");
+      alert("Kon deze back-up niet lezen. Is het een eerder geëxporteerd back-upbestand (.json)?");
     }
   };
   reader.readAsText(file);
