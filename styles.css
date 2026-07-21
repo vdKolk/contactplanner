@@ -30,6 +30,9 @@ html, body {
   padding: 0 28px 0 0; border-bottom: 1px solid var(--border); background: var(--surface);
   flex-wrap: wrap; gap: 10px; position: sticky; top: 0; z-index: 10;
 }
+/* Zonder hamburger-tile (die zelf al tegen de linkerrand staat) heeft de topbar links
+   evenveel witruimte nodig als rechts. */
+.topbar-beperkt { padding-left: 28px; }
 .topbar-links { display: flex; align-items: center; }
 .hamburger-tile {
   display: flex; align-items: center; justify-content: center;
@@ -57,6 +60,7 @@ html, body {
 .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .sidebar-groep-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-soft); margin: 14px 6px 6px; }
 .sidebar-divider { border-top: 1px solid var(--border); margin: 8px 4px; }
+.sidebar-versie { font-size: 11px; color: var(--text-soft); text-align: center; padding: 4px 6px 2px; }
 .sidebar-item {
   display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
   padding: 9px 8px; border-radius: 9px; border: none; background: transparent; margin-bottom: 2px;
@@ -153,6 +157,7 @@ button:disabled { opacity: .5; cursor: default; }
 .favoriet-ster:hover { color: var(--amber); }
 .favoriet-ster.actief { color: var(--amber); }
 .favoriet-ster-detail {
+  display: inline-flex; align-items: center; justify-content: center; height: 22px;
   background: transparent; border: none; padding: 0 0 0 4px; font-size: 20px; line-height: 1;
   color: var(--border); cursor: pointer; vertical-align: middle;
 }

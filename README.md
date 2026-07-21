@@ -117,7 +117,8 @@ installaties en als vangnet in browsers zonder Web Crypto.
 
 **Belangrijk bij elke wijziging die je publiceert:** verhoog `CACHE_VERSIE` in `sw.js`
 (bijv. `contactplanner-v2`), anders blijven bestaande bezoekers op de oude offline-versie
-hangen tot hun service worker ververst.
+hangen tot hun service worker ververst. Verhoog in dezelfde stap ook `APP_VERSIE` in `app.js`
+(zelfde nummer), zodat het versienummer onderin het menu klopt.
 
 De oorspronkelijke alles-in-één-versie (`contactplanner.html`, gebouwd in Claude) is bij de
 opsplitsing naar deze structuur verwijderd.
