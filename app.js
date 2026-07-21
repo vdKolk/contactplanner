@@ -12,6 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
+const APP_VERSIE = "3"; // houd gelijk aan CACHE_VERSIE ("contactplanner-v3") in sw.js
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
 const STORE_GEZINSDATA = "gezinsdata"; // idem
 const STORE_INSTELLINGEN = "instellingen";
@@ -1686,6 +1687,8 @@ function sidebarMenuHTML() {
       ${menuItemHTML("btnToonDebug", "\u25c6", "var(--text-soft)", "var(--grey-bg)", "Debug")}
       ${menuItemHTML("btnPinWijzigen", "\u2022\u2022\u2022", "var(--text-soft)", "var(--grey-bg)", "PIN wijzigen")}
       ${menuItemHTML("btnHandleiding", "?", "var(--accent)", "var(--accent-soft)", "Handleiding")}
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-versie">ContactPlanner v${esc(APP_VERSIE)} \u00b7 \u00a9 R.J.J. van der Kolk</div>
     </div>
   </div>`;
 }
@@ -2421,7 +2424,7 @@ function detailHTML() {
 
 function beperkteTopbarHTML() {
   return `
-  <div class="topbar">
+  <div class="topbar topbar-beperkt">
     <div class="brand">
       <img class="brand-logo" src="icons/icon-192.png" alt="ContactPlanner" />
       <div>
