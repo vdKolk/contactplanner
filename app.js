@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "3"; // houd gelijk aan CACHE_VERSIE ("contactplanner-v3") in sw.js
+const APP_VERSIE = "1.7.4"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
 const STORE_GEZINSDATA = "gezinsdata"; // idem
 const STORE_INSTELLINGEN = "instellingen";
@@ -37,7 +37,8 @@ const BASIS_VELDEN = [
   { key: "burgerlijkeStaat", label: "Burgerlijke staat", re: /burgerlijke/i },
   { key: "kerkelijkeStaat", label: "Kerkelijke staat", re: /kerkelijke/i },
   { key: "email", label: "E-mail", re: /e-?mail/i },
-  { key: "telefoon", label: "Telefoon", re: /telefoon|tel\.?$|mobiel|gsm/i },
+  { key: "telefoon", label: "Telefoon", re: /telefoon|tel\.?$/i },
+  { key: "mobiel", label: "Mobiel", re: /mobiel|gsm/i },
 ];
 
 const SOORTEN_BEZOEK = ["Huisbezoek", "Doopbezoek", "Huwelijksbezoek", "Ziekenhuisbezoek", "Anders"];
@@ -1138,6 +1139,7 @@ function exporteerExcel() {
       "Kerkelijke staat": p.kerkelijkeStaat,
       "e-mail": p.email,
       Telefoon: p.telefoon,
+      Mobiel: p.mobiel,
       ...p.extra,
       "Laatste contact (gezin)": gd.laatsteContact ? fmtDatum(gd.laatsteContact) : "",
       "Tijd laatste bezoek": laatste ? laatste.tijd || "" : "",
@@ -1379,6 +1381,8 @@ function gefilterdeGezinnen() {
     list = list.filter((g) => g.leden.some((p) => p._nietInLaatsteImport));
   } else if (state.filterStatus === "favoriet") {
     list = list.filter((g) => getGezinsdata(g.gezinsKey).favoriet);
+  } else if (state.filterStatus === "opmerking") {
+    list = list.filter((g) => getGezinsdata(g.gezinsKey).algemeneNotitie);
   } else if (state.filterStatus !== "alle") {
     list = list.filter((g) => berekenStatus(getGezinsdata(g.gezinsKey), g) === state.filterStatus);
   }
@@ -1414,10 +1418,12 @@ function gefilterdeGezinnen() {
 }
 
 function telStatussen() {
-  const c = { nooit: 0, teLaat: 0, binnenkort: 0, opSchema: 0, nietInLaatsteImport: 0 };
+  const c = { nooit: 0, teLaat: 0, binnenkort: 0, opSchema: 0, nietInLaatsteImport: 0, opmerking: 0 };
   computeGezinnen().forEach((g) => {
-    c[berekenStatus(getGezinsdata(g.gezinsKey), g)]++;
+    const gd = getGezinsdata(g.gezinsKey);
+    c[berekenStatus(gd, g)]++;
     if (g.leden.some((p) => p._nietInLaatsteImport)) c.nietInLaatsteImport++;
+    if (gd.algemeneNotitie) c.opmerking++;
   });
   return c;
 }
@@ -1687,8 +1693,10 @@ function sidebarMenuHTML() {
       ${menuItemHTML("btnToonDebug", "\u25c6", "var(--text-soft)", "var(--grey-bg)", "Debug")}
       ${menuItemHTML("btnPinWijzigen", "\u2022\u2022\u2022", "var(--text-soft)", "var(--grey-bg)", "PIN wijzigen")}
       ${menuItemHTML("btnHandleiding", "?", "var(--accent)", "var(--accent-soft)", "Handleiding")}
-      <div class="sidebar-divider"></div>
-      <div class="sidebar-versie">ContactPlanner v${esc(APP_VERSIE)} \u00b7 \u00a9 R.J.J. van der Kolk</div>
+      <div class="sidebar-footer">
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-versie">ContactPlanner v${esc(APP_VERSIE)} \u00b7 \u00a9 R.J.J. van der Kolk</div>
+      </div>
     </div>
   </div>`;
 }
@@ -1760,19 +1768,14 @@ function mainHTML() {
 
 const SCIPIO_UITLEG_HTML = `
   <ol class="uitleg-stappen">
-    <li>Open Scipio en ga naar <strong>Ledenadministratie \u2192 Selecties maken</strong>.</li>
-    <li>Klik op <strong>Zoeken</strong> en kies <strong>Ja</strong>, zodat de standaardselectie wordt gevuld.
-        Klik daarna op <strong>"Terug naar het selectiescherm"</strong>.</li>
-    <li>Ga naar <strong>Uitvoer</strong> en voeg met "Veld toevoegen" in elk geval <strong>Regnr.</strong> en
-        <strong>Huwelijksdatum</strong> toe aan de standaardvelden, zoals op de afbeelding hieronder.
-        De complete uitvoerlijst voor deze app:
-        Status, Regnr., Naam, Roepnaam, Geslacht, Wijk/sectie, Adres (straat nr), Postcode, Plaatsnaam,
-        Geboortedatum, Gezinsrelatie, Burgerlijke staat, Huwelijksdatum, Kerkelijke staat, e-mail, Telefoon.</li>
-    <li>Klik op <strong>Opslaan</strong> en noem de selectie <strong>"Importselectie"</strong> \u2014 dan kun je
-        dezelfde selectie voortaan opnieuw gebruiken om de gegevens bij te werken.</li>
-    <li>Download de Excel (de knop met het Excel-icoon rechtsonder) en lees dat bestand hier in.</li>
+    <li>Ga naar <a href="https://www.scipio-online.nl/query/open.aspx" target="_blank" rel="noopener">scipio-online.nl/query/open.aspx</a>.</li>
+    <li>Klik op <strong>"Importselectie - ContactPlanner"</strong>.</li>
+    <li>Klik op het Excel-icoon onderin om de importselectie te downloaden, en lees dat bestand hier in.</li>
   </ol>
-  <img class="uitleg-afbeelding" src="img/scipio-uitvoer.png" alt="Scipio: scherm Selecties maken, tabblad Uitvoer, met de toegevoegde velden Regnr. en Huwelijksdatum in de rechterlijst" loading="lazy" />`;
+  <p style="font-size:12.5px;color:var(--text-soft);margin:8px 0 0;">
+    De importselectie staat al voor je klaar in Scipio \u2014 je hoeft zelf niets meer samen te stellen.
+  </p>
+  <img class="uitleg-afbeelding" src="img/scipio-importselectie.png" alt="Scipio: scherm Zoekopdracht openen, met de zoekopdracht &quot;Importselectie - ContactPlanner&quot; in de lijst" loading="lazy" />`;
 
 function uploadHTML() {
   return `
@@ -1938,6 +1941,7 @@ function statsRowHTML() {
     ["nooit", counts.nooit, "Nog geen contact", "var(--red)"],
     ["binnenkort", counts.binnenkort, "Binnenkort", "var(--amber)"],
     ["opSchema", counts.opSchema, "Op schema", "var(--green)"],
+    ["opmerking", counts.opmerking, "Opmerkingen", "var(--amber)"],
     ["nietInLaatsteImport", counts.nietInLaatsteImport, "Wijziging in gezin", "var(--text-soft)"],
   ];
   return pillen.map(([key, num, label, color]) => `
@@ -1981,6 +1985,7 @@ function kanbanKaartHTML(gezin) {
         <div class="kanban-naam" style="padding-right:16px;">${esc(gezin.gezinshoofd.naam || "Naamloos")}</div>
       </div>
       <div class="kanban-meta">${gezin.leden.length} perso${gezin.leden.length === 1 ? "on" : "nen"}${overigeNamen.length ? ` \u00b7 ${esc(overigeNamen.slice(0, 2).join(", "))}${overigeNamen.length > 2 ? " e.a." : ""}` : ""}</div>
+      ${gd.algemeneNotitie ? `<span class="tag-opmerking">opmerking</span>` : ""}
       <div class="kanban-datum mono">${next ? fmtDatum(next) : "n.v.t."}</div>
     </div>`;
 }
@@ -2076,6 +2081,7 @@ function dashboardHTML() {
     <div class="toolbar">
       <div class="search-box">
         <input id="zoekInput" placeholder="Zoek op naam, regnr, adres of plaats\u2026" value="${esc(state.search)}" />
+        ${state.search ? `<button class="search-clear" id="btnZoekWissen" title="Zoekopdracht wissen">\u2715</button>` : ""}
       </div>
       <div class="sort-select-wrap">
         <select class="filter-select" id="sortSelect">
@@ -2229,7 +2235,7 @@ function ledenlijstHTML(gezin) {
       <div style="font-size:12.5px;color:var(--text-soft);margin-top:4px;">
         ${esc(p.gezinsrelatie || "\u2014")}${lft !== null ? ` \u00b7 ${lft} jr` : ""}${p.burgerlijkeStaat ? ` \u00b7 ${esc(p.burgerlijkeStaat)}` : ""}${p.kerkelijkeStaat ? ` \u00b7 ${esc(p.kerkelijkeStaat)}` : ""}
       </div>
-      ${p.email || p.telefoon ? `<div style="font-size:12.5px;color:var(--text-soft);margin-top:2px;">${esc(p.email)}${p.email && p.telefoon ? " \u00b7 " : ""}${esc(p.telefoon)}</div>` : ""}
+      ${p.email || p.mobiel ? `<div style="font-size:12.5px;color:var(--text-soft);margin-top:2px;">${esc(p.email)}${p.email && p.mobiel ? " \u00b7 " : ""}${esc(p.mobiel)}</div>` : ""}
     </div>`;
   }).join("");
 }
@@ -2256,6 +2262,7 @@ function detailHTML() {
       <div class="field-row"><label>E-mail</label><input data-field="email" value="${esc(hoofd.email)}" /></div>
       <div class="field-row"><label>Telefoon</label><input data-field="telefoon" value="${esc(hoofd.telefoon)}" /></div>
     </div>
+    <div class="field-row"><label>Mobiel</label><input data-field="mobiel" value="${esc(hoofd.mobiel)}" /></div>
     <div class="field-grid2">
       <div class="field-row"><label>Geboortedatum (gezinshoofd)</label><input type="date" data-field="geboortedatum" value="${esc(hoofd.geboortedatum)}" /></div>
       <div class="field-row"><label>Trouwdatum</label><input type="date" data-field="trouwdatum" value="${esc(hoofd.trouwdatum)}" /></div>
@@ -2272,6 +2279,7 @@ function detailHTML() {
             ${gezin.leden.length} perso${gezin.leden.length === 1 ? "on" : "nen"} op dit adres${lft !== null ? ` \u00b7 gezinshoofd ${lft} jr` : ""}
           </div>
           <div style="color:var(--text-soft);font-size:12.5px;margin-top:1px;">${esc(gezin.adres)}${gezin.postcode ? `, ${esc(gezin.postcode)}` : ""}${gezin.plaats ? ` ${esc(gezin.plaats)}` : ""}</div>
+          ${hoofd.telefoon ? `<div style="color:var(--text-soft);font-size:12.5px;margin-top:1px;">${esc(hoofd.telefoon)}</div>` : ""}
         </div>
         <div style="display:flex;gap:6px;">
           <button class="btn-ghost btn-sm" id="btnToggleEdit" title="Gegevens gezinshoofd bewerken">Bewerken</button>
@@ -2281,7 +2289,7 @@ function detailHTML() {
 
       <div class="quick-actions">
         ${hoofd.email ? `<a class="btn" href="mailto:${encodeURIComponent(hoofd.email)}?subject=${encodeURIComponent("Contact")}" target="_blank">Mail sturen</a>` : ""}
-        ${hoofd.telefoon ? `<a class="btn" href="https://wa.me/${String(hoofd.telefoon).replace(/[^0-9+]/g, "").replace(/^0/, "31")}" target="_blank">WhatsApp</a>` : ""}
+        ${hoofd.mobiel ? `<a class="btn" href="https://wa.me/${String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31")}" target="_blank">WhatsApp</a>` : ""}
         ${scipioUrl(hoofd.regnr) ? `<a class="btn" href="${scipioUrl(hoofd.regnr)}" target="_blank" rel="noopener">Scipio</a>` : ""}
       </div>
 
@@ -2411,7 +2419,7 @@ function detailHTML() {
       <div class="field-row"><label>Bericht</label><textarea id="afspraakTekst" style="min-height:130px;">${esc(state.afspraakDraft.tekst)}</textarea></div>
       <div class="quick-actions">
         <button class="btn-primary" id="btnAfspraakMail" ${hoofd.email ? "" : "disabled title=\"Geen e-mailadres bekend\""}>Open in e-mail</button>
-        <button class="btn-primary" id="btnAfspraakWhatsapp" ${hoofd.telefoon ? "" : "disabled title=\"Geen telefoonnummer bekend\""}>Open in WhatsApp</button>
+        <button class="btn-primary" id="btnAfspraakWhatsapp" ${hoofd.mobiel ? "" : "disabled title=\"Geen mobiel nummer bekend\""}>Open in WhatsApp</button>
       </div>
 
       <hr class="divider" />
@@ -2571,6 +2579,7 @@ function attachEvents() {
         attachDashboardResultEvents();
       });
     }
+    if ($("#btnZoekWissen")) $("#btnZoekWissen").addEventListener("click", () => { state.search = ""; render(); });
   }
 
   if ($("#btnSluitDetail")) $("#btnSluitDetail").addEventListener("click", () => { state.selectedGezinsKey = null; render(); });
@@ -2639,12 +2648,12 @@ function openAfspraakMail(gezinsKey) {
 
 function openAfspraakWhatsapp(gezinsKey) {
   const gezin = findGezin(gezinsKey);
-  if (!gezin || !gezin.gezinshoofd.telefoon) { alert("Voor dit gezinshoofd is geen telefoonnummer bekend."); return; }
+  if (!gezin || !gezin.gezinshoofd.mobiel) { alert("Voor dit gezinshoofd is geen mobiel nummer bekend."); return; }
   const datum = document.getElementById("afspraakDatum").value;
   const tijd = document.getElementById("afspraakTijd").value;
   const tekst = vulSjabloonIn(document.getElementById("afspraakTekst").value, datum, tijd);
-  const telefoon = String(gezin.gezinshoofd.telefoon).replace(/[^0-9+]/g, "").replace(/^0/, "31");
-  window.open(`https://wa.me/${telefoon}?text=${encodeURIComponent(tekst)}`, "_blank");
+  const mobiel = String(gezin.gezinshoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31");
+  window.open(`https://wa.me/${mobiel}?text=${encodeURIComponent(tekst)}`, "_blank");
 }
 
 let autoVergrendelTimer = null;

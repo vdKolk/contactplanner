@@ -117,8 +117,13 @@ installaties en als vangnet in browsers zonder Web Crypto.
 
 **Belangrijk bij elke wijziging die je publiceert:** verhoog `CACHE_VERSIE` in `sw.js`
 (bijv. `contactplanner-v2`), anders blijven bestaande bezoekers op de oude offline-versie
-hangen tot hun service worker ververst. Verhoog in dezelfde stap ook `APP_VERSIE` in `app.js`
-(zelfde nummer), zodat het versienummer onderin het menu klopt.
+hangen tot hun service worker ververst.
+
+Werk daarnaast `APP_VERSIE` in `app.js` bij — het versienummer onderin het menu. Dit is een
+los, semantisch nummer met als notatie `bestaansjaar.maand.releasenr`: het eerste cijfer is
+in welk jaar sinds de start van de app je zit (1 = het eerste jaar), het tweede de
+kalendermaand, en het derde het releasenummer in die maand (begint weer bij 1 in een nieuwe
+maand).
 
 De oorspronkelijke alles-in-één-versie (`contactplanner.html`, gebouwd in Claude) is bij de
 opsplitsing naar deze structuur verwijderd.
