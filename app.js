@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.4"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.5"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
 const STORE_GEZINSDATA = "gezinsdata"; // idem
 const STORE_INSTELLINGEN = "instellingen";
@@ -32,7 +32,7 @@ const BASIS_VELDEN = [
   { key: "postcode", label: "Postcode", re: /postcode/i },
   { key: "plaats", label: "Plaatsnaam", re: /plaats/i },
   { key: "geboortedatum", label: "Geboortedatum", re: /geboorte/i },
-  { key: "trouwdatum", label: "Trouwdatum (optioneel)", re: /trouw|huwelijksdatum/i },
+  { key: "trouwdatum", label: "Huwelijksdatum", re: /trouw|huwelijksdatum/i },
   { key: "gezinsrelatie", label: "Gezinsrelatie", re: /gezinsrelatie/i },
   { key: "burgerlijkeStaat", label: "Burgerlijke staat", re: /burgerlijke/i },
   { key: "kerkelijkeStaat", label: "Kerkelijke staat", re: /kerkelijke/i },
@@ -1132,7 +1132,7 @@ function exporteerExcel() {
       Postcode: p.postcode,
       Plaatsnaam: p.plaats,
       Geboortedatum: p.geboortedatum,
-      Trouwdatum: p.trouwdatum || "",
+      Huwelijksdatum: p.trouwdatum || "",
       "Lft.": berekenLeeftijd(p.geboortedatum) ?? "",
       Gezinsrelatie: p.gezinsrelatie,
       "Burgerlijke staat": p.burgerlijkeStaat,
@@ -1535,7 +1535,7 @@ function handleidingModalHTML() {
         hover voor uitleg) en een gekleurd bolletje (interval: rood = 2x/jaar, oranje = 1x/jaar, groen = om het
         jaar, blauw = aangepast).</p>
 
-        <h4>Bijzonder contactmoment inplannen</h4>
+        <h4>Inplannen — Bijzonder contactmoment</h4>
         <p>Voor iets buiten het gewone ritme, zoals een ziekenhuisopname: plan een datum, soort en notitie in
         bij het gezin. Dit staat los van het reguliere schema. Zodra je het afhandelt met "Gedaan (log contact)"
         komt het als een gewoon contactmoment in de geschiedenis; "Verwijderen" gebruik je als het niet doorgaat.</p>
@@ -1985,8 +1985,10 @@ function kanbanKaartHTML(gezin) {
         <div class="kanban-naam" style="padding-right:16px;">${esc(gezin.gezinshoofd.naam || "Naamloos")}</div>
       </div>
       <div class="kanban-meta">${gezin.leden.length} perso${gezin.leden.length === 1 ? "on" : "nen"}${overigeNamen.length ? ` \u00b7 ${esc(overigeNamen.slice(0, 2).join(", "))}${overigeNamen.length > 2 ? " e.a." : ""}` : ""}</div>
-      ${gd.algemeneNotitie ? `<span class="tag-opmerking">opmerking</span>` : ""}
-      <div class="kanban-datum mono">${next ? fmtDatum(next) : "n.v.t."}</div>
+      <div class="kanban-onder">
+        <div class="kanban-datum mono">${next ? fmtDatum(next) : "n.v.t."}</div>
+        ${gd.algemeneNotitie ? `<span class="tag-opmerking">opmerking</span>` : ""}
+      </div>
     </div>`;
 }
 
@@ -2081,7 +2083,7 @@ function dashboardHTML() {
     <div class="toolbar">
       <div class="search-box">
         <input id="zoekInput" placeholder="Zoek op naam, regnr, adres of plaats\u2026" value="${esc(state.search)}" />
-        ${state.search ? `<button class="search-clear" id="btnZoekWissen" title="Zoekopdracht wissen">\u2715</button>` : ""}
+        <button class="search-clear ${state.search ? "" : "verborgen"}" id="btnZoekWissen" title="Zoekopdracht wissen">\u2715</button>
       </div>
       <div class="sort-select-wrap">
         <select class="filter-select" id="sortSelect">
@@ -2265,7 +2267,7 @@ function detailHTML() {
     <div class="field-row"><label>Mobiel</label><input data-field="mobiel" value="${esc(hoofd.mobiel)}" /></div>
     <div class="field-grid2">
       <div class="field-row"><label>Geboortedatum (gezinshoofd)</label><input type="date" data-field="geboortedatum" value="${esc(hoofd.geboortedatum)}" /></div>
-      <div class="field-row"><label>Trouwdatum</label><input type="date" data-field="trouwdatum" value="${esc(hoofd.trouwdatum)}" /></div>
+      <div class="field-row"><label>Huwelijksdatum</label><input type="date" data-field="trouwdatum" value="${esc(hoofd.trouwdatum)}" /></div>
     </div>
   ` : "";
 
@@ -2295,12 +2297,22 @@ function detailHTML() {
 
       ${contactVelden}
 
+      <div class="detail-minisnav">
+        <button type="button" data-scroll-naar="sectie-leden">Gezinsleden</button>
+        <button type="button" data-scroll-naar="sectie-notitie">Notitie</button>
+        <button type="button" data-scroll-naar="sectie-schema">Schema</button>
+        <button type="button" data-scroll-naar="sectie-loggen">Loggen</button>
+        <button type="button" data-scroll-naar="sectie-geschiedenis">Geschiedenis</button>
+        <button type="button" data-scroll-naar="sectie-bijzonder">Bijzonder</button>
+        <button type="button" data-scroll-naar="sectie-afspraak">Afspraak</button>
+      </div>
+
       <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:8px;">Gezinsleden (${gezin.leden.length})</h3>
+      <h3 id="sectie-leden" style="font-size:16px;margin-bottom:8px;">Gezinsleden (${gezin.leden.length})</h3>
       ${ledenlijstHTML(gezin)}
 
       <hr class="divider" />
-      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Algemene notitie</label>
+      <label id="sectie-notitie" style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Algemene notitie</label>
       <p style="font-size:12px;color:var(--text-soft);margin-top:2px;margin-bottom:6px;">
         Niet gekoppeld aan een datum \u2014 bijvoorbeeld "wil geen contact" of andere blijvende aandachtspunten.
       </p>
@@ -2309,7 +2321,7 @@ function detailHTML() {
       </div>
 
       <hr class="divider" />
-      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Terugkeerschema (voor het hele gezin)</label>
+      <label id="sectie-schema" style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Terugkeerschema (voor het hele gezin)</label>
       <div class="schema-grid" style="margin-top:6px;">
         <div class="schema-opt schema-opt-breed ${gd.schema === "auto" ? "active" : ""}" data-schema="auto">Automatisch — op basis van leeftijd en gezinssamenstelling</div>
         ${[["2x", "2x per jaar"], ["1x", "1x per jaar"], ["0.5x", "Om het jaar"], ["aangepast", "Aangepast"]].map(([val, label]) => `
@@ -2338,7 +2350,44 @@ function detailHTML() {
       </div>
 
       <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:4px;">Bijzonder contactmoment inplannen</h3>
+      <div class="sectie-prominent" id="sectie-loggen">
+        <h3 style="font-size:16px;margin-bottom:8px;">${state.bewerkNotitieId ? "Contactmoment bewerken" : "Contactmoment loggen"}</h3>
+        <p style="font-size:12px;color:var(--text-soft);margin-top:-4px;margin-bottom:10px;">Geldt voor het hele gezin \u2014 je spreekt immers in \u00e9\u00e9n keer iedereen.</p>
+        <div class="field-grid2">
+          <div class="field-row"><label>Datum</label><input type="date" id="noteDatum" value="${esc(state.noteDraft.datum)}" /></div>
+          <div class="field-row"><label>Tijd</label><input type="time" id="noteTijd" value="${esc(state.noteDraft.tijd)}" /></div>
+        </div>
+        <div class="field-row"><label>Soort bezoek</label>
+          <select id="noteSoort">
+            ${SOORTEN_BEZOEK.map((s) => `<option value="${esc(s)}" ${state.noteDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field-row"><label>Notitie</label><textarea id="noteNotitie" placeholder="Korte notitie over het gesprek\u2026">${esc(state.noteDraft.notitie)}</textarea></div>
+        <div class="field-row"><label>Gelezen gedeelte</label><input id="noteGelezen" placeholder="Bijv. Psalm 23" value="${esc(state.noteDraft.gelezen)}" /></div>
+        <div class="quick-actions">
+          <button class="btn-primary" id="btnLogContact">${state.bewerkNotitieId ? "Wijziging opslaan" : "Contactmoment opslaan"}</button>
+          ${state.bewerkNotitieId ? `<button class="btn-ghost" id="btnAnnuleerBewerkNotitie">Annuleren</button>` : ""}
+        </div>
+      </div>
+
+      <hr class="divider" />
+      <h3 id="sectie-geschiedenis" style="font-size:16px;margin-bottom:8px;">Eerdere contactmomenten</h3>
+      ${(gd.historie || []).length === 0 ? `<p style="color:var(--text-soft);font-size:13px;">Nog niets gelogd.</p>` : ""}
+      ${(gd.historie || []).map((n) => `
+        <div class="note-card ${state.bewerkNotitieId === n.id ? "note-card-actief" : ""}">
+          <div style="display:flex;justify-content:space-between;">
+            <span class="note-date">${fmtDatum(n.datum)}${n.tijd ? ` ${esc(n.tijd)}` : ""}${n.soort ? ` <span class="tag-grey">${esc(n.soort)}</span>` : ""}</span>
+            <span style="display:flex;gap:4px;">
+              <button class="btn-ghost btn-sm" data-bewerk-note="${esc(n.id)}">Bewerken</button>
+              <button class="btn-ghost btn-sm btn-danger" data-verwijder-note="${esc(n.id)}">Verwijderen</button>
+            </span>
+          </div>
+          ${n.notitie ? `<div style="font-size:13px;margin-top:6px;">${esc(n.notitie)}</div>` : ""}
+          ${n.gelezen ? `<div style="font-size:12px;color:var(--text-soft);margin-top:4px;">Gelezen: ${esc(n.gelezen)}</div>` : ""}
+        </div>`).join("")}
+
+      <hr class="divider" />
+      <h3 id="sectie-bijzonder" style="font-size:16px;margin-bottom:4px;">Inplannen \u2014 Bijzonder contactmoment</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Voor iets buiten het gewone ritme \u2014 bijvoorbeeld een ziekenhuisopname. Staat los van het reguliere schema hierboven.
       </p>
@@ -2371,42 +2420,7 @@ function detailHTML() {
         </div>` : ""}
 
       <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:8px;">${state.bewerkNotitieId ? "Contactmoment bewerken" : "Contactmoment loggen"}</h3>
-      <p style="font-size:12px;color:var(--text-soft);margin-top:-4px;margin-bottom:10px;">Geldt voor het hele gezin \u2014 je spreekt immers in \u00e9\u00e9n keer iedereen.</p>
-      <div class="field-grid2">
-        <div class="field-row"><label>Datum</label><input type="date" id="noteDatum" value="${esc(state.noteDraft.datum)}" /></div>
-        <div class="field-row"><label>Tijd</label><input type="time" id="noteTijd" value="${esc(state.noteDraft.tijd)}" /></div>
-      </div>
-      <div class="field-row"><label>Soort bezoek</label>
-        <select id="noteSoort">
-          ${SOORTEN_BEZOEK.map((s) => `<option value="${esc(s)}" ${state.noteDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field-row"><label>Notitie</label><textarea id="noteNotitie" placeholder="Korte notitie over het gesprek\u2026">${esc(state.noteDraft.notitie)}</textarea></div>
-      <div class="field-row"><label>Gelezen gedeelte</label><input id="noteGelezen" placeholder="Bijv. Psalm 23" value="${esc(state.noteDraft.gelezen)}" /></div>
-      <div class="quick-actions">
-        <button class="btn-primary" id="btnLogContact">${state.bewerkNotitieId ? "Wijziging opslaan" : "Contactmoment opslaan"}</button>
-        ${state.bewerkNotitieId ? `<button class="btn-ghost" id="btnAnnuleerBewerkNotitie">Annuleren</button>` : ""}
-      </div>
-
-      <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:8px;">Eerdere contactmomenten</h3>
-      ${(gd.historie || []).length === 0 ? `<p style="color:var(--text-soft);font-size:13px;">Nog niets gelogd.</p>` : ""}
-      ${(gd.historie || []).map((n) => `
-        <div class="note-card ${state.bewerkNotitieId === n.id ? "note-card-actief" : ""}">
-          <div style="display:flex;justify-content:space-between;">
-            <span class="note-date">${fmtDatum(n.datum)}${n.tijd ? ` ${esc(n.tijd)}` : ""}${n.soort ? ` <span class="tag-grey">${esc(n.soort)}</span>` : ""}</span>
-            <span style="display:flex;gap:4px;">
-              <button class="btn-ghost btn-sm" data-bewerk-note="${esc(n.id)}">Bewerken</button>
-              <button class="btn-ghost btn-sm btn-danger" data-verwijder-note="${esc(n.id)}">Verwijderen</button>
-            </span>
-          </div>
-          ${n.notitie ? `<div style="font-size:13px;margin-top:6px;">${esc(n.notitie)}</div>` : ""}
-          ${n.gelezen ? `<div style="font-size:12px;color:var(--text-soft);margin-top:4px;">Gelezen: ${esc(n.gelezen)}</div>` : ""}
-        </div>`).join("")}
-
-      <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:4px;">Afspraak inplannen</h3>
+      <h3 id="sectie-afspraak" style="font-size:16px;margin-bottom:4px;">Afspraak inplannen</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Vul een datum/tijd in en pas de tekst zo nodig aan. <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>
         worden bij het openen automatisch vervangen.
@@ -2574,6 +2588,7 @@ function attachEvents() {
     if ($("#zoekInput")) {
       $("#zoekInput").addEventListener("input", (e) => {
         state.search = e.target.value;
+        if ($("#btnZoekWissen")) $("#btnZoekWissen").classList.toggle("verborgen", !state.search);
         document.getElementById("statsRow").innerHTML = statsRowHTML();
         document.getElementById("resultsArea").innerHTML = resultsAreaHTML();
         attachDashboardResultEvents();
@@ -2587,6 +2602,10 @@ function attachEvents() {
   if ($("#btnToggleEdit")) $("#btnToggleEdit").addEventListener("click", () => { state.editingContact = !state.editingContact; render(); });
   if ($("#btnToggleFavorietDetail")) $("#btnToggleFavorietDetail").addEventListener("click", () => toggleFavoriet(state.selectedGezinsKey));
   if ($("#btnVerwijderGezin")) $("#btnVerwijderGezin").addEventListener("click", () => verwijderGezin(state.selectedGezinsKey));
+  $$("[data-scroll-naar]").forEach((el) => el.addEventListener("click", () => {
+    const doel = document.getElementById(el.dataset.scrollNaar);
+    if (doel) doel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
 
   // velden van het gezinshoofd (naam, adres, contactgegevens)
   $$("[data-field]").forEach((el) => el.addEventListener("change", (e) => {
