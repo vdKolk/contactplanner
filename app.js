@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.6"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.7"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -34,6 +34,14 @@ const VERSIE_NOTITIES = {
       "Back-up opslaan kan nu ook via \"Opslaan als\" (zelf een locatie kiezen, bv. een OneDrive-map) in plaats van altijd te downloaden — instelbaar via Instellingen",
     ],
     actie: "Maak een nieuwe import vanuit Scipio en lees die in — dan staan o.a. Mobiel en Huwelijksdatum overal goed gevuld (zie de handleiding voor de importselectie).",
+  },
+  "1.7.7": {
+    nieuw: [
+      "AfspraakPlanner-koppeling: in de Planningweergave gezinnen selecteren en in één keer een aanvraag uitzetten, zodat gemeenteleden zelf een tijdslot kunnen kiezen",
+      "Nieuwe plekhouder [link] in berichtsjablonen, voor de uitnodigingslink naar AfspraakPlanner",
+      "Nieuwe instelling AfspraakPlanner (API-sleutel + basis-URL)",
+    ],
+    actie: "Vul bij Instellingen → AfspraakPlanner je persoonlijke API-sleutel in (eenmalig door de beheerder aangemaakt) voordat je \"Aanvraag uitzetten\" gebruikt.",
   },
 };
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
@@ -76,6 +84,16 @@ const STANDAARD_AFSPRAAK_SJABLOON = {
   naam: "Standaard",
   onderwerp: "Huisbezoek inplannen",
   tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+};
+
+// Standaardsjabloon voor een AfspraakPlanner-uitnodiging (zie afspraakplannerModalHTML).
+// [link] is een derde plekhouder, naast [naam]; [datum]/[tijd] zijn hier niet van toepassing
+// (de ontvanger kiest zelf een moment) en komen dus niet in deze tekst voor.
+const STANDAARD_TIJDSLOT_SJABLOON = {
+  id: "tijdslot-kiezen",
+  naam: "Tijdslot kiezen",
+  onderwerp: "Kies een moment voor een bezoek",
+  tekst: "Beste [naam],\n\nWilt u een moment kiezen dat u schikt? Klik op de link en kies uw tijdslot:\n[link]\n\nMet vriendelijke groet,",
 };
 
 const STATUS_META = {
@@ -719,10 +737,22 @@ const state = {
   bewerkNotitieId: null,
   geplandDraft: { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" },
   afspraakDraft: { onderwerp: "Huisbezoek inplannen", tekst: "", datum: "", tijd: "19:30" },
-  afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }],
+  afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }, { ...STANDAARD_TIJDSLOT_SJABLOON }],
   afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
   mailMethode: "mailto", // mailto | outlook
   backupOpslagMethode: "download", // download | opslaanAls
+  afspraakplannerApiSleutel: "",
+  afspraakplannerBasisUrl: "https://afspraak.hhgputten.nl",
+  selectieModusPlanning: false,
+  geselecteerdeGezinnen: [], // gezinsKeys, alleen in-memory
+  afspraakplannerModalOpen: false,
+  afspraakplannerStap: "samenstellen", // samenstellen | resultaat
+  afspraakplannerOmschrijving: "",
+  afspraakplannerTijdslots: [],
+  afspraakplannerResultaat: null, // { tijdslots, deelnemers } na een succesvolle aanvraag
+  afspraakplannerFout: "",
+  afspraakplannerBezig: false,
+  afspraakplannerSjabloonId: STANDAARD_TIJDSLOT_SJABLOON.id,
   editingContact: false,
   detailTab: "gezin", // gezin | loggen | plannen
   saveState: "idle", // idle | saving | saved | fout
@@ -1538,7 +1568,7 @@ function render() {
     return;
   }
   const breed = state.stage === "dashboard" && (state.weergave === "tabel" || state.weergave === "planning");
-  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + instellingenModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
+  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + instellingenModalHTML() + afspraakplannerModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
   attachEvents();
   if (state.menuOpen) {
     requestAnimationFrame(() => {
@@ -1604,6 +1634,7 @@ function handleidingModalHTML() {
           <li><a href="#hl-schema">Terugkeerschema en de kleurbalk/het bolletje</a></li>
           <li><a href="#hl-bijzonder">Inplannen — Bijzonder contactmoment</a></li>
           <li><a href="#hl-afspraak">Afspraak inplannen en berichtsjablonen</a></li>
+          <li><a href="#hl-afspraakplanner">AfspraakPlanner: zelf een tijdslot laten kiezen</a></li>
           <li><a href="#hl-momenten">Bijzondere momenten</a></li>
           <li><a href="#hl-weergaves">Sorteren en weergaves</a></li>
           <li><a href="#hl-markeren">Markeren</a></li>
@@ -1664,6 +1695,21 @@ function handleidingModalHTML() {
         bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
         standaard mailprogramma van je apparaat (mailto), of direct een nieuw bericht in Outlook op het
         web (Microsoft 365) — instelbaar via menu → Instellingen → E-mail.</p>
+
+        <h4 id="hl-afspraakplanner">AfspraakPlanner: zelf een tijdslot laten kiezen</h4>
+        <p>Wil je niet zelf een datum voorstellen, maar een aantal gezinnen laten kiezen uit
+        dezelfde tijdslots? Ga naar de <strong>Planningweergave</strong> en klik op
+        <strong>"Selecteren"</strong>. Klik daarna de gezinnen aan die je een uitnodiging wilt
+        sturen — onderin verschijnt een balkje met het aantal geselecteerde gezinnen en de knop
+        <strong>"Aanvraag uitzetten"</strong>. Vul de tijdslots in die je aanbiedt en verstuur de
+        aanvraag; per gezin krijg je daarna een link terug die je met één klik als mail of
+        WhatsApp-bericht kunt versturen (met een eigen sjabloon, plekhouder
+        <span class="mono">[link]</span> — zie hierboven). Het gemeentelid kiest zelf een moment
+        via die link; kiest iemand een tijdslot, dan is dat voor de anderen niet meer beschikbaar.
+        <strong>Belangrijk om te weten:</strong> dit is de enige plek in de app die iets naar het
+        internet stuurt — en dan alleen het regnr en het gekozen tijdslot, nooit namen of adressen,
+        en alleen op het moment dat je zelf op "Aanvraag uitzetten" klikt. Werkt dit niet, controleer
+        dan eerst de API-sleutel bij Instellingen → AfspraakPlanner.</p>
 
         <h4 id="hl-momenten">Bijzondere momenten</h4>
         <p>Een apart overzicht met alles wat een kaartje of belletje waard is:</p>
@@ -1809,10 +1855,12 @@ function instellingenModalHTML() {
       <hr class="divider" />
       <h4 style="margin:6px 0 4px;font-size:14.5px;">Berichtsjablonen (afspraak inplannen)</h4>
       <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
-        Voor de mail/WhatsApp-tekst bij "Afspraak inplannen". Gebruik <span class="mono">[naam]</span>,
-        <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> als plekhouders — die vult
-        de app automatisch in. Schrijf je verschillende contacten anders aan? Maak dan gerust meerdere
-        sjablonen; je kiest per afspraak welke je gebruikt.
+        Voor de mail/WhatsApp-tekst bij "Afspraak inplannen" en bij een AfspraakPlanner-uitnodiging.
+        Gebruik <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en
+        <span class="mono">[tijd]</span> als plekhouders — die vult de app automatisch in. Voor een
+        AfspraakPlanner-uitnodiging (waarbij de ontvanger zelf een moment kiest) gebruik je in plaats
+        van datum/tijd de plekhouder <span class="mono">[link]</span>. Schrijf je verschillende
+        contacten anders aan? Maak dan gerust meerdere sjablonen; je kiest per keer welke je gebruikt.
       </p>
       ${state.afspraakSjablonen.map((s) => `
         <div class="sjabloon-editor">
@@ -1823,6 +1871,23 @@ function instellingenModalHTML() {
         </div>
       `).join("")}
       <button class="btn-sm" id="btnSjabloonToevoegen">+ Nieuw sjabloon</button>
+
+      <hr class="divider" />
+      <h4 style="margin:6px 0 4px;font-size:14.5px;">AfspraakPlanner</h4>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
+        Voor "Aanvraag uitzetten" in de Planningweergave: gemeenteleden kiezen daar zelf een
+        tijdslot. Alleen regnr en tijdslot gaan naar deze server, nooit namen of adressen. De
+        beheerder maakt eenmalig een persoonlijke API-sleutel voor je aan; die vul je hier in
+        (net zoals je pin, nooit gedeeld of in de broncode).
+      </p>
+      <div class="field-row">
+        <label>API-sleutel</label>
+        <input type="password" id="instAfspraakplannerSleutel" autocomplete="off" value="${esc(state.afspraakplannerApiSleutel)}" />
+      </div>
+      <div class="field-row">
+        <label>Basis-URL</label>
+        <input type="url" id="instAfspraakplannerUrl" placeholder="https://afspraak.hhgputten.nl" value="${esc(state.afspraakplannerBasisUrl)}" />
+      </div>
     </div>
   </div>`;
 }
@@ -1915,6 +1980,105 @@ function versieMeldingModalHTML() {
           <strong>Actie nodig:</strong> ${esc(notitie.actie)}
         </div>` : ""}
       <button class="btn-primary" id="btnVersieMeldingSluiten">Begrepen, sluiten</button>
+    </div>
+  </div>`;
+}
+
+function afspraakplannerModalHTML() {
+  if (!state.afspraakplannerModalOpen) return "";
+  if (state.afspraakplannerStap === "resultaat" && state.afspraakplannerResultaat) {
+    return afspraakplannerResultaatHTML();
+  }
+  const gezinnen = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
+  return `
+  <div class="modal-overlay" id="afspraakplannerOverlay">
+    <div class="modal-box" style="max-width:520px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">Aanvraag uitzetten</h3>
+        <button class="btn-ghost btn-sm" id="btnSluitAfspraakplanner">✕</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
+        Elk gezinshoofd krijgt een link waarmee ze zelf één van de onderstaande tijdslots kunnen
+        kiezen. Alleen regnr en tijdslot gaan naar de AfspraakPlanner-server, geen namen of adressen.
+      </p>
+
+      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Geselecteerde gezinnen (${gezinnen.length})</label>
+      <div style="margin:4px 0 12px;">
+        ${gezinnen.length === 0 ? `<p style="font-size:12.5px;color:var(--text-soft);">Geen gezinnen meer geselecteerd.</p>` : gezinnen.map((g) => `
+          <span class="tag-grey" style="margin:0 4px 4px 0;display:inline-flex;align-items:center;gap:5px;">
+            ${esc(g.gezinshoofd.naam || "Naamloos")}
+            <button data-verwijder-selectie="${esc(g.gezinsKey)}" style="border:none;background:transparent;padding:0;cursor:pointer;color:var(--text-soft);font-size:12px;">✕</button>
+          </span>
+        `).join("")}
+      </div>
+
+      <div class="field-row">
+        <label>Omschrijving (optioneel, zichtbaar voor het gezin)</label>
+        <input id="afspraakplannerOmschrijving" placeholder="Bijv. Huisbezoek najaar 2026" value="${esc(state.afspraakplannerOmschrijving)}" />
+      </div>
+
+      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Aangeboden tijdslots</label>
+      <div style="margin:6px 0 8px;">
+        ${state.afspraakplannerTijdslots.map((t, i) => `
+          <div class="tijdslot-rij">
+            <input type="date" data-tijdslot-index="${i}" data-tijdslot-veld="datum" value="${esc(t.datum)}" />
+            <input type="time" data-tijdslot-index="${i}" data-tijdslot-veld="start" value="${esc(t.start)}" />
+            <input type="time" data-tijdslot-index="${i}" data-tijdslot-veld="eind" value="${esc(t.eind)}" />
+            <button class="btn-ghost btn-sm btn-danger" data-tijdslot-verwijder="${i}" ${state.afspraakplannerTijdslots.length <= 1 ? `disabled title="Minimaal één tijdslot nodig"` : ""}>✕</button>
+          </div>
+        `).join("")}
+      </div>
+      <button class="btn-sm" id="btnTijdslotToevoegen">+ Tijdslot toevoegen</button>
+
+      ${state.afspraakplannerFout ? `<p style="color:var(--red);font-size:12.5px;margin-top:12px;">${esc(state.afspraakplannerFout)}</p>` : ""}
+
+      <div class="quick-actions" style="margin-top:16px;">
+        <button class="btn-primary" id="btnAfspraakplannerVersturen" ${state.afspraakplannerBezig ? "disabled" : ""}>${state.afspraakplannerBezig ? "Versturen…" : "Aanvraag uitzetten"}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function afspraakplannerResultaatHTML() {
+  const res = state.afspraakplannerResultaat;
+  const sjabloon = haalAfspraakSjabloon(state.afspraakplannerSjabloonId);
+  const gezinnenGeselecteerd = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
+  const rijen = (res.deelnemers || []).map((d) => {
+    const gezin = gezinnenGeselecteerd.find((g) => g.gezinshoofd.regnr === d.regnr);
+    const hoofd = gezin ? gezin.gezinshoofd : null;
+    const naam = hoofd ? (hoofd.naam || "Naamloos") : `Regnr. ${esc(d.regnr)}`;
+    const aanhef = hoofd ? (hoofd.roepnaam || hoofd.naam || "") : "";
+    const ingevuld = pasAfspraakSjabloonToe(sjabloon, aanhef);
+    const tekst = vulSjabloonIn(ingevuld.tekst, "", "", d.link);
+    const mobielClean = hoofd && hoofd.mobiel ? String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31") : "";
+    return `
+      <div class="note-card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <strong>${esc(naam)}</strong>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+          ${hoofd && hoofd.email ? `<a class="btn btn-sm" href="${mailUrl(hoofd.email, ingevuld.onderwerp, tekst)}" target="_blank" rel="noopener">Mail</a>` : ""}
+          ${mobielClean ? `<a class="btn btn-sm" href="https://wa.me/${mobielClean}?text=${encodeURIComponent(tekst)}" target="_blank" rel="noopener">WhatsApp</a>` : ""}
+          ${!hoofd || (!hoofd.email && !mobielClean) ? `<span style="font-size:11.5px;color:var(--text-soft);">Geen e-mail/mobiel — link: <span class="mono">${esc(d.link)}</span></span>` : ""}
+        </span>
+      </div>`;
+  }).join("");
+  return `
+  <div class="modal-overlay" id="afspraakplannerOverlay">
+    <div class="modal-box" style="max-width:540px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">Aanvraag aangemaakt</h3>
+        <button class="btn-ghost btn-sm" id="btnSluitAfspraakplanner">✕</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
+        ${(res.deelnemers || []).length} uitnodiging(en) klaar. Verstuur ze hieronder per gezin.
+      </p>
+      <div class="field-row">
+        <label>Sjabloon</label>
+        <select id="afspraakplannerSjabloonSelect">
+          ${state.afspraakSjablonen.map((s) => `<option value="${esc(s.id)}" ${state.afspraakplannerSjabloonId === s.id ? "selected" : ""}>${esc(s.naam)}</option>`).join("")}
+        </select>
+      </div>
+      ${rijen}
+      <button class="btn-ghost" id="btnAfspraakplannerKlaar" style="margin-top:12px;">Klaar</button>
     </div>
   </div>`;
 }
@@ -2166,8 +2330,11 @@ function kanbanKaartHTML(gezin) {
   const meta = STATUS_META[status];
   const next = berekenVolgendContact(gd, gezin);
   const overigeNamen = gezin.leden.filter((p) => p.regnr !== gezin.gezinshoofd.regnr).map((p) => p.roepnaam || p.naam).filter(Boolean);
+  const selectieModus = state.selectieModusPlanning;
+  const geselecteerd = selectieModus && state.geselecteerdeGezinnen.includes(gezin.gezinsKey);
   return `
-    <div class="kanban-kaart" data-open="${esc(gezin.gezinsKey)}">
+    <div class="kanban-kaart ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
+      ${selectieModus ? `<div class="kanban-select-vinkje">${geselecteerd ? "\u2713" : ""}</div>` : ""}
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
       <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" style="top:4px;right:4px;font-size:16px;" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
       <div style="display:flex;align-items:center;gap:7px;">
@@ -2291,8 +2458,18 @@ function dashboardHTML() {
         <button class="btn-sm ${state.weergave === "tabel" ? "active" : ""}" data-weergave="tabel">Tabel</button>
         <button class="btn-sm ${state.weergave === "planning" ? "active" : ""}" data-weergave="planning">Planning</button>
       </div>
+      ${state.weergave === "planning" ? `
+      <div class="view-toggle">
+        <button class="btn-sm ${state.selectieModusPlanning ? "active" : ""}" id="btnToggleSelectie">Selecteren</button>
+      </div>` : ""}
     </div>
-    <div id="resultsArea">${resultsAreaHTML()}</div>`;
+    <div id="resultsArea">${resultsAreaHTML()}</div>
+    ${state.weergave === "planning" && state.geselecteerdeGezinnen.length > 0 ? `
+    <div class="actiebalk-selectie">
+      <span>${state.geselecteerdeGezinnen.length} geselecteerd</span>
+      <button class="btn-sm" id="btnAfspraakplannerUitzetten">Aanvraag uitzetten</button>
+      <button class="actiebalk-selectie-sluit" id="btnSelectieLeegmaken" title="Selectie wissen">✕</button>
+    </div>` : ""}`;
 }
 
 function attachDashboardResultEvents() {
@@ -2301,6 +2478,13 @@ function attachDashboardResultEvents() {
     state.filterStatus = e.currentTarget.dataset.filter; render();
   }));
   $$("[data-open]").forEach((el) => el.addEventListener("click", (e) => openGezinDetail(e.currentTarget.dataset.open)));
+  $$("[data-select-gezin]").forEach((el) => el.addEventListener("click", (e) => {
+    const key = e.currentTarget.dataset.selectGezin;
+    const idx = state.geselecteerdeGezinnen.indexOf(key);
+    if (idx === -1) state.geselecteerdeGezinnen.push(key);
+    else state.geselecteerdeGezinnen.splice(idx, 1);
+    render();
+  }));
   $$("[data-toggle-favoriet]").forEach((el) => el.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleFavoriet(e.currentTarget.dataset.toggleFavoriet);
@@ -2344,10 +2528,29 @@ function attachDashboardResultEvents() {
 }
 
 function attachSortenWeergaveEvents() {
+  const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   const sortSel = document.getElementById("sortSelect");
   if (sortSel) sortSel.addEventListener("change", (e) => { state.sortBy = e.target.value; state.sortDir = "asc"; render(); });
   $$("[data-weergave]").forEach((el) => el.addEventListener("click", (e) => { state.weergave = e.currentTarget.dataset.weergave; render(); }));
+  if ($("#btnToggleSelectie")) $("#btnToggleSelectie").addEventListener("click", () => {
+    state.selectieModusPlanning = !state.selectieModusPlanning;
+    if (!state.selectieModusPlanning) state.geselecteerdeGezinnen = [];
+    render();
+  });
+  if ($("#btnSelectieLeegmaken")) $("#btnSelectieLeegmaken").addEventListener("click", () => {
+    state.geselecteerdeGezinnen = [];
+    render();
+  });
+  if ($("#btnAfspraakplannerUitzetten")) $("#btnAfspraakplannerUitzetten").addEventListener("click", () => {
+    state.afspraakplannerModalOpen = true;
+    state.afspraakplannerStap = "samenstellen";
+    state.afspraakplannerOmschrijving = "";
+    state.afspraakplannerTijdslots = [{ datum: "", start: "19:00", eind: "19:30" }];
+    state.afspraakplannerResultaat = null;
+    state.afspraakplannerFout = "";
+    render();
+  });
 }
 
 function openGezinDetail(gezinsKey) {
@@ -2734,6 +2937,14 @@ function attachEvents() {
     await veiligOpslaan(() => dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode), "instelling opslaan");
     render();
   }));
+  if ($("#instAfspraakplannerSleutel")) $("#instAfspraakplannerSleutel").addEventListener("change", async (e) => {
+    state.afspraakplannerApiSleutel = e.target.value.trim();
+    await veiligOpslaan(() => dbSetInstelling("afspraakplannerApiSleutel", state.afspraakplannerApiSleutel), "instelling opslaan");
+  });
+  if ($("#instAfspraakplannerUrl")) $("#instAfspraakplannerUrl").addEventListener("change", async (e) => {
+    state.afspraakplannerBasisUrl = e.target.value.trim() || "https://afspraak.hhgputten.nl";
+    await veiligOpslaan(() => dbSetInstelling("afspraakplannerBasisUrl", state.afspraakplannerBasisUrl), "instelling opslaan");
+  });
   $$("[data-sjabloon-veld]").forEach((el) => el.addEventListener("change", async (e) => {
     const sjabloon = state.afspraakSjablonen.find((s) => s.id === e.target.dataset.sjabloonId);
     if (!sjabloon) return;
@@ -2756,6 +2967,43 @@ function attachEvents() {
   if ($("#btnSjabloonToevoegen")) $("#btnSjabloonToevoegen").addEventListener("click", async () => {
     state.afspraakSjablonen.push({ id: uid(), naam: "Nieuw sjabloon", onderwerp: "Huisbezoek inplannen", tekst: "Beste [naam],\n\n" });
     await veiligOpslaan(() => dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen), "sjabloon toevoegen");
+    render();
+  });
+
+  const sluitAfspraakplannerModal = () => {
+    state.afspraakplannerModalOpen = false;
+    state.geselecteerdeGezinnen = [];
+    state.selectieModusPlanning = false;
+    render();
+  };
+  if ($("#btnSluitAfspraakplanner")) $("#btnSluitAfspraakplanner").addEventListener("click", sluitAfspraakplannerModal);
+  if ($("#btnAfspraakplannerKlaar")) $("#btnAfspraakplannerKlaar").addEventListener("click", sluitAfspraakplannerModal);
+  if ($("#afspraakplannerOverlay")) $("#afspraakplannerOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "afspraakplannerOverlay") sluitAfspraakplannerModal(); });
+  $$("[data-verwijder-selectie]").forEach((el) => el.addEventListener("click", (e) => {
+    const key = e.currentTarget.dataset.verwijderSelectie;
+    state.geselecteerdeGezinnen = state.geselecteerdeGezinnen.filter((k) => k !== key);
+    render();
+  }));
+  if ($("#afspraakplannerOmschrijving")) $("#afspraakplannerOmschrijving").addEventListener("input", (e) => { state.afspraakplannerOmschrijving = e.target.value; });
+  $$("[data-tijdslot-veld]").forEach((el) => el.addEventListener("change", (e) => {
+    const i = parseInt(e.currentTarget.dataset.tijdslotIndex, 10);
+    const veld = e.currentTarget.dataset.tijdslotVeld;
+    if (state.afspraakplannerTijdslots[i]) state.afspraakplannerTijdslots[i][veld] = e.target.value;
+  }));
+  $$("[data-tijdslot-verwijder]").forEach((el) => el.addEventListener("click", (e) => {
+    if (state.afspraakplannerTijdslots.length <= 1) return;
+    const i = parseInt(e.currentTarget.dataset.tijdslotVerwijder, 10);
+    state.afspraakplannerTijdslots.splice(i, 1);
+    render();
+  }));
+  if ($("#btnTijdslotToevoegen")) $("#btnTijdslotToevoegen").addEventListener("click", () => {
+    const laatste = state.afspraakplannerTijdslots[state.afspraakplannerTijdslots.length - 1];
+    state.afspraakplannerTijdslots.push({ datum: laatste ? laatste.datum : "", start: "19:00", eind: "19:30" });
+    render();
+  });
+  if ($("#btnAfspraakplannerVersturen")) $("#btnAfspraakplannerVersturen").addEventListener("click", verstuurAfspraakplannerAanvraag);
+  if ($("#afspraakplannerSjabloonSelect")) $("#afspraakplannerSjabloonSelect").addEventListener("change", (e) => {
+    state.afspraakplannerSjabloonId = e.target.value;
     render();
   });
 
@@ -2890,10 +3138,12 @@ function attachEvents() {
   if ($("#btnAfspraakWhatsapp")) $("#btnAfspraakWhatsapp").addEventListener("click", () => openAfspraakWhatsapp(state.selectedGezinsKey));
 }
 
-function vulSjabloonIn(tekst, datumISO, tijd) {
+function vulSjabloonIn(tekst, datumISO, tijd, link) {
   const datumTekst = datumISO ? fmtDatum(datumISO) : "[datum]";
   const tijdTekst = tijd || "[tijd]";
-  return tekst.replace(/\[datum\]/gi, datumTekst).replace(/\[tijd\]/gi, tijdTekst);
+  let resultaat = tekst.replace(/\[datum\]/gi, datumTekst).replace(/\[tijd\]/gi, tijdTekst);
+  if (link) resultaat = resultaat.replace(/\[link\]/gi, link);
+  return resultaat;
 }
 
 function haalAfspraakSjabloon(id) {
@@ -2905,6 +3155,60 @@ function haalAfspraakSjabloon(id) {
 function pasAfspraakSjabloonToe(sjabloon, aanhef) {
   const vulNaamIn = (s) => s.replace(/\[naam\]/gi, aanhef || "");
   return { onderwerp: vulNaamIn(sjabloon.onderwerp), tekst: vulNaamIn(sjabloon.tekst) };
+}
+
+// Enige plek in de hele app die het internet op gaat — en alleen na een bewuste klik op
+// "Aanvraag uitzetten" (of, in een latere fase, "Status vernieuwen"/"Intrekken"). Er gaan nooit
+// namen of adressen over de lijn, alleen regnr en tijdslot (zie afspraakplanner/docs/API.md).
+async function afspraakplannerFetch(pad, opties) {
+  if (!state.afspraakplannerApiSleutel) {
+    throw new Error("Vul eerst een API-sleutel in bij Instellingen → AfspraakPlanner.");
+  }
+  const basis = state.afspraakplannerBasisUrl.replace(/\/+$/, "");
+  const resp = await fetch(basis + "/api" + pad, {
+    ...opties,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${state.afspraakplannerApiSleutel}`,
+      ...(opties && opties.headers),
+    },
+  });
+  let data = null;
+  try { data = await resp.json(); } catch (e) { /* geen of ongeldige JSON-body */ }
+  if (!resp.ok) throw new Error((data && data.error) || `AfspraakPlanner-fout (HTTP ${resp.status})`);
+  return data;
+}
+
+async function verstuurAfspraakplannerAanvraag() {
+  const gezinnen = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
+  if (!gezinnen.length) { state.afspraakplannerFout = "Selecteer minstens één gezin."; render(); return; }
+  const tijdslots = state.afspraakplannerTijdslots
+    .filter((t) => t.datum && t.start && t.eind)
+    .map((t) => ({ start: `${t.datum} ${t.start}:00`, eind: `${t.datum} ${t.eind}:00` }));
+  if (!tijdslots.length) {
+    state.afspraakplannerFout = "Vul minstens één volledig tijdslot in (datum, starttijd en eindtijd).";
+    render();
+    return;
+  }
+  state.afspraakplannerBezig = true;
+  state.afspraakplannerFout = "";
+  render();
+  try {
+    const data = await afspraakplannerFetch("/aanvragen.php", {
+      method: "POST",
+      body: JSON.stringify({
+        omschrijving: state.afspraakplannerOmschrijving || undefined,
+        tijdslots,
+        regnrs: gezinnen.map((g) => g.gezinshoofd.regnr),
+      }),
+    });
+    state.afspraakplannerResultaat = data;
+    state.afspraakplannerStap = "resultaat";
+  } catch (e) {
+    state.afspraakplannerFout = e.message;
+  }
+  state.afspraakplannerBezig = false;
+  render();
 }
 
 // Bouwt de mail-URL volgens de gekozen methode (Instellingen → E-mail): het standaard
@@ -3148,6 +3452,11 @@ function vergrendelNu() {
     if (typeof instellingenMap.afspraakSjabloonId === "string") state.afspraakSjabloonId = instellingenMap.afspraakSjabloonId;
     if (instellingenMap.mailMethode === "mailto" || instellingenMap.mailMethode === "outlook") state.mailMethode = instellingenMap.mailMethode;
     if (instellingenMap.backupOpslagMethode === "download" || instellingenMap.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = instellingenMap.backupOpslagMethode;
+    if (typeof instellingenMap.afspraakplannerApiSleutel === "string") state.afspraakplannerApiSleutel = instellingenMap.afspraakplannerApiSleutel;
+    if (typeof instellingenMap.afspraakplannerBasisUrl === "string" && instellingenMap.afspraakplannerBasisUrl) state.afspraakplannerBasisUrl = instellingenMap.afspraakplannerBasisUrl;
+    if (!state.afspraakSjablonen.some((s) => s.id === STANDAARD_TIJDSLOT_SJABLOON.id)) {
+      state.afspraakSjablonen.push({ ...STANDAARD_TIJDSLOT_SJABLOON });
+    }
     Object.keys(instellingenMap).forEach((sleutel) => {
       if (sleutel.startsWith("mijlpaal-gedaan:")) state.mijlpalenGedaan[sleutel.slice("mijlpaal-gedaan:".length)] = instellingenMap[sleutel];
     });
