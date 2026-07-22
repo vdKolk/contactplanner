@@ -12,7 +12,30 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.5"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.6"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+
+// Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
+// eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
+// wordt de melding stilzwijgend overgeslagen (geen popup, wel de versie als "gezien" opgeslagen).
+const VERSIE_NOTITIES = {
+  "1.7.6": {
+    nieuw: [
+      "Je krijgt voortaan na een update eenmalig een melding te zien met wat er nieuw is (en eventuele acties)",
+      "Gezinsdossier opgesplitst in tabs: Gezin, Loggen, Plannen",
+      "Contactmoment loggen is nu visueel prominent",
+      "\"Bijzonder contactmoment inplannen\" hernoemd naar \"Inplannen — Bijzonder contactmoment\"",
+      "Belafspraak toegevoegd als soort bij Inplannen — Bijzonder contactmoment",
+      "Kruisje om de zoekopdracht te wissen verschijnt nu direct tijdens typen, ook in de Planningweergave",
+      "Opmerking-label in de Planningweergave netjes uitgelijnd naast de datum",
+      "Importlabel \"Trouwdatum (optioneel)\" hernoemd naar \"Huwelijksdatum\"",
+      "Berichtsjablonen voor Afspraak inplannen: meerdere eigen sjablonen maken/beheren via Instellingen, met [naam]/[datum]/[tijd] als plekhouders",
+      "E-mail-instelling toegevoegd: \"Mail sturen\" en \"Open in e-mail\" kunnen naar het standaard mailprogramma of direct naar Outlook op het web (Microsoft 365) — instelbaar via Instellingen",
+      "Index bovenaan de handleiding om snel naar een sectie te springen",
+      "Back-up opslaan kan nu ook via \"Opslaan als\" (zelf een locatie kiezen, bv. een OneDrive-map) in plaats van altijd te downloaden — instelbaar via Instellingen",
+    ],
+    actie: "Maak een nieuwe import vanuit Scipio en lees die in — dan staan o.a. Mobiel en Huwelijksdatum overal goed gevuld (zie de handleiding voor de importselectie).",
+  },
+};
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
 const STORE_GEZINSDATA = "gezinsdata"; // idem
 const STORE_INSTELLINGEN = "instellingen";
@@ -43,6 +66,17 @@ const BASIS_VELDEN = [
 
 const SOORTEN_BEZOEK = ["Huisbezoek", "Doopbezoek", "Huwelijksbezoek", "Ziekenhuisbezoek", "Anders"];
 const SOORTEN_GEPLAND = ["Huisbezoek", "Belafspraak", "Doopbezoek", "Huwelijksbezoek", "Ziekenhuisbezoek", "Anders"];
+
+// Standaard berichtsjabloon voor "Afspraak inplannen" (mail/WhatsApp). [naam], [datum] en [tijd]
+// zijn plekhouders: [naam] wordt ingevuld zodra je een sjabloon kiest/een gezin opent, [datum] en
+// [tijd] pas bij het versturen. Gebruikers beheren hun eigen sjablonen via Instellingen; dit is
+// alleen de eenmalige standaardwaarde bij een schone installatie.
+const STANDAARD_AFSPRAAK_SJABLOON = {
+  id: "standaard",
+  naam: "Standaard",
+  onderwerp: "Huisbezoek inplannen",
+  tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+};
 
 const STATUS_META = {
   nooit: { label: "Nog geen contact", color: "var(--red)", bg: "var(--red-bg)", order: 0, icon: "!", uitleg: "Er is nog geen contactmoment gelogd voor dit gezin." },
@@ -685,6 +719,10 @@ const state = {
   bewerkNotitieId: null,
   geplandDraft: { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" },
   afspraakDraft: { onderwerp: "Huisbezoek inplannen", tekst: "", datum: "", tijd: "19:30" },
+  afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }],
+  afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
+  mailMethode: "mailto", // mailto | outlook
+  backupOpslagMethode: "download", // download | opslaanAls
   editingContact: false,
   detailTab: "gezin", // gezin | loggen | plannen
   saveState: "idle", // idle | saving | saved | fout
@@ -693,6 +731,7 @@ const state = {
   debugOpen: false,
   menuOpen: false,
   handleidingOpen: false,
+  nieuweVersieTonen: false,
   // pin-beveiliging & versleuteling
   vergrendeld: true,
   lockMode: "invoeren", // instellen | invoeren
@@ -757,6 +796,24 @@ async function laadUitKluis() {
   herstelLaatsteContactAlleGezinnen();
   werkMijlpalenCacheBij().catch((e) => logDebug("fout", "Kon mijlpalen-cache niet bijwerken: " + e.message));
   state.stage = state.personen.length ? "dashboard" : "upload";
+  if (state.stage === "dashboard") {
+    controleerNieuweVersie().catch((e) => logDebug("fout", "Kon versie niet controleren: " + e.message));
+  }
+}
+
+// Toont eenmalig een "nieuwe versie"-melding zodra de opgeslagen "laatst geziene versie"
+// afwijkt van APP_VERSIE én er een entry in VERSIE_NOTITIES bestaat. Deze functie draait alleen
+// als state.stage al "dashboard" is (dus met bestaande gegevens) — een nog nooit opgeslagen
+// versie betekent hier dus een bestaande gebruiker die deze functionaliteit voor het eerst
+// tegenkomt, niet een gloednieuwe installatie, en telt daarom ook mee voor de melding.
+async function controleerNieuweVersie() {
+  const gezien = await dbGetInstelling("laatstGezieneVersie");
+  if (gezien === APP_VERSIE) return;
+  if (VERSIE_NOTITIES[APP_VERSIE]) {
+    state.nieuweVersieTonen = true;
+  } else {
+    await dbSetInstelling("laatstGezieneVersie", APP_VERSIE);
+  }
 }
 
 // Zet de versleuteling op met een (nieuwe) pin: nieuw zout, nieuwe sleutel, controlewaarde,
@@ -1162,7 +1219,16 @@ function exporteerExcel() {
   XLSX.writeFile(wb, `contactplanner-export-${todayISO()}.xlsx`);
 }
 
-function exporteerBackup() {
+function downloadBackupBestand(inhoud, bestandsnaam) {
+  const blob = new Blob([inhoud], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = bestandsnaam;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function exporteerBackup() {
   // Versie 3: ook de instellingen gaan mee (behalve de pin — die stel je op een
   // nieuw apparaat opnieuw in). Versie 2 en ouder blijven inleesbaar.
   // De back-up is bewust ONversleuteld: het is het vangnet bij een vergeten pin.
@@ -1179,14 +1245,35 @@ function exporteerBackup() {
       schemaAutoJong: state.schemaAutoJong,
       schemaAutoStel: state.schemaAutoStel,
       schemaAutoAlleen: state.schemaAutoAlleen,
+      afspraakSjablonen: state.afspraakSjablonen,
+      afspraakSjabloonId: state.afspraakSjabloonId,
+      mailMethode: state.mailMethode,
+      backupOpslagMethode: state.backupOpslagMethode,
     },
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = `contactplanner-backup-${todayISO()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
+  const inhoud = JSON.stringify(payload, null, 2);
+  const bestandsnaam = `contactplanner-backup-${todayISO()}.json`;
+
+  if (state.backupOpslagMethode === "opslaanAls" && window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: bestandsnaam,
+        types: [{ description: "JSON-bestand", accept: { "application/json": [".json"] } }],
+      });
+      const schrijfbaar = await handle.createWritable();
+      await schrijfbaar.write(inhoud);
+      await schrijfbaar.close();
+    } catch (e) {
+      if (e.name === "AbortError") return; // gebruiker heeft de dialoog geannuleerd, geen back-up gemaakt
+      logDebug("fout", "Opslaan als is niet gelukt, back-up alsnog gedownload: " + e.message);
+      downloadBackupBestand(inhoud, bestandsnaam);
+    }
+  } else {
+    // Ook de fallback als "Opslaan als" is gekozen maar de browser (bv. Firefox/Safari)
+    // de File System Access API niet ondersteunt.
+    downloadBackupBestand(inhoud, bestandsnaam);
+  }
+
   state.laatsteBackupOp = Date.now();
   veiligOpslaan(() => dbSetInstelling("laatsteBackupOp", state.laatsteBackupOp), "backup-administratie");
 }
@@ -1224,6 +1311,10 @@ function handleBackupImport(e) {
         ["schemaAutoJong", "schemaAutoStel", "schemaAutoAlleen"].forEach((sleutel) => {
           if (typeof inst[sleutel] === "string" && inst[sleutel]) state[sleutel] = inst[sleutel];
         });
+        if (Array.isArray(inst.afspraakSjablonen) && inst.afspraakSjablonen.length) state.afspraakSjablonen = inst.afspraakSjablonen;
+        if (typeof inst.afspraakSjabloonId === "string") state.afspraakSjabloonId = inst.afspraakSjabloonId;
+        if (inst.mailMethode === "mailto" || inst.mailMethode === "outlook") state.mailMethode = inst.mailMethode;
+        if (inst.backupOpslagMethode === "download" || inst.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = inst.backupOpslagMethode;
       }
       const gelukt = await veiligOpslaan(async () => {
         await bewaarGegevens();
@@ -1234,6 +1325,10 @@ function handleBackupImport(e) {
           await dbSetInstelling("schemaAutoJong", state.schemaAutoJong);
           await dbSetInstelling("schemaAutoStel", state.schemaAutoStel);
           await dbSetInstelling("schemaAutoAlleen", state.schemaAutoAlleen);
+          await dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen);
+          await dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId);
+          await dbSetInstelling("mailMethode", state.mailMethode);
+          await dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode);
           await Promise.all(Object.keys(state.mijlpalenGedaan).map((sleutel) =>
             dbSetInstelling("mijlpaal-gedaan:" + sleutel, state.mijlpalenGedaan[sleutel])));
         }
@@ -1443,7 +1538,7 @@ function render() {
     return;
   }
   const breed = state.stage === "dashboard" && (state.weergave === "tabel" || state.weergave === "planning");
-  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + instellingenModalHTML() + sidebarMenuHTML();
+  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + instellingenModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
   attachEvents();
   if (state.menuOpen) {
     requestAnimationFrame(() => {
@@ -1502,7 +1597,23 @@ function handleidingModalHTML() {
       </div>
       <div class="handleiding-inhoud">
 
-        <h4>Excel importeren</h4>
+        <ul class="handleiding-index">
+          <li><a href="#hl-import">Excel importeren</a></li>
+          <li><a href="#hl-gezinshoofd">Gezinnen en gezinshoofd</a></li>
+          <li><a href="#hl-loggen">Contactmoment loggen, bewerken en verwijderen</a></li>
+          <li><a href="#hl-schema">Terugkeerschema en de kleurbalk/het bolletje</a></li>
+          <li><a href="#hl-bijzonder">Inplannen — Bijzonder contactmoment</a></li>
+          <li><a href="#hl-afspraak">Afspraak inplannen en berichtsjablonen</a></li>
+          <li><a href="#hl-momenten">Bijzondere momenten</a></li>
+          <li><a href="#hl-weergaves">Sorteren en weergaves</a></li>
+          <li><a href="#hl-markeren">Markeren</a></li>
+          <li><a href="#hl-notitie">Algemene notitie</a></li>
+          <li><a href="#hl-scipio">Scipio-koppeling</a></li>
+          <li><a href="#hl-beveiliging">Pin-beveiliging en versleuteling</a></li>
+          <li><a href="#hl-systeem">Gegevens en systeem (dit menu)</a></li>
+        </ul>
+
+        <h4 id="hl-import">Excel importeren</h4>
         <p><strong>De export maken in Scipio:</strong></p>
         ${SCIPIO_UITLEG_HTML}
         <p>Je uploadt een Excel-export (bijv. uit Scipio). De app laat je zelf het tabblad en de rij met
@@ -1512,17 +1623,17 @@ function handleidingModalHTML() {
         nieuw is en wie niet meer voorkwam \u2014 die laatste groep verdwijnt niet automatisch, je kiest zelf
         per persoon of je 'm laat staan of verwijdert.</p>
 
-        <h4>Gezinnen en gezinshoofd</h4>
+        <h4 id="hl-gezinshoofd">Gezinnen en gezinshoofd</h4>
         <p>Personen worden gegroepeerd tot gezinnen op basis van <strong>adres + postcode</strong>. Degene met
         Gezinsrelatie "gezinshoofd" bepaalt de naam en contactgegevens die je overal ziet. Alle contactmomenten,
         schema's en notities gelden voor het hele gezin, niet per los persoon.</p>
 
-        <h4>Contactmoment loggen, bewerken en verwijderen</h4>
+        <h4 id="hl-loggen">Contactmoment loggen, bewerken en verwijderen</h4>
         <p>In een gezinsdossier log je een contactmoment met datum, tijd (standaard 19:30), soort bezoek
         (Huisbezoek, Doopbezoek, Huwelijksbezoek, Ziekenhuisbezoek, Anders), een notitie en het gelezen
         gedeelte. Eerdere momenten kun je aanpassen via "Bewerken" (bijv. bij een typefout) of verwijderen.</p>
 
-        <h4>Terugkeerschema en de kleurbalk/het bolletje</h4>
+        <h4 id="hl-schema">Terugkeerschema en de kleurbalk/het bolletje</h4>
         <p>Nieuwe gezinnen staan standaard op <strong>"Automatisch"</strong>: het bezoekinterval wordt dan
         berekend uit de leeftijd van het gezinshoofd en de gezinssamenstelling. Standaard: tot 70 jaar om
         het jaar, vanaf 70 als stel 1x per jaar, en vanaf 70 alleenwonend 2x per jaar. De leeftijdsgrens
@@ -1537,12 +1648,24 @@ function handleidingModalHTML() {
         hover voor uitleg) en een gekleurd bolletje (interval: rood = 2x/jaar, oranje = 1x/jaar, groen = om het
         jaar, blauw = aangepast).</p>
 
-        <h4>Inplannen — Bijzonder contactmoment</h4>
+        <h4 id="hl-bijzonder">Inplannen — Bijzonder contactmoment</h4>
         <p>Voor iets buiten het gewone ritme, zoals een ziekenhuisopname: plan een datum, soort en notitie in
         bij het gezin. Dit staat los van het reguliere schema. Zodra je het afhandelt met "Gedaan (log contact)"
         komt het als een gewoon contactmoment in de geschiedenis; "Verwijderen" gebruik je als het niet doorgaat.</p>
 
-        <h4>Bijzondere momenten</h4>
+        <h4 id="hl-afspraak">Afspraak inplannen en berichtsjablonen</h4>
+        <p>Bij "Afspraak inplannen" open je met één klik een mail of WhatsApp-bericht om iemand te
+        polsen voor een datum. De tekst komt uit een sjabloon met de plekhouders
+        <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>:
+        <span class="mono">[naam]</span> wordt ingevuld zodra je een sjabloon kiest of een gezin opent,
+        <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> pas bij het versturen. Je beheert
+        je eigen sjablonen via menu → Instellingen — handig als je verschillende contacten anders aanspreekt,
+        want je kunt er zoveel maken als je wilt en per afspraak kiezen welke je gebruikt. Ook "Mail sturen"
+        bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
+        standaard mailprogramma van je apparaat (mailto), of direct een nieuw bericht in Outlook op het
+        web (Microsoft 365) — instelbaar via menu → Instellingen → E-mail.</p>
+
+        <h4 id="hl-momenten">Bijzondere momenten</h4>
         <p>Een apart overzicht met alles wat een kaartje of belletje waard is:</p>
         <ul>
           <li><strong>Verjaardagen</strong> \u2014 vanaf een instelbare leeftijd (standaard 70), elk jaar opnieuw.</li>
@@ -1553,25 +1676,25 @@ function handleidingModalHTML() {
         <p>Je filtert op "komende 90 dagen" of "alles", en er verschijnt een rood bolletje bij de knop zodra
         er binnen 14 dagen iets aankomt.</p>
 
-        <h4>Sorteren en weergaves</h4>
+        <h4 id="hl-weergaves">Sorteren en weergaves</h4>
         <p>Boven het overzicht kies je een sortering (urgentie, naam, adres, plaats, laatste/volgend contact)
         en een weergave: Lijst, 2 kolommen, Tabel (met sorteerbare, sleepbare kolommen) of Planning (een
         kanban-bord met kolommen Achterstallig / Komende maand / Dit kwartaal / Komend halfjaar / Verder vooruit).</p>
 
-        <h4>Markeren</h4>
+        <h4 id="hl-markeren">Markeren</h4>
         <p>Met het sterretje rechtsboven op een kaart (of naast de naam in het gezinsdetail) markeer je een
         gezin waar je extra alert op wilt zijn. Via de filterknop "\u2605 Gemarkeerd" boven het overzicht zie je
         in \u00e9\u00e9n klik alle gemarkeerde gezinnen bij elkaar, in elke weergave.</p>
 
-        <h4>Algemene notitie</h4>
+        <h4 id="hl-notitie">Algemene notitie</h4>
         <p>Een vrij tekstveld per gezin, niet gekoppeld aan een datum \u2014 bijvoorbeeld "wil geen contact". Staat
         een gezin hiermee gemarkeerd, dan zie je een geel "opmerking"-label op de kaart.</p>
 
-        <h4>Scipio-koppeling</h4>
+        <h4 id="hl-scipio">Scipio-koppeling</h4>
         <p>Bij elk gezinslid staat een "Scipio"-link die rechtstreeks naar de persoonskaart in Scipio gaat
         (op basis van het Regnr.).</p>
 
-        <h4>Pin-beveiliging en versleuteling</h4>
+        <h4 id="hl-beveiliging">Pin-beveiliging en versleuteling</h4>
         <p>De hele app is met een pin beveiligd; na het invoeren heb je een uur toegang, daarna moet je 'm
         opnieuw invoeren. De gegevens staan bovendien <strong>versleuteld</strong> in de browseropslag
         (AES-256; de sleutel wordt van de pin afgeleid en de pin zelf wordt nergens bewaard). Vanaf het
@@ -1585,7 +1708,7 @@ function handleidingModalHTML() {
         dat zelf goed beveiligd is (eigen account, schermvergrendeling, versleutelde schijf), of kies een
         langere pin \u2014 alle tekens zijn toegestaan.</p>
 
-        <h4>Gegevens en systeem (dit menu)</h4>
+        <h4 id="hl-systeem">Gegevens en systeem (dit menu)</h4>
         <p><strong>Nieuwe Excel-import</strong> ververst de basisgegevens. <strong>Exporteer naar Excel</strong> maakt
         een volledig exportbestand inclusief contactstatus. <strong>Back-up maken/terugzetten</strong> (.json) is je
         vangnet, want alle gegevens staan alleen lokaal in deze browser op deze computer; sinds versie 3
@@ -1596,7 +1719,11 @@ function handleidingModalHTML() {
         gegevens mee te nemen naar een andere computer, browser of naar de online versie. Rechtsboven in de balk zie je
         de back-upstatus: groen betekent dat alles in de laatste back-up staat, oranje dat er wijzigingen
         zijn van na de laatste back-up (of dat er nog nooit een is gemaakt) — klik erop om direct een
-        back-up te downloaden. <strong>Instellingen</strong> bevat de
+        back-up te maken. Standaard wordt die gedownload; via Instellingen → Back-up opslaan kun je
+        in plaats daarvan zelf een locatie kiezen (Chrome/Edge). Bewaar je back-up bij voorkeur niet
+        alléén op dit apparaat: gaat je laptop stuk, kwijt of gestolen, dan is een back-up op diezelfde
+        schijf net zo kwetsbaar — kies daarom bijvoorbeeld een map die met OneDrive synchroniseert, een
+        externe schijf of USB-stick. <strong>Instellingen</strong> bevat verder de
         regels voor het automatische terugkeerschema. <strong>Debug</strong> toont technische logs als er iets
         misgaat. <strong>PIN wijzigen</strong> past je toegangscode aan.</p>
 
@@ -1655,6 +1782,47 @@ function instellingenModalHTML() {
         Nieuwe gezinnen krijgen standaard Automatisch; per gezin pas je dit aan in het gezinsdossier.
       </p>
       <button class="btn-sm" id="btnAllesOpAuto" ${aantalHandmatig === 0 ? "disabled" : ""}>Zet alle gezinnen op Automatisch</button>
+
+      <hr class="divider" />
+      <h4 style="margin:6px 0 4px;font-size:14.5px;">E-mail</h4>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
+        Waar de knoppen "Mail sturen" en "Open in e-mail" naartoe moeten linken.
+      </p>
+      <div class="schema-grid">
+        <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Standaard mailprogramma (mailto)</div>
+        <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook op het web (Microsoft 365)</div>
+      </div>
+
+      <hr class="divider" />
+      <h4 style="margin:6px 0 4px;font-size:14.5px;">Back-up opslaan</h4>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
+        Wat er gebeurt als je op "Back-up maken" klikt. Bewaar je back-up bij voorkeur niet alleen
+        op dit apparaat: gaat je laptop stuk, kwijt of gestolen, dan is een back-up op diezelfde
+        schijf net zo kwetsbaar. "Zelf een locatie kiezen" werkt alleen in Chrome en Edge — in
+        andere browsers wordt de back-up dan alsnog gewoon gedownload.
+      </p>
+      <div class="schema-grid">
+        <div class="schema-opt ${state.backupOpslagMethode === "download" ? "active" : ""}" data-backupopslag="download">Direct downloaden (huidig)</div>
+        <div class="schema-opt ${state.backupOpslagMethode === "opslaanAls" ? "active" : ""}" data-backupopslag="opslaanAls">Zelf een locatie kiezen (Opslaan als)</div>
+      </div>
+
+      <hr class="divider" />
+      <h4 style="margin:6px 0 4px;font-size:14.5px;">Berichtsjablonen (afspraak inplannen)</h4>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
+        Voor de mail/WhatsApp-tekst bij "Afspraak inplannen". Gebruik <span class="mono">[naam]</span>,
+        <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> als plekhouders — die vult
+        de app automatisch in. Schrijf je verschillende contacten anders aan? Maak dan gerust meerdere
+        sjablonen; je kiest per afspraak welke je gebruikt.
+      </p>
+      ${state.afspraakSjablonen.map((s) => `
+        <div class="sjabloon-editor">
+          <div class="field-row"><label>Naam sjabloon</label><input data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="naam" value="${esc(s.naam)}" /></div>
+          <div class="field-row"><label>Onderwerp</label><input data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="onderwerp" value="${esc(s.onderwerp)}" /></div>
+          <div class="field-row"><label>Bericht</label><textarea data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="tekst" style="min-height:100px;">${esc(s.tekst)}</textarea></div>
+          <button class="btn-ghost btn-sm btn-danger" data-sjabloon-verwijder="${esc(s.id)}" ${state.afspraakSjablonen.length <= 1 ? `disabled title="Je hebt minimaal één sjabloon nodig"` : ""}>Sjabloon verwijderen</button>
+        </div>
+      `).join("")}
+      <button class="btn-sm" id="btnSjabloonToevoegen">+ Nieuw sjabloon</button>
     </div>
   </div>`;
 }
@@ -1728,6 +1896,26 @@ function topbarHTML() {
   <div id="foutBanner" class="fout-banner" style="display:${foutBannerTekst ? "flex" : "none"};">
     <span>${esc(foutBannerTekst)}</span>
     <button class="btn-sm" id="btnSluitFoutBanner">\u2715</button>
+  </div>`;
+}
+
+function versieMeldingModalHTML() {
+  const notitie = VERSIE_NOTITIES[APP_VERSIE];
+  if (!state.nieuweVersieTonen || !notitie) return "";
+  return `
+  <div class="modal-overlay" id="versieMeldingOverlay">
+    <div class="modal-box" style="max-width:440px;">
+      <h3 style="margin:0 0 4px;font-size:18px;">Nieuwe versie: ${esc(APP_VERSIE)}</h3>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">Sinds je laatste gebruik is de app bijgewerkt. Dit is er veranderd:</p>
+      <ul style="margin:0 0 14px;padding-left:20px;font-size:13.5px;line-height:1.6;">
+        ${notitie.nieuw.map((r) => `<li>${esc(r)}</li>`).join("")}
+      </ul>
+      ${notitie.actie ? `
+        <div style="background:var(--amber-bg);color:var(--amber);border-radius:8px;padding:10px 12px;font-size:12.5px;margin-bottom:14px;">
+          <strong>Actie nodig:</strong> ${esc(notitie.actie)}
+        </div>` : ""}
+      <button class="btn-primary" id="btnVersieMeldingSluiten">Begrepen, sluiten</button>
+    </div>
   </div>`;
 }
 
@@ -2169,11 +2357,11 @@ function openGezinDetail(gezinsKey) {
   state.noteDraft = { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" };
   state.bewerkNotitieId = null;
   state.geplandDraft = { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
-  const gezin = findGezin(gezinsKey);
-  const aanhef = (gezin && (gezin.gezinshoofd.roepnaam || gezin.gezinshoofd.naam)) || "";
+  const aanhef = aanhefVoorGezin(gezinsKey);
+  const ingevuld = pasAfspraakSjabloonToe(haalAfspraakSjabloon(state.afspraakSjabloonId), aanhef);
   state.afspraakDraft = {
-    onderwerp: "Huisbezoek inplannen",
-    tekst: `Beste ${aanhef},\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken, of heeft u een andere datum die beter uitkomt?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,`,
+    onderwerp: ingevuld.onderwerp,
+    tekst: ingevuld.tekst,
     datum: "",
     tijd: "19:30",
   };
@@ -2293,7 +2481,7 @@ function detailHTML() {
       </div>
 
       <div class="quick-actions">
-        ${hoofd.email ? `<a class="btn" href="mailto:${encodeURIComponent(hoofd.email)}?subject=${encodeURIComponent("Contact")}" target="_blank">Mail sturen</a>` : ""}
+        ${hoofd.email ? `<a class="btn" href="${mailUrl(hoofd.email, "Contact")}" target="_blank" rel="noopener">Mail sturen</a>` : ""}
         ${hoofd.mobiel ? `<a class="btn" href="https://wa.me/${String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31")}" target="_blank">WhatsApp</a>` : ""}
         ${scipioUrl(hoofd.regnr) ? `<a class="btn" href="${scipioUrl(hoofd.regnr)}" target="_blank" rel="noopener">Scipio</a>` : ""}
       </div>
@@ -2424,8 +2612,14 @@ function detailHTML() {
       <h3 style="font-size:16px;margin-bottom:4px;">Afspraak inplannen</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Vul een datum/tijd in en pas de tekst zo nodig aan. <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>
-        worden bij het openen automatisch vervangen.
+        worden bij het openen automatisch vervangen. Sjablonen beheer je via menu → Instellingen.
       </p>
+      <div class="field-row">
+        <label>Sjabloon</label>
+        <select id="afspraakSjabloonSelect">
+          ${state.afspraakSjablonen.map((s) => `<option value="${esc(s.id)}" ${state.afspraakSjabloonId === s.id ? "selected" : ""}>${esc(s.naam)}</option>`).join("")}
+        </select>
+      </div>
       <div class="field-grid2">
         <div class="field-row"><label>Datum</label><input type="date" id="afspraakDatum" value="${esc(state.afspraakDraft.datum)}" /></div>
         <div class="field-row"><label>Tijd</label><input type="time" id="afspraakTijd" value="${esc(state.afspraakDraft.tijd)}" /></div>
@@ -2530,6 +2724,40 @@ function attachEvents() {
     });
   });
   if ($("#btnAllesOpAuto")) $("#btnAllesOpAuto").addEventListener("click", zetAlleGezinnenOpAuto);
+  $$("[data-mailmethode]").forEach((el) => el.addEventListener("click", async (e) => {
+    state.mailMethode = e.currentTarget.dataset.mailmethode;
+    await veiligOpslaan(() => dbSetInstelling("mailMethode", state.mailMethode), "instelling opslaan");
+    render();
+  }));
+  $$("[data-backupopslag]").forEach((el) => el.addEventListener("click", async (e) => {
+    state.backupOpslagMethode = e.currentTarget.dataset.backupopslag;
+    await veiligOpslaan(() => dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode), "instelling opslaan");
+    render();
+  }));
+  $$("[data-sjabloon-veld]").forEach((el) => el.addEventListener("change", async (e) => {
+    const sjabloon = state.afspraakSjablonen.find((s) => s.id === e.target.dataset.sjabloonId);
+    if (!sjabloon) return;
+    sjabloon[e.target.dataset.sjabloonVeld] = e.target.value;
+    await veiligOpslaan(() => dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen), "sjabloon opslaan");
+  }));
+  $$("[data-sjabloon-verwijder]").forEach((el) => el.addEventListener("click", async (e) => {
+    if (state.afspraakSjablonen.length <= 1) return;
+    const id = e.currentTarget.dataset.sjabloonVerwijder;
+    const sjabloon = state.afspraakSjablonen.find((s) => s.id === id);
+    if (!sjabloon || !confirm(`Sjabloon "${sjabloon.naam}" verwijderen?`)) return;
+    state.afspraakSjablonen = state.afspraakSjablonen.filter((s) => s.id !== id);
+    if (state.afspraakSjabloonId === id) state.afspraakSjabloonId = state.afspraakSjablonen[0].id;
+    await veiligOpslaan(async () => {
+      await dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen);
+      await dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId);
+    }, "sjabloon verwijderen");
+    render();
+  }));
+  if ($("#btnSjabloonToevoegen")) $("#btnSjabloonToevoegen").addEventListener("click", async () => {
+    state.afspraakSjablonen.push({ id: uid(), naam: "Nieuw sjabloon", onderwerp: "Huisbezoek inplannen", tekst: "Beste [naam],\n\n" });
+    await veiligOpslaan(() => dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen), "sjabloon toevoegen");
+    render();
+  });
 
   if ($("#btnToonDebug")) $("#btnToonDebug").addEventListener("click", () => { state.debugOpen = true; render(); });
   if ($("#btnHandleiding")) $("#btnHandleiding").addEventListener("click", () => { state.handleidingOpen = true; state.menuOpen = false; render(); });
@@ -2537,6 +2765,13 @@ function attachEvents() {
   if ($("#handleidingOverlay")) $("#handleidingOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "handleidingOverlay") { state.handleidingOpen = false; render(); } });
   if ($("#btnSluitDebug")) $("#btnSluitDebug").addEventListener("click", () => { state.debugOpen = false; render(); });
   if ($("#debugOverlay")) $("#debugOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "debugOverlay") { state.debugOpen = false; render(); } });
+  const sluitVersieMelding = async () => {
+    state.nieuweVersieTonen = false;
+    await veiligOpslaan(() => dbSetInstelling("laatstGezieneVersie", APP_VERSIE), "versie-melding bijwerken");
+    render();
+  };
+  if ($("#btnVersieMeldingSluiten")) $("#btnVersieMeldingSluiten").addEventListener("click", sluitVersieMelding);
+  if ($("#versieMeldingOverlay")) $("#versieMeldingOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "versieMeldingOverlay") sluitVersieMelding(); });
   if ($("#btnKopieerDebug")) $("#btnKopieerDebug").addEventListener("click", () => {
     const tekst = debugLog.map((d) => `[${d.time}] ${d.level.toUpperCase()} ${d.msg}${d.data ? "\n" + d.data : ""}`).join("\n\n");
     navigator.clipboard.writeText(tekst || "(geen logregels)").then(() => alert("Gekopieerd naar klembord.")).catch(() => alert("Kopi\u00ebren is niet gelukt, selecteer de tekst handmatig."));
@@ -2643,6 +2878,14 @@ function attachEvents() {
   if ($("#afspraakTijd")) $("#afspraakTijd").addEventListener("change", (e) => { state.afspraakDraft.tijd = e.target.value; });
   if ($("#afspraakOnderwerp")) $("#afspraakOnderwerp").addEventListener("input", (e) => { state.afspraakDraft.onderwerp = e.target.value; });
   if ($("#afspraakTekst")) $("#afspraakTekst").addEventListener("input", (e) => { state.afspraakDraft.tekst = e.target.value; });
+  if ($("#afspraakSjabloonSelect")) $("#afspraakSjabloonSelect").addEventListener("change", async (e) => {
+    state.afspraakSjabloonId = e.target.value;
+    const ingevuld = pasAfspraakSjabloonToe(haalAfspraakSjabloon(state.afspraakSjabloonId), aanhefVoorGezin(state.selectedGezinsKey));
+    state.afspraakDraft.onderwerp = ingevuld.onderwerp;
+    state.afspraakDraft.tekst = ingevuld.tekst;
+    await veiligOpslaan(() => dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId), "sjabloonkeuze opslaan");
+    render();
+  });
   if ($("#btnAfspraakMail")) $("#btnAfspraakMail").addEventListener("click", () => openAfspraakMail(state.selectedGezinsKey));
   if ($("#btnAfspraakWhatsapp")) $("#btnAfspraakWhatsapp").addEventListener("click", () => openAfspraakWhatsapp(state.selectedGezinsKey));
 }
@@ -2653,6 +2896,33 @@ function vulSjabloonIn(tekst, datumISO, tijd) {
   return tekst.replace(/\[datum\]/gi, datumTekst).replace(/\[tijd\]/gi, tijdTekst);
 }
 
+function haalAfspraakSjabloon(id) {
+  return state.afspraakSjablonen.find((s) => s.id === id) || state.afspraakSjablonen[0] || STANDAARD_AFSPRAAK_SJABLOON;
+}
+
+// Vult [naam] direct in (de aanhef is al bekend zodra je een gezin opent of een sjabloon kiest);
+// [datum] en [tijd] blijven staan als plekhouder tot vulSjabloonIn() ze bij het versturen invult.
+function pasAfspraakSjabloonToe(sjabloon, aanhef) {
+  const vulNaamIn = (s) => s.replace(/\[naam\]/gi, aanhef || "");
+  return { onderwerp: vulNaamIn(sjabloon.onderwerp), tekst: vulNaamIn(sjabloon.tekst) };
+}
+
+// Bouwt de mail-URL volgens de gekozen methode (Instellingen → E-mail): het standaard
+// mailprogramma via mailto:, of een kant-en-klaar compose-venster in Outlook op het web.
+function mailUrl(email, onderwerp, tekst) {
+  if (state.mailMethode === "outlook") {
+    const params = new URLSearchParams({ to: email, subject: onderwerp || "" });
+    if (tekst) params.set("body", tekst);
+    return `https://outlook.office.com/mail/deeplink/compose?${params.toString()}`;
+  }
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(onderwerp || "")}${tekst ? `&body=${encodeURIComponent(tekst)}` : ""}`;
+}
+
+function aanhefVoorGezin(gezinsKey) {
+  const gezin = findGezin(gezinsKey);
+  return (gezin && (gezin.gezinshoofd.roepnaam || gezin.gezinshoofd.naam)) || "";
+}
+
 function openAfspraakMail(gezinsKey) {
   const gezin = findGezin(gezinsKey);
   if (!gezin || !gezin.gezinshoofd.email) { alert("Voor dit gezinshoofd is geen e-mailadres bekend."); return; }
@@ -2660,8 +2930,10 @@ function openAfspraakMail(gezinsKey) {
   const tijd = document.getElementById("afspraakTijd").value;
   const onderwerp = document.getElementById("afspraakOnderwerp").value || "Huisbezoek inplannen";
   const tekst = vulSjabloonIn(document.getElementById("afspraakTekst").value, datum, tijd);
-  const url = `mailto:${encodeURIComponent(gezin.gezinshoofd.email)}?subject=${encodeURIComponent(onderwerp)}&body=${encodeURIComponent(tekst)}`;
-  window.location.href = url;
+  const url = mailUrl(gezin.gezinshoofd.email, onderwerp, tekst);
+  // Outlook op het web is een gewone pagina — in hetzelfde tabblad zou de app zelf verdwijnen.
+  if (state.mailMethode === "outlook") window.open(url, "_blank");
+  else window.location.href = url;
 }
 
 function openAfspraakWhatsapp(gezinsKey) {
@@ -2872,6 +3144,10 @@ function vergrendelNu() {
     ["schemaAutoJong", "schemaAutoStel", "schemaAutoAlleen"].forEach((sleutel) => {
       if (typeof instellingenMap[sleutel] === "string" && instellingenMap[sleutel]) state[sleutel] = instellingenMap[sleutel];
     });
+    if (Array.isArray(instellingenMap.afspraakSjablonen) && instellingenMap.afspraakSjablonen.length) state.afspraakSjablonen = instellingenMap.afspraakSjablonen;
+    if (typeof instellingenMap.afspraakSjabloonId === "string") state.afspraakSjabloonId = instellingenMap.afspraakSjabloonId;
+    if (instellingenMap.mailMethode === "mailto" || instellingenMap.mailMethode === "outlook") state.mailMethode = instellingenMap.mailMethode;
+    if (instellingenMap.backupOpslagMethode === "download" || instellingenMap.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = instellingenMap.backupOpslagMethode;
     Object.keys(instellingenMap).forEach((sleutel) => {
       if (sleutel.startsWith("mijlpaal-gedaan:")) state.mijlpalenGedaan[sleutel.slice("mijlpaal-gedaan:".length)] = instellingenMap[sleutel];
     });
@@ -2911,6 +3187,9 @@ function vergrendelNu() {
       migreerOudeContactgegevens();
       herstelLaatsteContactAlleGezinnen();
       state.stage = personen.length ? "dashboard" : "upload";
+      if (state.stage === "dashboard") {
+        controleerNieuweVersie().catch((e) => logDebug("fout", "Kon versie niet controleren: " + e.message));
+      }
 
       if (!state.pinHash && !state.sleutelCheck) {
         state.vergrendeld = true;
