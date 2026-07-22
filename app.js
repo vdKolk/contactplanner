@@ -42,6 +42,7 @@ const BASIS_VELDEN = [
 ];
 
 const SOORTEN_BEZOEK = ["Huisbezoek", "Doopbezoek", "Huwelijksbezoek", "Ziekenhuisbezoek", "Anders"];
+const SOORTEN_GEPLAND = ["Huisbezoek", "Belafspraak", "Doopbezoek", "Huwelijksbezoek", "Ziekenhuisbezoek", "Anders"];
 
 const STATUS_META = {
   nooit: { label: "Nog geen contact", color: "var(--red)", bg: "var(--red-bg)", order: 0, icon: "!", uitleg: "Er is nog geen contactmoment gelogd voor dit gezin." },
@@ -685,6 +686,7 @@ const state = {
   geplandDraft: { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" },
   afspraakDraft: { onderwerp: "Huisbezoek inplannen", tekst: "", datum: "", tijd: "19:30" },
   editingContact: false,
+  detailTab: "gezin", // gezin | loggen | plannen
   saveState: "idle", // idle | saving | saved | fout
   laatsteWijzigingOp: null, // epoch ms van de laatste geslaagde gegevenswijziging
   laatsteBackupOp: null, // epoch ms van de laatst gemaakte of teruggezette back-up
@@ -2163,6 +2165,7 @@ function attachSortenWeergaveEvents() {
 function openGezinDetail(gezinsKey) {
   state.selectedGezinsKey = gezinsKey;
   state.editingContact = false;
+  state.detailTab = "gezin";
   state.noteDraft = { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" };
   state.bewerkNotitieId = null;
   state.geplandDraft = { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
@@ -2297,22 +2300,18 @@ function detailHTML() {
 
       ${contactVelden}
 
-      <div class="detail-minisnav">
-        <button type="button" data-scroll-naar="sectie-leden">Gezinsleden</button>
-        <button type="button" data-scroll-naar="sectie-notitie">Notitie</button>
-        <button type="button" data-scroll-naar="sectie-schema">Schema</button>
-        <button type="button" data-scroll-naar="sectie-loggen">Loggen</button>
-        <button type="button" data-scroll-naar="sectie-geschiedenis">Geschiedenis</button>
-        <button type="button" data-scroll-naar="sectie-bijzonder">Bijzonder</button>
-        <button type="button" data-scroll-naar="sectie-afspraak">Afspraak</button>
+      <div class="detail-tabs">
+        <button type="button" class="detail-tab ${state.detailTab === "gezin" ? "actief" : ""}" data-detail-tab="gezin">Gezin</button>
+        <button type="button" class="detail-tab ${state.detailTab === "loggen" ? "actief" : ""}" data-detail-tab="loggen">Loggen</button>
+        <button type="button" class="detail-tab ${state.detailTab === "plannen" ? "actief" : ""}" data-detail-tab="plannen">Plannen</button>
       </div>
 
-      <hr class="divider" />
-      <h3 id="sectie-leden" style="font-size:16px;margin-bottom:8px;">Gezinsleden (${gezin.leden.length})</h3>
+      ${state.detailTab === "gezin" ? `
+      <h3 style="font-size:16px;margin-bottom:8px;">Gezinsleden (${gezin.leden.length})</h3>
       ${ledenlijstHTML(gezin)}
 
       <hr class="divider" />
-      <label id="sectie-notitie" style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Algemene notitie</label>
+      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Algemene notitie</label>
       <p style="font-size:12px;color:var(--text-soft);margin-top:2px;margin-bottom:6px;">
         Niet gekoppeld aan een datum \u2014 bijvoorbeeld "wil geen contact" of andere blijvende aandachtspunten.
       </p>
@@ -2321,7 +2320,7 @@ function detailHTML() {
       </div>
 
       <hr class="divider" />
-      <label id="sectie-schema" style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Terugkeerschema (voor het hele gezin)</label>
+      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Terugkeerschema (voor het hele gezin)</label>
       <div class="schema-grid" style="margin-top:6px;">
         <div class="schema-opt schema-opt-breed ${gd.schema === "auto" ? "active" : ""}" data-schema="auto">Automatisch — op basis van leeftijd en gezinssamenstelling</div>
         ${[["2x", "2x per jaar"], ["1x", "1x per jaar"], ["0.5x", "Om het jaar"], ["aangepast", "Aangepast"]].map(([val, label]) => `
@@ -2348,9 +2347,10 @@ function detailHTML() {
         Laatste contact: <strong class="mono">${gd.laatsteContact ? fmtDatum(gd.laatsteContact) : "nog geen"}</strong>
         \u00b7 Berekend volgend contact: <strong class="mono">${next ? fmtDatum(next) : "\u2014"}</strong>
       </div>
+      ` : ""}
 
-      <hr class="divider" />
-      <div class="sectie-prominent" id="sectie-loggen">
+      ${state.detailTab === "loggen" ? `
+      <div class="sectie-prominent">
         <h3 style="font-size:16px;margin-bottom:8px;">${state.bewerkNotitieId ? "Contactmoment bewerken" : "Contactmoment loggen"}</h3>
         <p style="font-size:12px;color:var(--text-soft);margin-top:-4px;margin-bottom:10px;">Geldt voor het hele gezin \u2014 je spreekt immers in \u00e9\u00e9n keer iedereen.</p>
         <div class="field-grid2">
@@ -2371,7 +2371,7 @@ function detailHTML() {
       </div>
 
       <hr class="divider" />
-      <h3 id="sectie-geschiedenis" style="font-size:16px;margin-bottom:8px;">Eerdere contactmomenten</h3>
+      <h3 style="font-size:16px;margin-bottom:8px;">Eerdere contactmomenten</h3>
       ${(gd.historie || []).length === 0 ? `<p style="color:var(--text-soft);font-size:13px;">Nog niets gelogd.</p>` : ""}
       ${(gd.historie || []).map((n) => `
         <div class="note-card ${state.bewerkNotitieId === n.id ? "note-card-actief" : ""}">
@@ -2385,9 +2385,10 @@ function detailHTML() {
           ${n.notitie ? `<div style="font-size:13px;margin-top:6px;">${esc(n.notitie)}</div>` : ""}
           ${n.gelezen ? `<div style="font-size:12px;color:var(--text-soft);margin-top:4px;">Gelezen: ${esc(n.gelezen)}</div>` : ""}
         </div>`).join("")}
+      ` : ""}
 
-      <hr class="divider" />
-      <h3 id="sectie-bijzonder" style="font-size:16px;margin-bottom:4px;">Inplannen \u2014 Bijzonder contactmoment</h3>
+      ${state.detailTab === "plannen" ? `
+      <h3 style="font-size:16px;margin-bottom:4px;">Inplannen \u2014 Bijzonder contactmoment</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Voor iets buiten het gewone ritme \u2014 bijvoorbeeld een ziekenhuisopname. Staat los van het reguliere schema hierboven.
       </p>
@@ -2395,7 +2396,7 @@ function detailHTML() {
         <div class="field-row"><label>Datum</label><input type="date" id="geplandDatum" value="${esc(state.geplandDraft.datum)}" /></div>
         <div class="field-row"><label>Soort</label>
           <select id="geplandSoort">
-            ${SOORTEN_BEZOEK.map((s) => `<option value="${esc(s)}" ${state.geplandDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+            ${SOORTEN_GEPLAND.map((s) => `<option value="${esc(s)}" ${state.geplandDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -2420,7 +2421,7 @@ function detailHTML() {
         </div>` : ""}
 
       <hr class="divider" />
-      <h3 id="sectie-afspraak" style="font-size:16px;margin-bottom:4px;">Afspraak inplannen</h3>
+      <h3 style="font-size:16px;margin-bottom:4px;">Afspraak inplannen</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Vul een datum/tijd in en pas de tekst zo nodig aan. <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>
         worden bij het openen automatisch vervangen.
@@ -2435,6 +2436,7 @@ function detailHTML() {
         <button class="btn-primary" id="btnAfspraakMail" ${hoofd.email ? "" : "disabled title=\"Geen e-mailadres bekend\""}>Open in e-mail</button>
         <button class="btn-primary" id="btnAfspraakWhatsapp" ${hoofd.mobiel ? "" : "disabled title=\"Geen mobiel nummer bekend\""}>Open in WhatsApp</button>
       </div>
+      ` : ""}
 
       <hr class="divider" />
       <button class="btn-ghost btn-danger" id="btnVerwijderGezin">Dit hele gezin verwijderen</button>
@@ -2602,10 +2604,7 @@ function attachEvents() {
   if ($("#btnToggleEdit")) $("#btnToggleEdit").addEventListener("click", () => { state.editingContact = !state.editingContact; render(); });
   if ($("#btnToggleFavorietDetail")) $("#btnToggleFavorietDetail").addEventListener("click", () => toggleFavoriet(state.selectedGezinsKey));
   if ($("#btnVerwijderGezin")) $("#btnVerwijderGezin").addEventListener("click", () => verwijderGezin(state.selectedGezinsKey));
-  $$("[data-scroll-naar]").forEach((el) => el.addEventListener("click", () => {
-    const doel = document.getElementById(el.dataset.scrollNaar);
-    if (doel) doel.scrollIntoView({ behavior: "smooth", block: "start" });
-  }));
+  $$("[data-detail-tab]").forEach((el) => el.addEventListener("click", () => { state.detailTab = el.dataset.detailTab; render(); }));
 
   // velden van het gezinshoofd (naam, adres, contactgegevens)
   $$("[data-field]").forEach((el) => el.addEventListener("change", (e) => {
