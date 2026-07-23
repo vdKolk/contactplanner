@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.7"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.8"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -42,6 +42,21 @@ const VERSIE_NOTITIES = {
       "Nieuwe instelling AfspraakPlanner (API-sleutel + basis-URL)",
     ],
     actie: "Vul bij Instellingen → AfspraakPlanner je persoonlijke API-sleutel in (eenmalig door de beheerder aangemaakt) voordat je \"Aanvraag uitzetten\" gebruikt.",
+  },
+  "1.7.8": {
+    nieuw: [
+      "Lopende AfspraakPlanner-aanvragen volgen: de knop \"Lopende aanvragen\" in de Planningweergave laat zien wie al een tijdslot gekozen heeft",
+      "Een gekozen tijdslot neem je daar met één klik over als gepland bijzonder contactmoment",
+      "Een lopende aanvraag kun je uitbreiden met extra tijdslots en extra gezinnen, en vrije tijdslots kun je intrekken",
+      "Uitnodigingen opnieuw versturen (mail/WhatsApp) voor gezinnen die nog niet gekozen hebben",
+      "Op de gezinskaarten (lijst, 2 kolommen en planbord) zie je nu een label als er een aanvraag uitstaat, en de gekozen datum zodra het gezin gekozen heeft",
+      "Tijdslots snel vullen met \"Wekelijks herhalen\": bijv. elke dinsdag 20:00, tien weken vooruit",
+      "De eindtijd van een tijdslot is voortaan optioneel — laat hem leeg als alleen de starttijd vaststaat",
+      "Tijdslots waarvan de starttijd verstreken is, zijn niet meer kiesbaar en tonen als \"verlopen\"",
+      "Het selectievinkje in de Planningweergave staat nu rechts in het midden van de kaart, los van het markeer-sterretje",
+      "Instellingen en \"Aanvraag uitzetten\" zijn volledige pagina's geworden in plaats van popup-vensters",
+      "Volledige pagina's (Instellingen, Bijzondere momenten, Aanvraag uitzetten) sluit je voortaan met een kruisje rechtsboven",
+    ],
   },
 };
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
@@ -86,7 +101,7 @@ const STANDAARD_AFSPRAAK_SJABLOON = {
   tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
 };
 
-// Standaardsjabloon voor een AfspraakPlanner-uitnodiging (zie afspraakplannerModalHTML).
+// Standaardsjabloon voor een AfspraakPlanner-uitnodiging (zie afspraakplannerPaginaHTML).
 // [link] is een derde plekhouder, naast [naam]; [datum]/[tijd] zijn hier niet van toepassing
 // (de ontvanger kiest zelf een moment) en komen dus niet in deze tekst voor.
 const STANDAARD_TIJDSLOT_SJABLOON = {
@@ -238,6 +253,13 @@ function heeftDringendeMijlpaal(alleenLezen) {
 
 const MIJLPAAL_HORIZON_DAGEN = 90;
 
+// Sluitkruisje voor volledige pagina's (Instellingen, Bijzondere momenten, Aanvraag uitzetten):
+// rechtsboven onder de bovenbalk, zodat het voelt als een venster dat je sluit — sluiten
+// brengt je terug naar het hoofdscherm.
+function paginaSluitKnopHTML(id) {
+  return `<div class="pagina-sluit-rij"><button class="btn-ghost pagina-sluit" id="${id}" title="Sluiten — terug naar het overzicht">✕</button></div>`;
+}
+
 function mijlpaalRijHTML(m, alleenLezen) {
   const typeLabels = { verjaardag: "Verjaardag", huwelijk: "Huwelijksjubileum", gepland: "Gepland" };
   const typeKleuren = {
@@ -281,8 +303,8 @@ function mijlpalenHTML(alleenLezen) {
     : zichtbaar.map((m) => mijlpaalRijHTML(m, alleenLezen)).join("");
 
   return `
-    ${alleenLezen ? "" : `<button class="btn-ghost" id="btnMijlpalenTerug">\u2190 Terug naar overzicht</button>`}
-    <h2 style="font-size:22px;margin:12px 0 4px;">Bijzondere momenten</h2>
+    ${alleenLezen ? "" : paginaSluitKnopHTML("btnMijlpalenTerug")}
+    <h2 style="font-size:22px;margin:0 0 4px;">Bijzondere momenten</h2>
     <p style="color:var(--text-soft);font-size:13px;margin-bottom:16px;">
       Verjaardagen vanaf de ingestelde leeftijd, en huwelijksjubilea in de ingestelde jaren \u2014 zodat je op tijd weet
       wanneer een kaartje of belletje op zijn plaats is.${alleenLezen ? " Namen zijn hier zichtbaar zonder pin; geplande bijzondere contactmomenten en het openen van een gezinsdossier vereisen volledig ontgrendelen." : ""}
@@ -539,6 +561,12 @@ function addMonths(dateISO, months) {
   return toISO(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
+function addDays(dateISO, days) {
+  const d = new Date(dateISO + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return toISO(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
 function intervalMaanden(gd, gezin) {
   const schema = effectiefSchema(gd, gezin);
   if (schema === "2x") return 6;
@@ -745,14 +773,20 @@ const state = {
   afspraakplannerBasisUrl: "https://afspraak.hhgputten.nl",
   selectieModusPlanning: false,
   geselecteerdeGezinnen: [], // gezinsKeys, alleen in-memory
-  afspraakplannerModalOpen: false,
-  afspraakplannerStap: "samenstellen", // samenstellen | resultaat
+  afspraakplannerStap: "samenstellen", // samenstellen | resultaat (op de pagina "Aanvraag uitzetten")
   afspraakplannerOmschrijving: "",
   afspraakplannerTijdslots: [],
   afspraakplannerResultaat: null, // { tijdslots, deelnemers } na een succesvolle aanvraag
   afspraakplannerFout: "",
   afspraakplannerBezig: false,
   afspraakplannerSjabloonId: STANDAARD_TIJDSLOT_SJABLOON.id,
+  afspraakAanvragen: [], // uitgezette aanvragen: { id, omschrijving, aangemaaktOp, deelnemers, status, laatstVernieuwdOp, overgenomen } — versleuteld mee in de kluis
+  aanvragenOverzichtOpen: false,
+  aanvraagStatusBezigId: null, // id van de aanvraag waarvan de status nu wordt opgehaald
+  aanvraagFouten: {}, // id -> foutmelding van de laatste statusaanvraag, alleen in-memory
+  aanvraagSlotDraft: {}, // id -> { datum, start, eind } voor "tijdslot toevoegen", alleen in-memory
+  aanvraagGezinDraft: {}, // id -> gezinsKey voor "gezin toevoegen", alleen in-memory
+  afspraakplannerHerhaalWeken: 4, // aantal weken voor "wekelijks herhalen" in het aanvraagformulier
   editingContact: false,
   detailTab: "gezin", // gezin | loggen | plannen
   saveState: "idle", // idle | saving | saved | fout
@@ -778,7 +812,7 @@ const state = {
   mijlpalenToonAlles: false,
   mijlpalenGedaan: {},
   // automatisch terugkeerschema (instelbaar via menu > Instellingen)
-  instellingenOpen: false,
+  instellingenTerug: null, // stage om naar terug te keren vanaf de instellingenpagina
   schemaAutoLeeftijd: 70,
   schemaAutoJong: "0.5x",
   schemaAutoStel: "1x",
@@ -792,13 +826,15 @@ function findGezin(gezinsKey) { return computeGezinnen().find((g) => g.gezinsKey
 // Zonder Web Crypto (zeldzaam): plat, zoals in eerdere versies, zodat de app blijft werken.
 async function bewaarGegevens() {
   if (cryptoRuntime.sleutel) {
-    const pakket = await versleutelJSON(cryptoRuntime.sleutel, { personen: state.personen, gezinsdata: state.gezinsdata });
+    const pakket = await versleutelJSON(cryptoRuntime.sleutel, { personen: state.personen, gezinsdata: state.gezinsdata, afspraakAanvragen: state.afspraakAanvragen });
     await dbPut(STORE_KLUIS, { naam: "gegevens", iv: pakket.iv, data: pakket.data });
   } else {
     await dbClearAll(STORE_PERSONEN);
     await dbClearAll(STORE_GEZINSDATA);
     await dbPutAll(STORE_PERSONEN, state.personen);
     await dbPutAll(STORE_GEZINSDATA, Object.values(state.gezinsdata));
+    // Zonder kluis (geen Web Crypto): aanvragen dan maar plat bij de instellingen.
+    await dbSetInstelling("afspraakAanvragen", state.afspraakAanvragen);
   }
   await werkMijlpalenCacheBij();
 }
@@ -821,6 +857,7 @@ async function laadUitKluis() {
     const inhoud = await ontsleutelJSON(cryptoRuntime.sleutel, rec);
     state.personen = inhoud.personen || [];
     state.gezinsdata = inhoud.gezinsdata || {};
+    state.afspraakAanvragen = inhoud.afspraakAanvragen || [];
   }
   migreerOudeContactgegevens();
   herstelLaatsteContactAlleGezinnen();
@@ -1267,6 +1304,7 @@ async function exporteerBackup() {
     versie: 3,
     personen: state.personen,
     gezinsdata: state.gezinsdata,
+    afspraakAanvragen: state.afspraakAanvragen,
     instellingen: {
       mijlpalenLeeftijdDrempel: state.mijlpalenLeeftijdDrempel,
       mijlpalenHuwelijksJaren: state.mijlpalenHuwelijksJaren,
@@ -1329,6 +1367,7 @@ function handleBackupImport(e) {
       if (!confirm(`Dit vervangt de huidige lijst (${state.personen.length} personen) door de back-up (${personen.length} personen). Doorgaan?`)) return;
       state.personen = personen;
       state.gezinsdata = gezinsdata;
+      if (Array.isArray(data.afspraakAanvragen)) state.afspraakAanvragen = data.afspraakAanvragen;
       migreerOudeContactgegevens();
       herstelLaatsteContactAlleGezinnen();
       // Instellingen uit de back-up overnemen (versie 3+); de pin blijft buiten de back-up.
@@ -1568,7 +1607,7 @@ function render() {
     return;
   }
   const breed = state.stage === "dashboard" && (state.weergave === "tabel" || state.weergave === "planning");
-  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + instellingenModalHTML() + afspraakplannerModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
+  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + aanvragenOverzichtModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
   attachEvents();
   if (state.menuOpen) {
     requestAnimationFrame(() => {
@@ -1701,15 +1740,34 @@ function handleidingModalHTML() {
         dezelfde tijdslots? Ga naar de <strong>Planningweergave</strong> en klik op
         <strong>"Selecteren"</strong>. Klik daarna de gezinnen aan die je een uitnodiging wilt
         sturen — onderin verschijnt een balkje met het aantal geselecteerde gezinnen en de knop
-        <strong>"Aanvraag uitzetten"</strong>. Vul de tijdslots in die je aanbiedt en verstuur de
+        <strong>"Aanvraag uitzetten"</strong>. Vul de tijdslots in die je aanbiedt (de eindtijd is
+        optioneel — laat die leeg als alleen de starttijd vaststaat) en verstuur de
         aanvraag; per gezin krijg je daarna een link terug die je met één klik als mail of
         WhatsApp-bericht kunt versturen (met een eigen sjabloon, plekhouder
         <span class="mono">[link]</span> — zie hierboven). Het gemeentelid kiest zelf een moment
-        via die link; kiest iemand een tijdslot, dan is dat voor de anderen niet meer beschikbaar.
-        <strong>Belangrijk om te weten:</strong> dit is de enige plek in de app die iets naar het
-        internet stuurt — en dan alleen het regnr en het gekozen tijdslot, nooit namen of adressen,
-        en alleen op het moment dat je zelf op "Aanvraag uitzetten" klikt. Werkt dit niet, controleer
-        dan eerst de API-sleutel bij Instellingen → AfspraakPlanner.</p>
+        via die link; kiest iemand een tijdslot, dan is dat voor de anderen niet meer beschikbaar.</p>
+        <p>Vul je veel tijdslots in hetzelfde ritme in? Gebruik <strong>"Wekelijks herhalen"</strong>:
+        vul één tijdslot in (bijv. dinsdag 20:00), kies het aantal weken en de app vult de rest
+        automatisch aan — dezelfde dag en tijd, week na week.</p>
+        <p>Via <strong>"Lopende aanvragen"</strong> (naast de knop "Selecteren" in de Planningweergave)
+        volg je de uitgezette aanvragen: klik op <strong>"Status vernieuwen"</strong> om te zien wie al
+        een tijdslot gekozen heeft. Een gekozen afspraak zet je daar met de knop
+        <strong>"Zet in planning"</strong> direct als gepland bijzonder contactmoment in het
+        gezinsdossier, zodat hij ook in Bijzondere momenten verschijnt. Op de gezinskaarten in de
+        lijst-, kolommen- en planbordweergave zie je bovendien een label zodra er een aanvraag
+        uitstaat (⏳) en de gekozen datum zodra het gezin een tijdslot heeft gekozen (✓).</p>
+        <p>Een lopende aanvraag kun je daar ook <strong>uitbreiden</strong>: voeg extra tijdslots toe
+        (direct kiesbaar via de al verstuurde links) of extra gezinnen (die krijgen een eigen link).
+        Nog vrije tijdslots kun je <strong>intrekken</strong> als je toch niet meer kunt; een al
+        gekozen tijdslot intrekken kan bewust niet — dat regel je persoonlijk met het gezin. Tijdslots
+        waarvan de starttijd verstreken is, zijn automatisch niet meer kiesbaar en tonen als
+        <em>verlopen</em>. Voor gezinnen die nog niet gekozen hebben kun je de uitnodiging vanuit
+        ditzelfde overzicht opnieuw versturen.
+        <strong>Belangrijk om te weten:</strong> de AfspraakPlanner-koppeling is de enige plek in de
+        app die iets naar het internet stuurt — en dan alleen het regnr en het gekozen tijdslot, nooit
+        namen of adressen, en alleen op het moment dat je zelf op "Aanvraag uitzetten" of "Status
+        vernieuwen" klikt. Werkt dit niet, controleer dan eerst de API-sleutel bij
+        Instellingen → AfspraakPlanner.</p>
 
         <h4 id="hl-momenten">Bijzondere momenten</h4>
         <p>Een apart overzicht met alles wat een kaartje of belletje waard is:</p>
@@ -1786,110 +1844,116 @@ function intervalSelectHTML(id, huidige) {
   </select>`;
 }
 
-function instellingenModalHTML() {
-  if (!state.instellingenOpen) return "";
+function instellingenPaginaHTML() {
   const aantalAuto = Object.values(state.gezinsdata).filter((gd) => gd.schema === "auto").length;
   const aantalHandmatig = Object.values(state.gezinsdata).filter((gd) => gd.schema && gd.schema !== "auto").length;
   return `
-  <div class="modal-overlay" id="instellingenOverlay">
-    <div class="modal-box" style="max-width:560px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h3 style="margin:0;font-size:18px;">Instellingen</h3>
-        <button class="btn-ghost btn-sm" id="btnSluitInstellingen">✕</button>
-      </div>
+    ${paginaSluitKnopHTML("btnInstellingenTerug")}
+    <h2 style="font-size:22px;margin:0 0 4px;">Instellingen</h2>
+    <p style="color:var(--text-soft);font-size:13px;margin-bottom:4px;">
+      Wijzigingen worden direct opgeslagen — er is geen aparte opslaan-knop.
+    </p>
 
-      <h4 style="margin:6px 0 4px;font-size:14.5px;">Automatisch terugkeerschema</h4>
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
-        Gezinnen met schema "Automatisch" krijgen hun bezoekinterval op basis van de leeftijd van het
-        gezinshoofd en de gezinssamenstelling. Elke ouderling werkt anders — stel hieronder je eigen
-        regels in. Boven de leeftijdsgrens zonder partner maar met huisgenoten geldt het stel-interval;
-        is de geboortedatum onbekend, dan geldt het interval van onder de grens.
-      </p>
-      <div class="field-row" style="max-width:220px;">
-        <label>Leeftijdsgrens (leeftijd gezinshoofd)</label>
-        <input type="number" min="1" id="instSchemaLeeftijd" value="${esc(state.schemaAutoLeeftijd)}" />
-      </div>
-      <div class="field-row">
-        <label>Tot de leeftijdsgrens</label>
-        ${intervalSelectHTML("instSchemaJong", state.schemaAutoJong)}
-      </div>
-      <div class="field-row">
-        <label>Vanaf de leeftijdsgrens, met partner (stel)</label>
-        ${intervalSelectHTML("instSchemaStel", state.schemaAutoStel)}
-      </div>
-      <div class="field-row">
-        <label>Vanaf de leeftijdsgrens, alleenwonend</label>
-        ${intervalSelectHTML("instSchemaAlleen", state.schemaAutoAlleen)}
-      </div>
-
-      <hr class="divider" />
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 8px;">
-        ${aantalAuto} gezin(nen) staan op Automatisch, ${aantalHandmatig} op een handmatig schema.
-        Nieuwe gezinnen krijgen standaard Automatisch; per gezin pas je dit aan in het gezinsdossier.
-      </p>
-      <button class="btn-sm" id="btnAllesOpAuto" ${aantalHandmatig === 0 ? "disabled" : ""}>Zet alle gezinnen op Automatisch</button>
-
-      <hr class="divider" />
-      <h4 style="margin:6px 0 4px;font-size:14.5px;">E-mail</h4>
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
-        Waar de knoppen "Mail sturen" en "Open in e-mail" naartoe moeten linken.
-      </p>
-      <div class="schema-grid">
-        <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Standaard mailprogramma (mailto)</div>
-        <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook op het web (Microsoft 365)</div>
-      </div>
-
-      <hr class="divider" />
-      <h4 style="margin:6px 0 4px;font-size:14.5px;">Back-up opslaan</h4>
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
-        Wat er gebeurt als je op "Back-up maken" klikt. Bewaar je back-up bij voorkeur niet alleen
-        op dit apparaat: gaat je laptop stuk, kwijt of gestolen, dan is een back-up op diezelfde
-        schijf net zo kwetsbaar. "Zelf een locatie kiezen" werkt alleen in Chrome en Edge — in
-        andere browsers wordt de back-up dan alsnog gewoon gedownload.
-      </p>
-      <div class="schema-grid">
-        <div class="schema-opt ${state.backupOpslagMethode === "download" ? "active" : ""}" data-backupopslag="download">Direct downloaden (huidig)</div>
-        <div class="schema-opt ${state.backupOpslagMethode === "opslaanAls" ? "active" : ""}" data-backupopslag="opslaanAls">Zelf een locatie kiezen (Opslaan als)</div>
-      </div>
-
-      <hr class="divider" />
-      <h4 style="margin:6px 0 4px;font-size:14.5px;">Berichtsjablonen (afspraak inplannen)</h4>
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
-        Voor de mail/WhatsApp-tekst bij "Afspraak inplannen" en bij een AfspraakPlanner-uitnodiging.
-        Gebruik <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en
-        <span class="mono">[tijd]</span> als plekhouders — die vult de app automatisch in. Voor een
-        AfspraakPlanner-uitnodiging (waarbij de ontvanger zelf een moment kiest) gebruik je in plaats
-        van datum/tijd de plekhouder <span class="mono">[link]</span>. Schrijf je verschillende
-        contacten anders aan? Maak dan gerust meerdere sjablonen; je kiest per keer welke je gebruikt.
-      </p>
-      ${state.afspraakSjablonen.map((s) => `
-        <div class="sjabloon-editor">
-          <div class="field-row"><label>Naam sjabloon</label><input data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="naam" value="${esc(s.naam)}" /></div>
-          <div class="field-row"><label>Onderwerp</label><input data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="onderwerp" value="${esc(s.onderwerp)}" /></div>
-          <div class="field-row"><label>Bericht</label><textarea data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="tekst" style="min-height:100px;">${esc(s.tekst)}</textarea></div>
-          <button class="btn-ghost btn-sm btn-danger" data-sjabloon-verwijder="${esc(s.id)}" ${state.afspraakSjablonen.length <= 1 ? `disabled title="Je hebt minimaal één sjabloon nodig"` : ""}>Sjabloon verwijderen</button>
+    <div class="instellingen-grid">
+      <section class="instellingen-kaart">
+        <h4>Automatisch terugkeerschema</h4>
+        <p class="instellingen-uitleg">
+          Gezinnen met schema "Automatisch" krijgen hun bezoekinterval op basis van de leeftijd van het
+          gezinshoofd en de gezinssamenstelling. Elke ouderling werkt anders — stel hieronder je eigen
+          regels in. Boven de leeftijdsgrens zonder partner maar met huisgenoten geldt het stel-interval;
+          is de geboortedatum onbekend, dan geldt het interval van onder de grens.
+        </p>
+        <div class="field-row" style="max-width:220px;">
+          <label>Leeftijdsgrens (leeftijd gezinshoofd)</label>
+          <input type="number" min="1" id="instSchemaLeeftijd" value="${esc(state.schemaAutoLeeftijd)}" />
         </div>
-      `).join("")}
-      <button class="btn-sm" id="btnSjabloonToevoegen">+ Nieuw sjabloon</button>
+        <div class="field-row">
+          <label>Tot de leeftijdsgrens</label>
+          ${intervalSelectHTML("instSchemaJong", state.schemaAutoJong)}
+        </div>
+        <div class="field-row">
+          <label>Vanaf de leeftijdsgrens, met partner (stel)</label>
+          ${intervalSelectHTML("instSchemaStel", state.schemaAutoStel)}
+        </div>
+        <div class="field-row">
+          <label>Vanaf de leeftijdsgrens, alleenwonend</label>
+          ${intervalSelectHTML("instSchemaAlleen", state.schemaAutoAlleen)}
+        </div>
+        <hr class="divider" />
+        <p class="instellingen-uitleg">
+          ${aantalAuto} gezin(nen) staan op Automatisch, ${aantalHandmatig} op een handmatig schema.
+          Nieuwe gezinnen krijgen standaard Automatisch; per gezin pas je dit aan in het gezinsdossier.
+        </p>
+        <button class="btn-sm" id="btnAllesOpAuto" ${aantalHandmatig === 0 ? "disabled" : ""}>Zet alle gezinnen op Automatisch</button>
+      </section>
 
-      <hr class="divider" />
-      <h4 style="margin:6px 0 4px;font-size:14.5px;">AfspraakPlanner</h4>
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
-        Voor "Aanvraag uitzetten" in de Planningweergave: gemeenteleden kiezen daar zelf een
-        tijdslot. Alleen regnr en tijdslot gaan naar deze server, nooit namen of adressen. De
-        beheerder maakt eenmalig een persoonlijke API-sleutel voor je aan; die vul je hier in
-        (net zoals je pin, nooit gedeeld of in de broncode).
-      </p>
-      <div class="field-row">
-        <label>API-sleutel</label>
-        <input type="password" id="instAfspraakplannerSleutel" autocomplete="off" value="${esc(state.afspraakplannerApiSleutel)}" />
+      <div class="instellingen-kolom">
+        <section class="instellingen-kaart">
+          <h4>E-mail</h4>
+          <p class="instellingen-uitleg">
+            Waar de knoppen "Mail sturen" en "Open in e-mail" naartoe moeten linken.
+          </p>
+          <div class="schema-grid">
+            <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Standaard mailprogramma (mailto)</div>
+            <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook op het web (Microsoft 365)</div>
+          </div>
+        </section>
+
+        <section class="instellingen-kaart">
+          <h4>Back-up opslaan</h4>
+          <p class="instellingen-uitleg">
+            Wat er gebeurt als je op "Back-up maken" klikt. Bewaar je back-up bij voorkeur niet alleen
+            op dit apparaat: gaat je laptop stuk, kwijt of gestolen, dan is een back-up op diezelfde
+            schijf net zo kwetsbaar. "Zelf een locatie kiezen" werkt alleen in Chrome en Edge — in
+            andere browsers wordt de back-up dan alsnog gewoon gedownload.
+          </p>
+          <div class="schema-grid">
+            <div class="schema-opt ${state.backupOpslagMethode === "download" ? "active" : ""}" data-backupopslag="download">Direct downloaden (huidig)</div>
+            <div class="schema-opt ${state.backupOpslagMethode === "opslaanAls" ? "active" : ""}" data-backupopslag="opslaanAls">Zelf een locatie kiezen (Opslaan als)</div>
+          </div>
+        </section>
+
+        <section class="instellingen-kaart">
+          <h4>AfspraakPlanner</h4>
+          <p class="instellingen-uitleg">
+            Voor "Aanvraag uitzetten" in de Planningweergave: gemeenteleden kiezen daar zelf een
+            tijdslot. Alleen regnr en tijdslot gaan naar deze server, nooit namen of adressen.
+            Je persoonlijke API-sleutel vraag je op bij Ruben van der Kolk —
+            <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>. Vul hem hier in en deel hem
+            verder met niemand (net zoals je pin).
+          </p>
+          <div class="field-row">
+            <label>API-sleutel</label>
+            <input type="password" id="instAfspraakplannerSleutel" autocomplete="off" value="${esc(state.afspraakplannerApiSleutel)}" />
+          </div>
+          <div class="field-row">
+            <label>Basis-URL</label>
+            <input type="url" id="instAfspraakplannerUrl" placeholder="https://afspraak.hhgputten.nl" value="${esc(state.afspraakplannerBasisUrl)}" />
+          </div>
+        </section>
       </div>
-      <div class="field-row">
-        <label>Basis-URL</label>
-        <input type="url" id="instAfspraakplannerUrl" placeholder="https://afspraak.hhgputten.nl" value="${esc(state.afspraakplannerBasisUrl)}" />
-      </div>
-    </div>
-  </div>`;
+
+      <section class="instellingen-kaart instellingen-kaart-breed">
+        <h4>Berichtsjablonen (afspraak inplannen)</h4>
+        <p class="instellingen-uitleg">
+          Voor de mail/WhatsApp-tekst bij "Afspraak inplannen" en bij een AfspraakPlanner-uitnodiging.
+          Gebruik <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en
+          <span class="mono">[tijd]</span> als plekhouders — die vult de app automatisch in. Voor een
+          AfspraakPlanner-uitnodiging (waarbij de ontvanger zelf een moment kiest) gebruik je in plaats
+          van datum/tijd de plekhouder <span class="mono">[link]</span>. Schrijf je verschillende
+          contacten anders aan? Maak dan gerust meerdere sjablonen; je kiest per keer welke je gebruikt.
+        </p>
+        ${state.afspraakSjablonen.map((s) => `
+          <div class="sjabloon-editor">
+            <div class="field-row"><label>Naam sjabloon</label><input data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="naam" value="${esc(s.naam)}" /></div>
+            <div class="field-row"><label>Onderwerp</label><input data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="onderwerp" value="${esc(s.onderwerp)}" /></div>
+            <div class="field-row"><label>Bericht</label><textarea data-sjabloon-id="${esc(s.id)}" data-sjabloon-veld="tekst" style="min-height:100px;">${esc(s.tekst)}</textarea></div>
+            <button class="btn-ghost btn-sm btn-danger" data-sjabloon-verwijder="${esc(s.id)}" ${state.afspraakSjablonen.length <= 1 ? `disabled title="Je hebt minimaal één sjabloon nodig"` : ""}>Sjabloon verwijderen</button>
+          </div>
+        `).join("")}
+        <button class="btn-sm" id="btnSjabloonToevoegen">+ Nieuw sjabloon</button>
+      </section>
+    </div>`;
 }
 
 async function zetAlleGezinnenOpAuto() {
@@ -1984,19 +2048,15 @@ function versieMeldingModalHTML() {
   </div>`;
 }
 
-function afspraakplannerModalHTML() {
-  if (!state.afspraakplannerModalOpen) return "";
+function afspraakplannerPaginaHTML() {
   if (state.afspraakplannerStap === "resultaat" && state.afspraakplannerResultaat) {
     return afspraakplannerResultaatHTML();
   }
   const gezinnen = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
   return `
-  <div class="modal-overlay" id="afspraakplannerOverlay">
-    <div class="modal-box" style="max-width:520px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h3 style="margin:0;font-size:18px;">Aanvraag uitzetten</h3>
-        <button class="btn-ghost btn-sm" id="btnSluitAfspraakplanner">✕</button>
-      </div>
+  ${paginaSluitKnopHTML("btnSluitAfspraakplanner")}
+  <div class="pagina-smal">
+      <h2 style="font-size:22px;margin:0 0 4px;">Aanvraag uitzetten</h2>
       <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
         Elk gezinshoofd krijgt een link waarmee ze zelf één van de onderstaande tijdslots kunnen
         kiezen. Alleen regnr en tijdslot gaan naar de AfspraakPlanner-server, geen namen of adressen.
@@ -2019,23 +2079,36 @@ function afspraakplannerModalHTML() {
 
       <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Aangeboden tijdslots</label>
       <div style="margin:6px 0 8px;">
+        <div class="tijdslot-rij tijdslot-koppen">
+          <span>Datum</span><span>Van</span><span>Tot (optioneel)</span><span></span>
+        </div>
         ${state.afspraakplannerTijdslots.map((t, i) => `
           <div class="tijdslot-rij">
             <input type="date" data-tijdslot-index="${i}" data-tijdslot-veld="datum" value="${esc(t.datum)}" />
             <input type="time" data-tijdslot-index="${i}" data-tijdslot-veld="start" value="${esc(t.start)}" />
-            <input type="time" data-tijdslot-index="${i}" data-tijdslot-veld="eind" value="${esc(t.eind)}" />
+            <input type="time" data-tijdslot-index="${i}" data-tijdslot-veld="eind" value="${esc(t.eind)}" title="Eindtijd (optioneel) — laat leeg als alleen de starttijd vaststaat" />
             <button class="btn-ghost btn-sm btn-danger" data-tijdslot-verwijder="${i}" ${state.afspraakplannerTijdslots.length <= 1 ? `disabled title="Minimaal één tijdslot nodig"` : ""}>✕</button>
           </div>
         `).join("")}
       </div>
-      <button class="btn-sm" id="btnTijdslotToevoegen">+ Tijdslot toevoegen</button>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-sm" id="btnTijdslotToevoegen">+ Tijdslot toevoegen</button>
+        <span style="display:inline-flex;gap:5px;align-items:center;font-size:12px;color:var(--text-soft);">
+          <button class="btn-sm" id="btnTijdslotHerhalen" title="Herhaalt het laatst ingevulde tijdslot wekelijks op dezelfde dag en tijd">↻ Wekelijks herhalen,</button>
+          <input type="number" min="2" max="52" id="tijdslotHerhaalWeken" value="${esc(state.afspraakplannerHerhaalWeken)}" style="width:52px;padding:6px 7px;border-radius:8px;border:1px solid var(--border);font-size:13px;" />
+          weken totaal
+        </span>
+      </div>
+      <p style="font-size:11.5px;color:var(--text-soft);margin:6px 0 0;">
+        Tip: vul één tijdslot in (bijv. dinsdag 20:00) en klik op "Wekelijks herhalen" — de app vult
+        dan dezelfde dag en tijd voor de opgegeven weken in.
+      </p>
 
       ${state.afspraakplannerFout ? `<p style="color:var(--red);font-size:12.5px;margin-top:12px;">${esc(state.afspraakplannerFout)}</p>` : ""}
 
       <div class="quick-actions" style="margin-top:16px;">
         <button class="btn-primary" id="btnAfspraakplannerVersturen" ${state.afspraakplannerBezig ? "disabled" : ""}>${state.afspraakplannerBezig ? "Versturen…" : "Aanvraag uitzetten"}</button>
       </div>
-    </div>
   </div>`;
 }
 
@@ -2062,12 +2135,9 @@ function afspraakplannerResultaatHTML() {
       </div>`;
   }).join("");
   return `
-  <div class="modal-overlay" id="afspraakplannerOverlay">
-    <div class="modal-box" style="max-width:540px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h3 style="margin:0;font-size:18px;">Aanvraag aangemaakt</h3>
-        <button class="btn-ghost btn-sm" id="btnSluitAfspraakplanner">✕</button>
-      </div>
+  ${paginaSluitKnopHTML("btnSluitAfspraakplanner")}
+  <div class="pagina-smal">
+      <h2 style="font-size:22px;margin:0 0 4px;">Aanvraag aangemaakt</h2>
       <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
         ${(res.deelnemers || []).length} uitnodiging(en) klaar. Verstuur ze hieronder per gezin.
       </p>
@@ -2078,8 +2148,11 @@ function afspraakplannerResultaatHTML() {
         </select>
       </div>
       ${rijen}
-      <button class="btn-ghost" id="btnAfspraakplannerKlaar" style="margin-top:12px;">Klaar</button>
-    </div>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:12px 0 0;">
+        Je vindt deze aanvraag later terug via <strong>"Lopende aanvragen"</strong> in de
+        Planningweergave — daar zie je ook wie al een tijdslot gekozen heeft.
+      </p>
+      <button class="btn-primary" id="btnAfspraakplannerKlaar" style="margin-top:12px;">Klaar</button>
   </div>`;
 }
 
@@ -2117,6 +2190,8 @@ function mainHTML() {
   if (state.stage === "importReport") return importReportHTML();
   if (state.stage === "dashboard") return dashboardHTML();
   if (state.stage === "mijlpalen") return mijlpalenHTML();
+  if (state.stage === "instellingen") return instellingenPaginaHTML();
+  if (state.stage === "aanvraagUitzetten") return afspraakplannerPaginaHTML();
   return "";
 }
 
@@ -2333,7 +2408,7 @@ function kanbanKaartHTML(gezin) {
   const selectieModus = state.selectieModusPlanning;
   const geselecteerd = selectieModus && state.geselecteerdeGezinnen.includes(gezin.gezinsKey);
   return `
-    <div class="kanban-kaart ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
+    <div class="kanban-kaart ${selectieModus ? "kanban-kaart-selectiemodus" : ""} ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
       ${selectieModus ? `<div class="kanban-select-vinkje">${geselecteerd ? "\u2713" : ""}</div>` : ""}
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
       <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" style="top:4px;right:4px;font-size:16px;" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
@@ -2346,6 +2421,7 @@ function kanbanKaartHTML(gezin) {
         <div class="kanban-datum mono">${next ? fmtDatum(next) : "n.v.t."}</div>
         ${gd.algemeneNotitie ? `<span class="tag-opmerking">opmerking</span>` : ""}
       </div>
+      ${afspraakBadgeHTML(gezin)}
     </div>`;
 }
 
@@ -2461,6 +2537,7 @@ function dashboardHTML() {
       ${state.weergave === "planning" ? `
       <div class="view-toggle">
         <button class="btn-sm ${state.selectieModusPlanning ? "active" : ""}" id="btnToggleSelectie">Selecteren</button>
+        <button class="btn-sm" id="btnLopendeAanvragen">Lopende aanvragen${state.afspraakAanvragen.length ? ` (${state.afspraakAanvragen.length})` : ""}</button>
       </div>` : ""}
     </div>
     <div id="resultsArea">${resultsAreaHTML()}</div>
@@ -2543,10 +2620,10 @@ function attachSortenWeergaveEvents() {
     render();
   });
   if ($("#btnAfspraakplannerUitzetten")) $("#btnAfspraakplannerUitzetten").addEventListener("click", () => {
-    state.afspraakplannerModalOpen = true;
+    state.stage = "aanvraagUitzetten";
     state.afspraakplannerStap = "samenstellen";
     state.afspraakplannerOmschrijving = "";
-    state.afspraakplannerTijdslots = [{ datum: "", start: "19:00", eind: "19:30" }];
+    state.afspraakplannerTijdslots = [{ datum: "", start: "19:00", eind: "" }];
     state.afspraakplannerResultaat = null;
     state.afspraakplannerFout = "";
     render();
@@ -2603,6 +2680,7 @@ function famCardHTML(gezin) {
         ${laatste && laatste.soort ? `<span class="tag-grey">laatst: ${esc(laatste.soort)}</span>` : ""}
         ${gd.algemeneNotitie ? `<span class="tag-opmerking">opmerking</span>` : ""}
         ${gd.gepland && gd.gepland.length ? `<span class="tag-opmerking" style="background:var(--red-bg);color:var(--red);">gepland: ${esc(gd.gepland[0].soort)} (${fmtDatum(gd.gepland[0].datum)})</span>` : ""}
+        ${afspraakBadgeHTML(gezin)}
         ${alleWeg ? `<span class="tag-grey">gezin niet meer in laatste import</span>` : ""}
         ${deelsGewijzigd ? `<span class="tag-grey">samenstelling gewijzigd</span>` : ""}
       </div>
@@ -2912,9 +2990,16 @@ function attachEvents() {
   if ($("#btnMijlpalenTerug")) $("#btnMijlpalenTerug").addEventListener("click", () => { state.stage = "dashboard"; render(); });
   attachMijlpalenEvents();
 
-  if ($("#btnInstellingen")) $("#btnInstellingen").addEventListener("click", () => { state.instellingenOpen = true; state.menuOpen = false; render(); });
-  if ($("#btnSluitInstellingen")) $("#btnSluitInstellingen").addEventListener("click", () => { state.instellingenOpen = false; render(); });
-  if ($("#instellingenOverlay")) $("#instellingenOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "instellingenOverlay") { state.instellingenOpen = false; render(); } });
+  if ($("#btnInstellingen")) $("#btnInstellingen").addEventListener("click", () => {
+    if (state.stage !== "instellingen") state.instellingenTerug = state.stage;
+    state.stage = "instellingen";
+    state.menuOpen = false;
+    render();
+  });
+  if ($("#btnInstellingenTerug")) $("#btnInstellingenTerug").addEventListener("click", () => {
+    state.stage = state.instellingenTerug || (state.personen.length ? "dashboard" : "upload");
+    render();
+  });
   if ($("#instSchemaLeeftijd")) $("#instSchemaLeeftijd").addEventListener("change", async (e) => {
     const n = parseInt(e.target.value, 10);
     if (n > 0) { state.schemaAutoLeeftijd = n; await veiligOpslaan(() => dbSetInstelling("schemaAutoLeeftijd", n), "instelling opslaan"); }
@@ -2970,15 +3055,14 @@ function attachEvents() {
     render();
   });
 
-  const sluitAfspraakplannerModal = () => {
-    state.afspraakplannerModalOpen = false;
+  const sluitAfspraakplannerPagina = () => {
+    state.stage = "dashboard";
     state.geselecteerdeGezinnen = [];
     state.selectieModusPlanning = false;
     render();
   };
-  if ($("#btnSluitAfspraakplanner")) $("#btnSluitAfspraakplanner").addEventListener("click", sluitAfspraakplannerModal);
-  if ($("#btnAfspraakplannerKlaar")) $("#btnAfspraakplannerKlaar").addEventListener("click", sluitAfspraakplannerModal);
-  if ($("#afspraakplannerOverlay")) $("#afspraakplannerOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "afspraakplannerOverlay") sluitAfspraakplannerModal(); });
+  if ($("#btnSluitAfspraakplanner")) $("#btnSluitAfspraakplanner").addEventListener("click", sluitAfspraakplannerPagina);
+  if ($("#btnAfspraakplannerKlaar")) $("#btnAfspraakplannerKlaar").addEventListener("click", sluitAfspraakplannerPagina);
   $$("[data-verwijder-selectie]").forEach((el) => el.addEventListener("click", (e) => {
     const key = e.currentTarget.dataset.verwijderSelectie;
     state.geselecteerdeGezinnen = state.geselecteerdeGezinnen.filter((k) => k !== key);
@@ -2998,7 +3082,27 @@ function attachEvents() {
   }));
   if ($("#btnTijdslotToevoegen")) $("#btnTijdslotToevoegen").addEventListener("click", () => {
     const laatste = state.afspraakplannerTijdslots[state.afspraakplannerTijdslots.length - 1];
-    state.afspraakplannerTijdslots.push({ datum: laatste ? laatste.datum : "", start: "19:00", eind: "19:30" });
+    state.afspraakplannerTijdslots.push({ datum: laatste ? laatste.datum : "", start: "19:00", eind: "" });
+    render();
+  });
+  if ($("#tijdslotHerhaalWeken")) $("#tijdslotHerhaalWeken").addEventListener("change", (e) => {
+    const n = parseInt(e.target.value, 10);
+    if (n >= 2 && n <= 52) state.afspraakplannerHerhaalWeken = n;
+  });
+  if ($("#btnTijdslotHerhalen")) $("#btnTijdslotHerhalen").addEventListener("click", () => {
+    const basis = [...state.afspraakplannerTijdslots].reverse().find((t) => t.datum && t.start);
+    if (!basis) {
+      state.afspraakplannerFout = "Vul eerst een tijdslot met datum en starttijd in; dat wordt wekelijks herhaald.";
+      render();
+      return;
+    }
+    state.afspraakplannerFout = "";
+    const bestaand = new Set(state.afspraakplannerTijdslots.map((t) => `${t.datum} ${t.start}`));
+    for (let week = 1; week < state.afspraakplannerHerhaalWeken; week++) {
+      const datum = addDays(basis.datum, week * 7);
+      if (bestaand.has(`${datum} ${basis.start}`)) continue;
+      state.afspraakplannerTijdslots.push({ datum, start: basis.start, eind: basis.eind });
+    }
     render();
   });
   if ($("#btnAfspraakplannerVersturen")) $("#btnAfspraakplannerVersturen").addEventListener("click", verstuurAfspraakplannerAanvraag);
@@ -3006,6 +3110,43 @@ function attachEvents() {
     state.afspraakplannerSjabloonId = e.target.value;
     render();
   });
+
+  if ($("#btnLopendeAanvragen")) $("#btnLopendeAanvragen").addEventListener("click", () => { state.aanvragenOverzichtOpen = true; render(); });
+  if ($("#btnSluitAanvragen")) $("#btnSluitAanvragen").addEventListener("click", () => { state.aanvragenOverzichtOpen = false; render(); });
+  if ($("#aanvragenOverlay")) $("#aanvragenOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "aanvragenOverlay") { state.aanvragenOverzichtOpen = false; render(); } });
+  $$("[data-aanvraag-vernieuw]").forEach((el) => el.addEventListener("click", (e) => {
+    vernieuwAanvraagStatus(parseInt(e.currentTarget.dataset.aanvraagVernieuw, 10));
+  }));
+  $$("[data-aanvraag-verwijder]").forEach((el) => el.addEventListener("click", (e) => {
+    verwijderAanvraagLokaal(parseInt(e.currentTarget.dataset.aanvraagVerwijder, 10));
+  }));
+  $$("[data-overneem-aanvraag]").forEach((el) => el.addEventListener("click", (e) => {
+    zetGekozenSlotInPlanning(parseInt(e.currentTarget.dataset.overneemAanvraag, 10), e.currentTarget.dataset.overneemRegnr);
+  }));
+  $$("[data-open-regnr]").forEach((el) => el.addEventListener("click", (e) => {
+    const gezin = computeGezinnen().find((g) => g.gezinshoofd.regnr === e.currentTarget.dataset.openRegnr);
+    if (!gezin) return;
+    state.aanvragenOverzichtOpen = false;
+    openGezinDetail(gezin.gezinsKey);
+  }));
+  $$("[data-slot-intrek-aanvraag]").forEach((el) => el.addEventListener("click", (e) => {
+    trekTijdslotIn(parseInt(e.currentTarget.dataset.slotIntrekAanvraag, 10), parseInt(e.currentTarget.dataset.slotIntrekId, 10));
+  }));
+  $$("[data-aanvraag-slotdraft]").forEach((el) => el.addEventListener("change", (e) => {
+    const id = parseInt(e.currentTarget.dataset.aanvraagSlotdraft, 10);
+    const draft = state.aanvraagSlotDraft[id] || { datum: "", start: "19:00", eind: "" };
+    draft[e.currentTarget.dataset.slotdraftVeld] = e.target.value;
+    state.aanvraagSlotDraft[id] = draft;
+  }));
+  $$("[data-slot-toevoegen]").forEach((el) => el.addEventListener("click", (e) => {
+    voegTijdslotToeAanAanvraag(parseInt(e.currentTarget.dataset.slotToevoegen, 10));
+  }));
+  $$("[data-aanvraag-gezindraft]").forEach((el) => el.addEventListener("change", (e) => {
+    state.aanvraagGezinDraft[parseInt(e.currentTarget.dataset.aanvraagGezindraft, 10)] = e.target.value;
+  }));
+  $$("[data-gezin-toevoegen]").forEach((el) => el.addEventListener("click", (e) => {
+    voegGezinToeAanAanvraag(parseInt(e.currentTarget.dataset.gezinToevoegen, 10));
+  }));
 
   if ($("#btnToonDebug")) $("#btnToonDebug").addEventListener("click", () => { state.debugOpen = true; render(); });
   if ($("#btnHandleiding")) $("#btnHandleiding").addEventListener("click", () => { state.handleidingOpen = true; state.menuOpen = false; render(); });
@@ -3157,8 +3298,8 @@ function pasAfspraakSjabloonToe(sjabloon, aanhef) {
   return { onderwerp: vulNaamIn(sjabloon.onderwerp), tekst: vulNaamIn(sjabloon.tekst) };
 }
 
-// Enige plek in de hele app die het internet op gaat — en alleen na een bewuste klik op
-// "Aanvraag uitzetten" (of, in een latere fase, "Status vernieuwen"/"Intrekken"). Er gaan nooit
+// Enige plek in de hele app die het internet op gaat — en alleen na een bewuste klik
+// ("Aanvraag uitzetten", "Status vernieuwen", "Intrekken", "+ Tijdslot"/"+ Gezin"). Er gaan nooit
 // namen of adressen over de lijn, alleen regnr en tijdslot (zie afspraakplanner/docs/API.md).
 async function afspraakplannerFetch(pad, opties) {
   if (!state.afspraakplannerApiSleutel) {
@@ -3182,11 +3323,12 @@ async function afspraakplannerFetch(pad, opties) {
 async function verstuurAfspraakplannerAanvraag() {
   const gezinnen = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
   if (!gezinnen.length) { state.afspraakplannerFout = "Selecteer minstens één gezin."; render(); return; }
+  // De eindtijd is optioneel (sinds AfspraakPlanner die ook niet meer vereist).
   const tijdslots = state.afspraakplannerTijdslots
-    .filter((t) => t.datum && t.start && t.eind)
-    .map((t) => ({ start: `${t.datum} ${t.start}:00`, eind: `${t.datum} ${t.eind}:00` }));
+    .filter((t) => t.datum && t.start)
+    .map((t) => ({ start: `${t.datum} ${t.start}:00`, eind: t.eind ? `${t.datum} ${t.eind}:00` : null }));
   if (!tijdslots.length) {
-    state.afspraakplannerFout = "Vul minstens één volledig tijdslot in (datum, starttijd en eindtijd).";
+    state.afspraakplannerFout = "Vul minstens één tijdslot met datum en starttijd in.";
     render();
     return;
   }
@@ -3204,11 +3346,320 @@ async function verstuurAfspraakplannerAanvraag() {
     });
     state.afspraakplannerResultaat = data;
     state.afspraakplannerStap = "resultaat";
+    // De aanvraag lokaal bewaren (in de kluis), zodat je later de status kunt volgen
+    // via "Lopende aanvragen" en de links per gezin opnieuw kunt versturen.
+    state.afspraakAanvragen.push({
+      id: data.aanvraag_id,
+      omschrijving: state.afspraakplannerOmschrijving,
+      aangemaaktOp: todayISO(),
+      deelnemers: (data.deelnemers || []).map((d) => ({ regnr: d.regnr, link: d.link })),
+      status: null, // laatste GET-resultaat van /aanvragen.php?id=…
+      laatstVernieuwdOp: null,
+      overgenomen: {}, // regnr -> true zodra de gekozen afspraak in de planning is gezet
+    });
+    await veiligOpslaan(bewaarGegevens, "aanvraag bewaren");
   } catch (e) {
     state.afspraakplannerFout = e.message;
   }
   state.afspraakplannerBezig = false;
   render();
+}
+
+async function vernieuwAanvraagStatus(id) {
+  const aanvraag = state.afspraakAanvragen.find((a) => a.id === id);
+  if (!aanvraag) return;
+  state.aanvraagStatusBezigId = id;
+  delete state.aanvraagFouten[id];
+  render();
+  try {
+    const data = await afspraakplannerFetch(`/aanvragen.php?id=${encodeURIComponent(id)}`, { method: "GET" });
+    aanvraag.status = data;
+    aanvraag.laatstVernieuwdOp = Date.now();
+    await veiligOpslaan(bewaarGegevens, "aanvraagstatus bijwerken");
+  } catch (e) {
+    state.aanvraagFouten[id] = e.message;
+  }
+  state.aanvraagStatusBezigId = null;
+  render();
+}
+
+async function verwijderAanvraagLokaal(id) {
+  const aanvraag = state.afspraakAanvragen.find((a) => a.id === id);
+  if (!aanvraag) return;
+  if (!confirm("Deze aanvraag uit het overzicht verwijderen? De aanvraag zelf (en al gemaakte keuzes) blijft op de AfspraakPlanner-server bestaan; je kunt de status daarna alleen niet meer volgen vanuit ContactPlanner.")) return;
+  state.afspraakAanvragen = state.afspraakAanvragen.filter((a) => a.id !== id);
+  await veiligOpslaan(bewaarGegevens, "aanvraag verwijderen");
+  render();
+}
+
+// Zet het door een gemeentelid gekozen tijdslot als gepland bijzonder contactmoment in het
+// gezinsdossier, zodat het meedraait in de Planningweergave en Bijzondere momenten.
+async function zetGekozenSlotInPlanning(aanvraagId, regnr) {
+  const aanvraag = state.afspraakAanvragen.find((a) => a.id === aanvraagId);
+  if (!aanvraag || !aanvraag.status) return;
+  const deelnemer = (aanvraag.status.deelnemers || []).find((d) => d.regnr === regnr);
+  const slot = deelnemer && (aanvraag.status.tijdslots || []).find((t) => t.id === deelnemer.gekozen_slot_id);
+  if (!slot) return;
+  const gezin = computeGezinnen().find((g) => g.gezinshoofd.regnr === regnr);
+  if (!gezin) { alert("Dit regnr is niet (meer) terug te vinden in de huidige lijst."); return; }
+  const [datumISO, startTijd] = slot.start_tijd.split(" ");
+  const eindTijd = slot.eind_tijd ? slot.eind_tijd.split(" ")[1] : "";
+  const gd = getGezinsdata(gezin.gezinsKey);
+  const entry = {
+    id: uid(),
+    datum: datumISO,
+    soort: "Huisbezoek",
+    betreft: "",
+    notitie: `${startTijd.slice(0, 5)}${eindTijd ? "–" + eindTijd.slice(0, 5) : ""} uur — via AfspraakPlanner${aanvraag.omschrijving ? ` (${aanvraag.omschrijving})` : ""}`,
+  };
+  const gepland = [...(gd.gepland || []), entry].sort((a, b) => a.datum.localeCompare(b.datum));
+  state.gezinsdata[gezin.gezinsKey] = { ...gd, gepland, gezinsKey: gezin.gezinsKey };
+  aanvraag.overgenomen = { ...(aanvraag.overgenomen || {}), [regnr]: true };
+  await veiligOpslaan(bewaarGegevens, "afspraak in planning zetten");
+  render();
+}
+
+// "2026-09-10 19:00:00" (+ optionele eindtijd) -> "10 sep 2026, 19:00–19:30 uur"
+function fmtSlotTijd(startStr, eindStr) {
+  const [datum, start] = String(startStr || "").split(" ");
+  const eind = eindStr ? String(eindStr).split(" ")[1] : "";
+  return `${fmtDatum(datum)}, ${(start || "").slice(0, 5)}${eind ? "–" + eind.slice(0, 5) : ""} uur`;
+}
+
+function naamVoorRegnr(regnr) {
+  const p = findPersoon(regnr);
+  return p ? (p.naam || "Naamloos") : `Regnr. ${regnr}`;
+}
+
+// Trekt een nog vrij tijdslot in via de API. Een al gekozen slot weigert de server
+// bewust (dat raakt een gemeentelid en gaat telefonisch/persoonlijk).
+async function trekTijdslotIn(aanvraagId, slotId) {
+  const aanvraag = state.afspraakAanvragen.find((a) => a.id === aanvraagId);
+  if (!aanvraag) return;
+  if (!confirm("Dit tijdslot intrekken? Het is dan voor niemand meer te kiezen.")) return;
+  state.aanvraagStatusBezigId = aanvraagId;
+  delete state.aanvraagFouten[aanvraagId];
+  render();
+  try {
+    await afspraakplannerFetch(`/aanvragen.php?id=${encodeURIComponent(aanvraagId)}&slot_id=${encodeURIComponent(slotId)}`, { method: "DELETE" });
+  } catch (e) {
+    state.aanvraagFouten[aanvraagId] = e.message;
+    state.aanvraagStatusBezigId = null;
+    render();
+    return;
+  }
+  state.aanvraagStatusBezigId = null;
+  await vernieuwAanvraagStatus(aanvraagId);
+}
+
+// Breidt een bestaande aanvraag uit met extra tijdslots en/of gezinnen (PATCH).
+// Nieuwe deelnemers (met hun link) worden aan de lokale aanvraag toegevoegd.
+async function breidAanvraagUit(aanvraagId, { tijdslots, regnrs }) {
+  const aanvraag = state.afspraakAanvragen.find((a) => a.id === aanvraagId);
+  if (!aanvraag) return false;
+  state.aanvraagStatusBezigId = aanvraagId;
+  delete state.aanvraagFouten[aanvraagId];
+  render();
+  try {
+    const data = await afspraakplannerFetch(`/aanvragen.php?id=${encodeURIComponent(aanvraagId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ tijdslots: tijdslots || [], regnrs: regnrs || [] }),
+    });
+    (data.deelnemers || []).forEach((d) => {
+      aanvraag.deelnemers = [...(aanvraag.deelnemers || []), { regnr: d.regnr, link: d.link }];
+    });
+    await veiligOpslaan(bewaarGegevens, "aanvraag uitbreiden");
+  } catch (e) {
+    state.aanvraagFouten[aanvraagId] = e.message;
+    state.aanvraagStatusBezigId = null;
+    render();
+    return false;
+  }
+  state.aanvraagStatusBezigId = null;
+  await vernieuwAanvraagStatus(aanvraagId);
+  return true;
+}
+
+async function voegTijdslotToeAanAanvraag(aanvraagId) {
+  const draft = state.aanvraagSlotDraft[aanvraagId] || {};
+  if (!draft.datum || !draft.start) {
+    state.aanvraagFouten[aanvraagId] = "Vul een datum en starttijd in voor het nieuwe tijdslot.";
+    render();
+    return;
+  }
+  const gelukt = await breidAanvraagUit(aanvraagId, {
+    tijdslots: [{ start: `${draft.datum} ${draft.start}:00`, eind: draft.eind ? `${draft.datum} ${draft.eind}:00` : null }],
+  });
+  if (gelukt) { delete state.aanvraagSlotDraft[aanvraagId]; render(); }
+}
+
+async function voegGezinToeAanAanvraag(aanvraagId) {
+  const gezinsKey = state.aanvraagGezinDraft[aanvraagId];
+  const gezin = gezinsKey ? findGezin(gezinsKey) : null;
+  if (!gezin) {
+    state.aanvraagFouten[aanvraagId] = "Kies eerst een gezin om toe te voegen.";
+    render();
+    return;
+  }
+  const gelukt = await breidAanvraagUit(aanvraagId, { regnrs: [gezin.gezinshoofd.regnr] });
+  if (gelukt) { delete state.aanvraagGezinDraft[aanvraagId]; render(); }
+}
+
+// Mail/WhatsApp-knoppen om een uitnodigingslink (opnieuw) te versturen, met het
+// tijdslot-sjabloon — zowel in het resultaatscherm als bij Lopende aanvragen.
+function uitnodigingsKnoppenHTML(regnr, link) {
+  const p = findPersoon(regnr);
+  const sjabloon = haalAfspraakSjabloon(state.afspraakplannerSjabloonId);
+  const aanhef = p ? (p.roepnaam || p.naam || "") : "";
+  const ingevuld = pasAfspraakSjabloonToe(sjabloon, aanhef);
+  const tekst = vulSjabloonIn(ingevuld.tekst, "", "", link);
+  const mobielClean = p && p.mobiel ? String(p.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31") : "";
+  const knoppen = [
+    p && p.email ? `<a class="btn btn-sm" href="${mailUrl(p.email, ingevuld.onderwerp, tekst)}" target="_blank" rel="noopener">Mail</a>` : "",
+    mobielClean ? `<a class="btn btn-sm" href="https://wa.me/${mobielClean}?text=${encodeURIComponent(tekst)}" target="_blank" rel="noopener">WhatsApp</a>` : "",
+  ].filter(Boolean).join("");
+  return knoppen || `<span style="font-size:11.5px;color:var(--text-soft);">geen e-mail/mobiel bekend</span>`;
+}
+
+// Voor de badge op de gezinskaarten: doet dit gezin mee in een bewaarde aanvraag, en
+// heeft het al gekozen? De nieuwste aanvraag met dit gezin telt.
+function afspraakplannerInfoVoorGezin(gezin) {
+  const regnr = gezin.gezinshoofd.regnr;
+  const aanvragen = state.afspraakAanvragen.slice().sort((a, b) => (b.id || 0) - (a.id || 0));
+  for (const a of aanvragen) {
+    if (!(a.deelnemers || []).some((d) => d.regnr === regnr)) continue;
+    const sd = a.status && (a.status.deelnemers || []).find((s) => s.regnr === regnr);
+    if (sd && sd.gekozen_slot_id) {
+      const slot = (a.status.tijdslots || []).find((t) => t.id === sd.gekozen_slot_id);
+      return { gekozen: true, tekst: slot ? fmtSlotTijd(slot.start_tijd, slot.eind_tijd) : "tijdslot gekozen" };
+    }
+    return { gekozen: false };
+  }
+  return null;
+}
+
+function afspraakBadgeHTML(gezin) {
+  const info = afspraakplannerInfoVoorGezin(gezin);
+  if (!info) return "";
+  if (info.gekozen) {
+    return `<span class="tag-afspraak tag-afspraak-gekozen" title="Dit gezin heeft via AfspraakPlanner een tijdslot gekozen">✓ gekozen: ${esc(info.tekst)}</span>`;
+  }
+  return `<span class="tag-afspraak" title="Er staat een AfspraakPlanner-aanvraag uit voor dit gezin; vernieuw de status via Lopende aanvragen">⏳ aanvraag uitgezet</span>`;
+}
+
+const SLOT_STATUS_META = {
+  vrij: { label: "vrij", kleur: "var(--green)", bg: "var(--green-bg)" },
+  bezet: { label: "bezet", kleur: "var(--blue)", bg: "var(--blue-bg)" },
+  ingetrokken: { label: "ingetrokken", kleur: "var(--text-soft)", bg: "var(--grey-bg)" },
+  verlopen: { label: "verlopen", kleur: "var(--amber)", bg: "var(--amber-bg)" },
+};
+
+function aanvraagKaartHTML(a) {
+  const bezig = state.aanvraagStatusBezigId === a.id;
+  const fout = state.aanvraagFouten[a.id];
+  let statusHTML = "";
+  if (a.status) {
+    const statusDeelnemers = a.status.deelnemers || [];
+    const gekozenAantal = statusDeelnemers.filter((d) => d.gekozen_slot_id).length;
+    const deelnemerRijen = (a.deelnemers || []).map((d) => {
+      const sd = statusDeelnemers.find((s) => s.regnr === d.regnr);
+      const slot = sd && sd.gekozen_slot_id ? (a.status.tijdslots || []).find((t) => t.id === sd.gekozen_slot_id) : null;
+      const overgenomen = (a.overgenomen || {})[d.regnr];
+      return `
+        <div class="aanvraag-deelnemer">
+          <span class="aanvraag-deelnemer-naam" data-open-regnr="${esc(d.regnr)}">${esc(naamVoorRegnr(d.regnr))}</span>
+          ${slot ? `
+            <span class="aanvraag-slot mono">✓ ${esc(fmtSlotTijd(slot.start_tijd, slot.eind_tijd))}</span>
+            ${overgenomen
+              ? `<span class="tag-grey" title="Deze afspraak staat als gepland bijzonder contactmoment in het gezinsdossier">✓ in planning</span>`
+              : `<button class="btn-sm btn-primary" data-overneem-aanvraag="${esc(a.id)}" data-overneem-regnr="${esc(d.regnr)}">Zet in planning</button>`}
+          ` : `
+            <span class="aanvraag-nog-niet">nog niet gekozen</span>
+            <span style="display:flex;gap:4px;">${uitnodigingsKnoppenHTML(d.regnr, d.link)}</span>
+          `}
+        </div>`;
+    }).join("");
+    const slotRijen = (a.status.tijdslots || []).map((t) => {
+      const meta = SLOT_STATUS_META[t.status] || SLOT_STATUS_META.vrij;
+      return `
+        <div class="aanvraag-tijdslot">
+          <span class="mono" style="flex:1;">${esc(fmtSlotTijd(t.start_tijd, t.eind_tijd))}</span>
+          <span class="tag-opmerking" style="background:${meta.bg};color:${meta.kleur};margin:0;">${meta.label}${t.status === "bezet" && t.regnr ? `: ${esc(naamVoorRegnr(t.regnr))}` : ""}</span>
+          ${t.status === "vrij" ? `<button class="btn-ghost btn-sm btn-danger" data-slot-intrek-aanvraag="${esc(a.id)}" data-slot-intrek-id="${esc(t.id)}" title="Tijdslot intrekken" ${bezig ? "disabled" : ""}>Intrekken</button>` : ""}
+        </div>`;
+    }).join("");
+    statusHTML = `
+      <p style="font-size:12.5px;color:var(--text-soft);margin:8px 0 6px;">
+        ${gekozenAantal} van ${(a.deelnemers || []).length} gezinnen ${gekozenAantal === 1 ? "heeft" : "hebben"} gekozen
+        · status van ${esc(fmtRelatiefMoment(a.laatstVernieuwdOp))}
+      </p>
+      ${deelnemerRijen}
+      <div class="aanvraag-subkop">Tijdslots</div>
+      ${slotRijen || `<p style="font-size:12.5px;color:var(--text-soft);">Geen tijdslots.</p>`}`;
+  } else {
+    statusHTML = `<p style="font-size:12.5px;color:var(--text-soft);margin:8px 0 0;">
+      ${(a.deelnemers || []).length} uitnodiging(en) verstuurd. Klik op "Status vernieuwen" om te zien wie al een tijdslot gekozen heeft.
+    </p>`;
+  }
+
+  const slotDraft = state.aanvraagSlotDraft[a.id] || { datum: "", start: "19:00", eind: "" };
+  const gezinnenInAanvraag = new Set((a.deelnemers || []).map((d) => d.regnr));
+  const kandidaten = computeGezinnen()
+    .filter((g) => !gezinnenInAanvraag.has(g.gezinshoofd.regnr))
+    .sort((x, y) => (x.gezinshoofd.naam || "").localeCompare(y.gezinshoofd.naam || ""));
+  const uitbreidenHTML = `
+    <div class="aanvraag-subkop">Uitbreiden</div>
+    <div class="aanvraag-uitbreiden-rij">
+      <input type="date" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="datum" value="${esc(slotDraft.datum)}" />
+      <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="start" value="${esc(slotDraft.start)}" />
+      <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="eind" value="${esc(slotDraft.eind)}" title="Eindtijd (optioneel)" />
+      <button class="btn-sm" data-slot-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Tijdslot</button>
+    </div>
+    <div class="aanvraag-uitbreiden-rij">
+      <select data-aanvraag-gezindraft="${esc(a.id)}" style="flex:1;min-width:0;">
+        <option value="">— kies een gezin —</option>
+        ${kandidaten.map((g) => `<option value="${esc(g.gezinsKey)}" ${state.aanvraagGezinDraft[a.id] === g.gezinsKey ? "selected" : ""}>${esc(g.gezinshoofd.naam || "Naamloos")}${g.adres ? ` (${esc(g.adres)})` : ""}</option>`).join("")}
+      </select>
+      <button class="btn-sm" data-gezin-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Gezin</button>
+    </div>`;
+
+  return `
+    <div class="aanvraag-kaart">
+      <div class="aanvraag-kaart-kop">
+        <div>
+          <strong>${esc(a.omschrijving || `Aanvraag #${a.id}`)}</strong>
+          <div style="font-size:11.5px;color:var(--text-soft);">Uitgezet op ${esc(fmtDatum(a.aangemaaktOp))}</div>
+        </div>
+        <span style="display:flex;gap:6px;">
+          <button class="btn-sm" data-aanvraag-vernieuw="${esc(a.id)}" ${bezig ? "disabled" : ""}>${bezig ? "Bezig…" : "Status vernieuwen"}</button>
+          <button class="btn-ghost btn-sm btn-danger" data-aanvraag-verwijder="${esc(a.id)}" title="Verwijder uit dit overzicht">✕</button>
+        </span>
+      </div>
+      ${fout ? `<p style="color:var(--red);font-size:12.5px;margin:8px 0 0;">${esc(fout)}</p>` : ""}
+      ${statusHTML}
+      ${uitbreidenHTML}
+    </div>`;
+}
+
+function aanvragenOverzichtModalHTML() {
+  if (!state.aanvragenOverzichtOpen) return "";
+  const aanvragen = state.afspraakAanvragen.slice().sort((a, b) => (b.id || 0) - (a.id || 0));
+  return `
+  <div class="modal-overlay" id="aanvragenOverlay">
+    <div class="modal-box" style="max-width:620px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">Lopende aanvragen</h3>
+        <button class="btn-ghost btn-sm" id="btnSluitAanvragen">✕</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
+        Alle aanvragen die je via AfspraakPlanner hebt uitgezet. Vernieuw de status om te zien wie al
+        een tijdslot gekozen heeft, en zet een gekozen afspraak met één klik in de planning van het gezin.
+      </p>
+      ${aanvragen.length === 0
+        ? `<div class="empty-state">Nog geen lopende aanvragen. Klik in de Planningweergave op "Selecteren", kies gezinnen en klik op "Aanvraag uitzetten".</div>`
+        : aanvragen.map(aanvraagKaartHTML).join("")}
+    </div>
+  </div>`;
 }
 
 // Bouwt de mail-URL volgens de gekozen methode (Instellingen → E-mail): het standaard
@@ -3454,6 +3905,8 @@ function vergrendelNu() {
     if (instellingenMap.backupOpslagMethode === "download" || instellingenMap.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = instellingenMap.backupOpslagMethode;
     if (typeof instellingenMap.afspraakplannerApiSleutel === "string") state.afspraakplannerApiSleutel = instellingenMap.afspraakplannerApiSleutel;
     if (typeof instellingenMap.afspraakplannerBasisUrl === "string" && instellingenMap.afspraakplannerBasisUrl) state.afspraakplannerBasisUrl = instellingenMap.afspraakplannerBasisUrl;
+    // Alleen relevant in de kluis-loze (Web Crypto-loze) situatie; met kluis overschrijft laadUitKluis dit.
+    if (Array.isArray(instellingenMap.afspraakAanvragen)) state.afspraakAanvragen = instellingenMap.afspraakAanvragen;
     if (!state.afspraakSjablonen.some((s) => s.id === STANDAARD_TIJDSLOT_SJABLOON.id)) {
       state.afspraakSjablonen.push({ ...STANDAARD_TIJDSLOT_SJABLOON });
     }
