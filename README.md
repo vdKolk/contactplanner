@@ -51,6 +51,9 @@ Daar horen twee verantwoordelijkheden bij:
   binnen 14 dagen iets aankomt.
 - **Afspraak inplannen** — e-mail- of WhatsApp-bericht met invulbaar sjabloon, en een
   Scipio-link per persoon.
+- **AfspraakPlanner-koppeling** — zet vanuit het planbord een aanvraag uit waarbij gezinnen
+  zelf een tijdslot kiezen (via de losse AfspraakPlanner-app); volg via "Lopende aanvragen"
+  wie al gekozen heeft en neem een gekozen afspraak met één klik over in de planning.
 - **Pin-beveiliging met versleuteling** — de gegevens worden met een van de pin afgeleide
   sleutel versleuteld opgeslagen; na ontgrendelen een uur toegang. Bijzondere momenten zijn
   ook zonder pin in te zien (zonder gezinsdossiers).
@@ -80,8 +83,8 @@ neem je alles mee:
 2. **Nieuwe omgeving:** stel een pin in en kies op het startscherm
    *"of zet een eerdere back-up terug (.json)"*.
 
-In de back-up zitten alle personen, gezinsgegevens, contactmomenten, notities én (sinds
-back-upversie 3) de instellingen. Alleen de pin gaat bewust niet mee; die stel je op het
+In de back-up zitten alle personen, gezinsgegevens, contactmomenten, notities, lopende
+AfspraakPlanner-aanvragen én (sinds back-upversie 3) de instellingen. Alleen de pin gaat bewust niet mee; die stel je op het
 nieuwe apparaat opnieuw in. Het bestand is bewust onversleuteld (vangnet bij een vergeten
 pin) — bewaar het veilig. Oudere back-upformaten blijven gewoon inleesbaar.
 

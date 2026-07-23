@@ -228,11 +228,15 @@ table.preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .kanban-kaart { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px 10px 17px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
 .kanban-kaart:hover { border-color: #C7CBD3; box-shadow: 0 1px 3px rgba(16,24,40,0.06); }
 .kanban-kaart-geselecteerd { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--accent-soft); }
+/* Rechts in het midden van de kaart, zodat het niet botst met het markeer-sterretje rechtsboven. */
 .kanban-select-vinkje {
-  position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 5px;
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1.5px solid var(--border); background: var(--surface);
   display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
 }
-.kanban-kaart-geselecteerd .kanban-select-vinkje { background: var(--accent); color: #fff; }
+.kanban-kaart-selectiemodus { padding-right: 34px; }
+.kanban-kaart-geselecteerd .kanban-select-vinkje { background: var(--accent); border-color: var(--accent); color: #fff; }
 .actiebalk-selectie {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
   background: var(--text); color: #fff; border-radius: 999px; padding: 8px 8px 8px 18px;
@@ -316,6 +320,45 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .tijdslot-rij input { padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; font-family: inherit; }
 .tijdslot-rij input[type="date"] { flex: 1.3; min-width: 0; }
 .tijdslot-rij input[type="time"] { flex: 1; min-width: 0; }
+.tijdslot-koppen { font-size: 11px; font-weight: 600; color: var(--text-soft); margin-bottom: 2px; }
+.tijdslot-koppen span:nth-child(1) { flex: 1.3; }
+.tijdslot-koppen span:nth-child(2), .tijdslot-koppen span:nth-child(3) { flex: 1; }
+.tijdslot-koppen span:nth-child(4) { width: 30px; }
+
+/* Lopende AfspraakPlanner-aanvragen */
+.aanvraag-kaart { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.aanvraag-kaart-kop { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.aanvraag-deelnemer { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; }
+.aanvraag-deelnemer-naam { font-weight: 600; flex: 1; min-width: 140px; cursor: pointer; }
+.aanvraag-deelnemer-naam:hover { text-decoration: underline; }
+.aanvraag-slot { color: var(--green); font-size: 12.5px; }
+.aanvraag-nog-niet { color: var(--text-soft); font-size: 12.5px; font-style: italic; }
+.aanvraag-subkop { font-size: 11.5px; font-weight: 700; color: var(--text-soft); margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
+.aanvraag-tijdslot { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+.aanvraag-uitbreiden-rij { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.aanvraag-uitbreiden-rij input, .aanvraag-uitbreiden-rij select { padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; font-family: inherit; }
+.aanvraag-uitbreiden-rij input[type="date"] { flex: 1.2; min-width: 0; }
+.aanvraag-uitbreiden-rij input[type="time"] { flex: 0.9; min-width: 0; }
+
+/* AfspraakPlanner-badge op gezinskaarten (lijst, 2 kolommen, planbord) */
+.tag-afspraak { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--blue-bg); color: var(--blue); margin-top: 5px; margin-right: 5px; }
+.tag-afspraak-gekozen { background: var(--green-bg); color: var(--green); }
+.kanban-kaart .tag-afspraak { margin-top: 6px; }
+
+/* Volledige pagina's (Instellingen, Bijzondere momenten, Aanvraag uitzetten):
+   sluitkruisje rechtsboven onder de bovenbalk, als een venster dat je sluit. */
+.pagina-sluit-rij { display: flex; justify-content: flex-end; margin-bottom: 2px; }
+.pagina-sluit { font-size: 16px; padding: 6px 12px; color: var(--text-soft); }
+.pagina-sluit:hover { color: var(--text); }
+.pagina-smal { max-width: 560px; }
+
+/* Instellingenpagina */
+.instellingen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; margin-top: 14px; align-items: start; }
+.instellingen-kolom { display: flex; flex-direction: column; gap: 14px; }
+.instellingen-kaart { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+.instellingen-kaart h4 { margin: 0 0 4px; font-size: 14.5px; }
+.instellingen-kaart-breed { grid-column: 1 / -1; }
+.instellingen-uitleg { font-size: 12.5px; color: var(--text-soft); margin: 0 0 10px; }
 .note-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 9px; }
 .sjabloon-editor { background: var(--grey-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
 .sjabloon-editor .field-row:last-of-type { margin-bottom: 10px; }
