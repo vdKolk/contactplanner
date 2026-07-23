@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.9"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.10"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -69,6 +69,13 @@ const VERSIE_NOTITIES = {
       "Nieuw menu-item \"Release historie\": blader door wat er per versie veranderd is",
     ],
   },
+  "1.7.10": {
+    nieuw: [
+      "De status van lopende aanvragen wordt nu ook elke 10 minuten en bij het herladen van de app automatisch ververst",
+      "Kaartjes worden weer wit zodra je na het gekozen moment een contactmoment logt (of automatisch na 14 dagen), en ook als er in een aanvraag niets meer te kiezen valt",
+      "Nieuwe, persoonlijkere standaardteksten voor de berichtsjablonen (\"Hallo [naam], graag wil ik een huisbezoek inplannen…\") — alleen als je ze nooit zelf had aangepast",
+    ],
+  },
 };
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
 const STORE_GEZINSDATA = "gezinsdata"; // idem
@@ -109,7 +116,7 @@ const STANDAARD_AFSPRAAK_SJABLOON = {
   id: "standaard",
   naam: "Standaard",
   onderwerp: "Huisbezoek inplannen",
-  tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+  tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat gerust weten wat het beste past.\n\nMet vriendelijke groet,",
 };
 
 // Standaardsjabloon voor een AfspraakPlanner-uitnodiging (zie afspraakplannerPaginaHTML).
@@ -118,8 +125,21 @@ const STANDAARD_AFSPRAAK_SJABLOON = {
 const STANDAARD_TIJDSLOT_SJABLOON = {
   id: "tijdslot-kiezen",
   naam: "Tijdslot kiezen",
-  onderwerp: "Kies een moment voor een bezoek",
-  tekst: "Beste [naam],\n\nWilt u een moment kiezen dat u schikt? Klik op de link en kies uw tijdslot:\n[link]\n\nMet vriendelijke groet,",
+  onderwerp: "Huisbezoek inplannen",
+  tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen, zou je hiervoor een geschikt moment willen kiezen? Via de planner kies je wat jou het beste past:\n[link]\n\nMet vriendelijke groet,",
+};
+
+// Standaardwaarden t/m v1.7.9: wie ze nooit heeft aangepast, krijgt bij het laden automatisch
+// de nieuwe standaard hierboven; eigen bewerkingen blijven onaangeroerd (per veld gecontroleerd).
+const OUDE_SJABLOON_STANDAARDEN = {
+  [STANDAARD_AFSPRAAK_SJABLOON.id]: {
+    onderwerp: "Huisbezoek inplannen",
+    tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+  },
+  [STANDAARD_TIJDSLOT_SJABLOON.id]: {
+    onderwerp: "Kies een moment voor een bezoek",
+    tekst: "Beste [naam],\n\nWilt u een moment kiezen dat u schikt? Klik op de link en kies uw tijdslot:\n[link]\n\nMet vriendelijke groet,",
+  },
 };
 
 const STATUS_META = {
@@ -1779,8 +1799,12 @@ function handleidingModalHTML() {
         waarvan de starttijd verstreken is, zijn automatisch niet meer kiesbaar en tonen als
         <em>verlopen</em>. Voor gezinnen die nog niet gekozen hebben kun je de uitnodiging vanuit
         ditzelfde overzicht opnieuw versturen.
-        Na het ontgrendelen ververst de app de status van lopende aanvragen automatisch; handmatig
-        kan het met het ↻-icoon naast "Lopende aanvragen".
+        De app ververst de status van lopende aanvragen automatisch: na het ontgrendelen, bij het
+        herladen en daarna elke 10 minuten; handmatig kan het met het ↻-icoon naast "Lopende
+        aanvragen". De gezinskaarten kleuren mee: licht blauw zolang een aanvraag uitstaat, licht
+        groen zodra een tijdslot gekozen is, licht geel vanaf de dag na het gekozen moment — en weer
+        wit zodra je daarna een contactmoment logt (of automatisch na 14 dagen), als er in de
+        aanvraag niets meer te kiezen valt, of als je de aanvraag uit "Lopende aanvragen" verwijdert.
         <strong>Belangrijk om te weten:</strong> de AfspraakPlanner-koppeling is de enige plek in de
         app die iets naar het internet stuurt — en dan alleen het regnr en het gekozen tijdslot, nooit
         namen of adressen. Werkt dit niet, controleer dan eerst de API-sleutel bij
@@ -3492,6 +3516,16 @@ async function verversAlleAanvraagStatussen() {
   render();
 }
 
+// Zolang de app ontgrendeld is elke 10 minuten de aanvraagstatussen verversen, zodat de
+// kaartkleuren en "Lopende aanvragen" actueel blijven. Een beurt wordt overgeslagen terwijl
+// je ergens in een invoerveld staat — de herteken-slag zou anders je focus verstoren.
+setInterval(() => {
+  if (state.vergrendeld) return;
+  const actief = document.activeElement;
+  if (actief && ["INPUT", "TEXTAREA", "SELECT"].includes(actief.tagName)) return;
+  verversAlleAanvraagStatussen().catch((e) => logDebug("fout", "Periodiek verversen van aanvragen mislukt: " + e.message));
+}, 600000);
+
 async function verwijderAanvraagLokaal(id) {
   const aanvraag = state.afspraakAanvragen.find((a) => a.id === id);
   if (!aanvraag) return;
@@ -3640,12 +3674,23 @@ function afspraakplannerInfoVoorGezin(gezin) {
     const sd = a.status && (a.status.deelnemers || []).find((s) => s.regnr === regnr);
     if (sd && sd.gekozen_slot_id) {
       const slot = (a.status.tijdslots || []).find((t) => t.id === sd.gekozen_slot_id);
+      const datum = slot ? String(slot.start_tijd).split(" ")[0] : "";
+      // Afgehandeld → geen tint of badge meer (kaart weer wit): het moment is voorbij én er is
+      // op of na die datum een contactmoment gelogd, of het is meer dan 14 dagen geleden.
+      if (datum && datum < todayISO()) {
+        const gd = getGezinsdata(gezin.gezinsKey);
+        const gelogdNaMoment = (gd.historie || []).some((h) => h.datum >= datum);
+        if (gelogdNaMoment || datum < addDays(todayISO(), -14)) return null;
+      }
       return {
         gekozen: true,
         tekst: slot ? fmtSlotTijd(slot.start_tijd, slot.eind_tijd) : "tijdslot gekozen",
-        datum: slot ? String(slot.start_tijd).split(" ")[0] : "",
+        datum,
       };
     }
+    // Niet gekozen én geen enkel vrij tijdslot meer over (alles bezet, ingetrokken of
+    // verlopen): er valt niets meer te kiezen, dus de kaart kleurt weer gewoon wit.
+    if (a.status && !(a.status.tijdslots || []).some((t) => t.status === "vrij")) return null;
     return { gekozen: false };
   }
   return null;
@@ -4032,6 +4077,20 @@ function vergrendelNu() {
     if (!state.afspraakSjablonen.some((s) => s.id === STANDAARD_TIJDSLOT_SJABLOON.id)) {
       state.afspraakSjablonen.push({ ...STANDAARD_TIJDSLOT_SJABLOON });
     }
+    // Eenmalige migratie naar de nieuwe standaardteksten (alleen velden die nog
+    // exact de oude standaard zijn — eigen bewerkingen blijven staan).
+    let sjablonenGemigreerd = false;
+    [STANDAARD_AFSPRAAK_SJABLOON, STANDAARD_TIJDSLOT_SJABLOON].forEach((standaard) => {
+      const eigen = state.afspraakSjablonen.find((s) => s.id === standaard.id);
+      const oud = OUDE_SJABLOON_STANDAARDEN[standaard.id];
+      if (!eigen || !oud) return;
+      if (eigen.tekst === oud.tekst) { eigen.tekst = standaard.tekst; sjablonenGemigreerd = true; }
+      if (eigen.onderwerp === oud.onderwerp && eigen.onderwerp !== standaard.onderwerp) { eigen.onderwerp = standaard.onderwerp; sjablonenGemigreerd = true; }
+    });
+    if (sjablonenGemigreerd) {
+      dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen)
+        .catch((e) => logDebug("fout", "Kon gemigreerde sjablonen niet opslaan: " + e.message));
+    }
     Object.keys(instellingenMap).forEach((sleutel) => {
       if (sleutel.startsWith("mijlpaal-gedaan:")) state.mijlpalenGedaan[sleutel.slice("mijlpaal-gedaan:".length)] = instellingenMap[sleutel];
     });
@@ -4051,6 +4110,9 @@ function vergrendelNu() {
           await laadUitKluis();
           state.vergrendeld = false;
           plantAutoVergrendel(ontgrendeldTot - nu);
+          // Ook bij een herlaadbeurt binnen het ontgrendelde uur (geen pin nodig) de
+          // lopende aanvragen op de achtergrond bijwerken.
+          verversAlleAanvraagStatussen().catch((e) => logDebug("fout", "Aanvraagstatussen verversen mislukt: " + e.message));
         } catch (e) {
           cryptoRuntime.sleutel = null;
           logDebug("fout", "Bewaarde sessiesleutel is onbruikbaar; de pin is opnieuw nodig: " + e.message);
