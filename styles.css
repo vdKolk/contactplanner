@@ -345,6 +345,20 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .tag-afspraak-gekozen { background: var(--green-bg); color: var(--green); }
 .kanban-kaart .tag-afspraak { margin-top: 6px; }
 
+/* Achtergrondtint van de hele kaart op basis van de AfspraakPlanner-stand:
+   uitgezet = licht blauw, gekozen = licht groen, moment voorbij = licht geel.
+   De badge houdt dan een wit vlak zodat hij leesbaar blijft op de tint. */
+.kaart-afspraak-uitgezet { background: var(--blue-bg); }
+.kaart-afspraak-gekozen { background: var(--green-bg); }
+.kaart-afspraak-geweest { background: var(--amber-bg); }
+.kaart-afspraak-uitgezet .tag-afspraak { background: var(--surface); }
+.kaart-afspraak-gekozen .tag-afspraak-gekozen { background: var(--surface); }
+.kaart-afspraak-geweest .tag-afspraak-gekozen { background: var(--surface); color: var(--amber); }
+/* In selectiemodus wint de selectiekleur van de afspraaktint. */
+.kanban-kaart-geselecteerd.kaart-afspraak-uitgezet,
+.kanban-kaart-geselecteerd.kaart-afspraak-gekozen,
+.kanban-kaart-geselecteerd.kaart-afspraak-geweest { background: var(--accent-soft); }
+
 /* Volledige pagina's (Instellingen, Bijzondere momenten, Aanvraag uitzetten):
    sluitkruisje rechtsboven onder de bovenbalk, als een venster dat je sluit. */
 .pagina-sluit-rij { display: flex; justify-content: flex-end; margin-bottom: 2px; }
@@ -359,6 +373,7 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .instellingen-kaart h4 { margin: 0 0 4px; font-size: 14.5px; }
 .instellingen-kaart-breed { grid-column: 1 / -1; }
 .instellingen-uitleg { font-size: 12.5px; color: var(--text-soft); margin: 0 0 10px; }
+.instellingen-waarschuwing { font-size: 12px; color: var(--amber); background: var(--amber-bg); border-radius: 8px; padding: 8px 10px; margin: 0 0 10px; }
 .note-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 9px; }
 .sjabloon-editor { background: var(--grey-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
 .sjabloon-editor .field-row:last-of-type { margin-bottom: 10px; }
