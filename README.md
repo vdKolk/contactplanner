@@ -1,9 +1,27 @@
 # Contactplanner
 
-Een huisbezoek- en contactplanner voor ouderlingen en bezoekbroeders. Importeer een
-Excel-export uit de ledenadministratie (bijvoorbeeld Scipio) en de app houdt per gezin bij
-wanneer het volgende bezoek gepland moet worden, wat er bij eerdere bezoeken is besproken en
-welke bijzondere momenten eraan komen.
+ContactPlanner helpt ouderlingen en bezoekbroeders om op een rustige, overzichtelijke manier
+contact te onderhouden met gemeenteleden die in Scipio staan. Importeer de ledenlijst en houd
+per gezin bij wanneer er contact is geweest, wat er besproken is en wanneer een volgend bezoek
+passend is. Zo blijft er ruimte voor persoonlijke aandacht, zonder dat het overzicht verloren
+gaat.
+
+![Overzicht van ContactPlanner](img/ContactPlanner.png)
+
+<table>
+  <tr>
+    <td>
+      Met de gekoppelde AfspraakPlanner maak je het plannen van een bezoek ook voor
+      gemeenteleden eenvoudig. Deel de uitnodiging gemakkelijk via WhatsApp of e-mail;
+      vervolgens kiest iemand zelf een geschikt moment uit de aangeboden tijdsloten.
+      Daarna zie je direct wie al heeft gekozen en kun je de afspraak met één klik in de
+      planning opnemen.
+    </td>
+    <td width="320">
+      <img src="img/AfspraakPlanner.png" alt="Een bezoekmoment kiezen in AfspraakPlanner" width="300">
+    </td>
+  </tr>
+</table>
 
 ## 🔒 Privacy voorop
 
