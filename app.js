@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.10"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.11"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -74,6 +74,12 @@ const VERSIE_NOTITIES = {
       "De status van lopende aanvragen wordt nu ook elke 10 minuten en bij het herladen van de app automatisch ververst",
       "Kaartjes worden weer wit zodra je na het gekozen moment een contactmoment logt (of automatisch na 14 dagen), en ook als er in een aanvraag niets meer te kiezen valt",
       "Nieuwe, persoonlijkere standaardteksten voor de berichtsjablonen (\"Hallo [naam], graag wil ik een huisbezoek inplannen…\") — alleen als je ze nooit zelf had aangepast",
+    ],
+  },
+  "1.7.11": {
+    nieuw: [
+      "Nieuw startscherm met drie opties om te beginnen: Excel inlezen, een back-upbestand terugzetten of je API-sleutel koppelen",
+      "Instellingen: nieuwe sectie \"Extra functies\", voor functies die de beheerder per API-sleutel kan inschakelen",
     ],
   },
 };
@@ -729,10 +735,19 @@ window.addEventListener("unhandledrejection", (e) => {
 });
 
 let foutBannerTekst = "";
+let foutBannerType = "fout"; // fout (rood) | info (groen)
 function toonFoutBanner(tekst) {
   foutBannerTekst = tekst;
+  foutBannerType = "fout";
   const el = document.getElementById("foutBanner");
-  if (el) { el.textContent = tekst; el.style.display = "flex"; }
+  if (el) { el.textContent = tekst; el.classList.remove("info-banner"); el.style.display = "flex"; }
+}
+
+function toonInfoBanner(tekst) {
+  foutBannerTekst = tekst;
+  foutBannerType = "info";
+  const el = document.getElementById("foutBanner");
+  if (el) { el.textContent = tekst; el.classList.add("info-banner"); el.style.display = "flex"; }
 }
 
 let opslagBezigTeller = 0;
@@ -750,6 +765,9 @@ async function veiligOpslaan(schrijfFn, context) {
       state.laatsteWijzigingOp = Date.now();
       dbSetInstelling("laatsteWijzigingOp", state.laatsteWijzigingOp)
         .catch((e) => logDebug("fout", "Kon wijzigingstijdstip niet opslaan: " + e.message));
+      // Met online back-up aan: elke wijziging plant (gedebounced) een versleutelde
+      // upload naar de server in.
+      planOnlineBackup();
     }
     render();
     setTimeout(() => { if (state.saveState === "saved") { state.saveState = "idle"; render(); } }, 1500);
@@ -802,6 +820,16 @@ const state = {
   backupOpslagMethode: "download", // download | opslaanAls
   afspraakplannerApiSleutel: "",
   afspraakplannerBasisUrl: "https://afspraak.hhgputten.nl",
+  // Server-side features (door de beheerder per API-sleutel ingeschakeld, zie /api/features.php)
+  serverFeatures: [], // alleen in-memory; wordt na ontgrendelen/koppelen opgehaald
+  onlineBackupActief: false, // instelling; alleen zinvol als de server de feature "online-backup" toekent
+  onlineBackupStatus: "idle", // idle | bezig | ok | fout (in-memory)
+  onlineBackupGesyncdTot: null, // laatsteWijzigingOp-waarde die al veilig online staat (instelling)
+  setupApiOpen: false, // op het startscherm: koppel-formulier open
+  setupApiBezig: false,
+  setupApiFout: "",
+  setupApiSleutelDraft: "",
+  setupApiUrlDraft: "",
   selectieModusPlanning: false,
   geselecteerdeGezinnen: [], // gezinsKeys, alleen in-memory
   afspraakplannerStap: "samenstellen", // samenstellen | resultaat (op de pagina "Aanvraag uitzetten")
@@ -972,9 +1000,9 @@ async function naOntgrendeling() {
   state.vergrendeld = false;
   state.pinFout = "";
   plantAutoVergrendel(3600000);
-  // Na het ontgrendelen op de achtergrond de lopende aanvragen bijwerken, zodat de
-  // kaartkleuren en "Lopende aanvragen" meteen de actuele stand tonen.
-  verversAlleAanvraagStatussen().catch((e) => logDebug("fout", "Aanvraagstatussen verversen mislukt: " + e.message));
+  // Na het ontgrendelen op de achtergrond synchroniseren: server-features, online
+  // back-up en de lopende aanvragen — zodat alles meteen de actuele stand toont.
+  startServerSync();
 }
 
 async function persist(next) {
@@ -1331,12 +1359,12 @@ function downloadBackupBestand(inhoud, bestandsnaam) {
   URL.revokeObjectURL(url);
 }
 
-async function exporteerBackup() {
-  // Versie 3: ook de instellingen gaan mee (behalve de pin — die stel je op een
-  // nieuw apparaat opnieuw in). Versie 2 en ouder blijven inleesbaar.
-  // De back-up is bewust ONversleuteld: het is het vangnet bij een vergeten pin.
-  // Bewaar het bestand dus op een veilige plek.
-  const payload = {
+// Versie 3: ook de instellingen gaan mee (behalve de pin — die stel je op een
+// nieuw apparaat opnieuw in). Versie 2 en ouder blijven inleesbaar. Dezelfde
+// payload wordt gebruikt voor het lokale back-upbestand én de (client-side
+// versleutelde) online back-up.
+function bouwBackupPayload() {
+  return {
     versie: 3,
     personen: state.personen,
     gezinsdata: state.gezinsdata,
@@ -1355,7 +1383,12 @@ async function exporteerBackup() {
       backupOpslagMethode: state.backupOpslagMethode,
     },
   };
-  const inhoud = JSON.stringify(payload, null, 2);
+}
+
+async function exporteerBackup() {
+  // De lokale back-up is bewust ONversleuteld: het is het vangnet bij een vergeten
+  // pin. Bewaar het bestand dus op een veilige plek.
+  const inhoud = JSON.stringify(bouwBackupPayload(), null, 2);
   const bestandsnaam = `contactplanner-backup-${todayISO()}.json`;
 
   if (state.backupOpslagMethode === "opslaanAls" && window.showSaveFilePicker) {
@@ -1382,6 +1415,67 @@ async function exporteerBackup() {
   veiligOpslaan(() => dbSetInstelling("laatsteBackupOp", state.laatsteBackupOp), "backup-administratie");
 }
 
+// Zet een geparste back-up (uit een bestand of uit de online opslag) integraal in de app
+// en slaat alles op. Geeft true terug als het opslaan lukte; de aanroeper regelt de
+// bevestiging vooraf en de navigatie erna.
+async function pasBackupToe(data) {
+  let personen, gezinsdata;
+  if (Array.isArray(data)) {
+    // oud back-up formaat: alleen personen, mogelijk met contactvelden per persoon
+    personen = data;
+    gezinsdata = {};
+  } else if (data && Array.isArray(data.personen)) {
+    personen = data.personen;
+    gezinsdata = data.gezinsdata || {};
+  } else {
+    throw new Error("onbekend formaat");
+  }
+  state.personen = personen;
+  state.gezinsdata = gezinsdata;
+  if (Array.isArray(data.afspraakAanvragen)) state.afspraakAanvragen = data.afspraakAanvragen;
+  migreerOudeContactgegevens();
+  herstelLaatsteContactAlleGezinnen();
+  // Instellingen uit de back-up overnemen (versie 3+); de pin blijft buiten de back-up.
+  const inst = data.instellingen || null;
+  if (inst) {
+    if (typeof inst.mijlpalenLeeftijdDrempel === "number") state.mijlpalenLeeftijdDrempel = inst.mijlpalenLeeftijdDrempel;
+    if (Array.isArray(inst.mijlpalenHuwelijksJaren)) state.mijlpalenHuwelijksJaren = inst.mijlpalenHuwelijksJaren;
+    if (inst.mijlpalenGedaan && typeof inst.mijlpalenGedaan === "object") state.mijlpalenGedaan = inst.mijlpalenGedaan;
+    if (typeof inst.schemaAutoLeeftijd === "number") state.schemaAutoLeeftijd = inst.schemaAutoLeeftijd;
+    ["schemaAutoJong", "schemaAutoStel", "schemaAutoAlleen"].forEach((sleutel) => {
+      if (typeof inst[sleutel] === "string" && inst[sleutel]) state[sleutel] = inst[sleutel];
+    });
+    if (Array.isArray(inst.afspraakSjablonen) && inst.afspraakSjablonen.length) state.afspraakSjablonen = inst.afspraakSjablonen;
+    if (typeof inst.afspraakSjabloonId === "string") state.afspraakSjabloonId = inst.afspraakSjabloonId;
+    if (inst.mailMethode === "mailto" || inst.mailMethode === "outlook") state.mailMethode = inst.mailMethode;
+    if (inst.backupOpslagMethode === "download" || inst.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = inst.backupOpslagMethode;
+  }
+  const gelukt = await veiligOpslaan(async () => {
+    await bewaarGegevens();
+    if (inst) {
+      await dbSetInstelling("mijlpalenLeeftijdDrempel", state.mijlpalenLeeftijdDrempel);
+      await dbSetInstelling("mijlpalenHuwelijksJaren", state.mijlpalenHuwelijksJaren);
+      await dbSetInstelling("schemaAutoLeeftijd", state.schemaAutoLeeftijd);
+      await dbSetInstelling("schemaAutoJong", state.schemaAutoJong);
+      await dbSetInstelling("schemaAutoStel", state.schemaAutoStel);
+      await dbSetInstelling("schemaAutoAlleen", state.schemaAutoAlleen);
+      await dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen);
+      await dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId);
+      await dbSetInstelling("mailMethode", state.mailMethode);
+      await dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode);
+      await Promise.all(Object.keys(state.mijlpalenGedaan).map((sleutel) =>
+        dbSetInstelling("mijlpaal-gedaan:" + sleutel, state.mijlpalenGedaan[sleutel])));
+    }
+  }, "back-up terugzetten");
+  if (gelukt) {
+    // De teruggezette gegevens zijn per definitie gelijk aan een bestaande back-up.
+    state.laatsteBackupOp = Date.now();
+    await dbSetInstelling("laatsteBackupOp", state.laatsteBackupOp)
+      .catch((e) => logDebug("fout", "Kon back-uptijdstip niet opslaan: " + e.message));
+  }
+  return gelukt;
+}
+
 function handleBackupImport(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
@@ -1389,62 +1483,11 @@ function handleBackupImport(e) {
   reader.onload = async (ev) => {
     try {
       const data = JSON.parse(ev.target.result);
-      let personen, gezinsdata;
-      if (Array.isArray(data)) {
-        // oud back-up formaat: alleen personen, mogelijk met contactvelden per persoon
-        personen = data;
-        gezinsdata = {};
-      } else if (data && Array.isArray(data.personen)) {
-        personen = data.personen;
-        gezinsdata = data.gezinsdata || {};
-      } else {
-        throw new Error("onbekend formaat");
-      }
-      if (!confirm(`Dit vervangt de huidige lijst (${state.personen.length} personen) door de back-up (${personen.length} personen). Doorgaan?`)) return;
-      state.personen = personen;
-      state.gezinsdata = gezinsdata;
-      if (Array.isArray(data.afspraakAanvragen)) state.afspraakAanvragen = data.afspraakAanvragen;
-      migreerOudeContactgegevens();
-      herstelLaatsteContactAlleGezinnen();
-      // Instellingen uit de back-up overnemen (versie 3+); de pin blijft buiten de back-up.
-      const inst = data.instellingen || null;
-      if (inst) {
-        if (typeof inst.mijlpalenLeeftijdDrempel === "number") state.mijlpalenLeeftijdDrempel = inst.mijlpalenLeeftijdDrempel;
-        if (Array.isArray(inst.mijlpalenHuwelijksJaren)) state.mijlpalenHuwelijksJaren = inst.mijlpalenHuwelijksJaren;
-        if (inst.mijlpalenGedaan && typeof inst.mijlpalenGedaan === "object") state.mijlpalenGedaan = inst.mijlpalenGedaan;
-        if (typeof inst.schemaAutoLeeftijd === "number") state.schemaAutoLeeftijd = inst.schemaAutoLeeftijd;
-        ["schemaAutoJong", "schemaAutoStel", "schemaAutoAlleen"].forEach((sleutel) => {
-          if (typeof inst[sleutel] === "string" && inst[sleutel]) state[sleutel] = inst[sleutel];
-        });
-        if (Array.isArray(inst.afspraakSjablonen) && inst.afspraakSjablonen.length) state.afspraakSjablonen = inst.afspraakSjablonen;
-        if (typeof inst.afspraakSjabloonId === "string") state.afspraakSjabloonId = inst.afspraakSjabloonId;
-        if (inst.mailMethode === "mailto" || inst.mailMethode === "outlook") state.mailMethode = inst.mailMethode;
-        if (inst.backupOpslagMethode === "download" || inst.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = inst.backupOpslagMethode;
-      }
-      const gelukt = await veiligOpslaan(async () => {
-        await bewaarGegevens();
-        if (inst) {
-          await dbSetInstelling("mijlpalenLeeftijdDrempel", state.mijlpalenLeeftijdDrempel);
-          await dbSetInstelling("mijlpalenHuwelijksJaren", state.mijlpalenHuwelijksJaren);
-          await dbSetInstelling("schemaAutoLeeftijd", state.schemaAutoLeeftijd);
-          await dbSetInstelling("schemaAutoJong", state.schemaAutoJong);
-          await dbSetInstelling("schemaAutoStel", state.schemaAutoStel);
-          await dbSetInstelling("schemaAutoAlleen", state.schemaAutoAlleen);
-          await dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen);
-          await dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId);
-          await dbSetInstelling("mailMethode", state.mailMethode);
-          await dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode);
-          await Promise.all(Object.keys(state.mijlpalenGedaan).map((sleutel) =>
-            dbSetInstelling("mijlpaal-gedaan:" + sleutel, state.mijlpalenGedaan[sleutel])));
-        }
-      }, "back-up terugzetten");
-      if (gelukt) {
-        state.stage = "dashboard";
-        // De teruggezette gegevens zijn per definitie gelijk aan een bestaand back-upbestand.
-        state.laatsteBackupOp = Date.now();
-        await dbSetInstelling("laatsteBackupOp", state.laatsteBackupOp)
-          .catch((e) => logDebug("fout", "Kon back-uptijdstip niet opslaan: " + e.message));
-      }
+      const aantalNieuw = Array.isArray(data) ? data.length : (data && Array.isArray(data.personen) ? data.personen.length : null);
+      if (aantalNieuw === null) throw new Error("onbekend formaat");
+      if (!confirm(`Dit vervangt de huidige lijst (${state.personen.length} personen) door de back-up (${aantalNieuw} personen). Doorgaan?`)) return;
+      const gelukt = await pasBackupToe(data);
+      if (gelukt) state.stage = "dashboard";
       render();
     } catch (err) {
       logDebug("fout", "Kon back-up niet lezen: " + err.message);
@@ -1673,6 +1716,20 @@ function fmtRelatiefMoment(ms) {
 function backupIndicatorHTML() {
   // Herinnert eraan regelmatig een back-up te maken: klikken maakt er direct een.
   if (!state.personen.length) return "";
+  // Met online back-up actief toont de indicator de cloud-stand; klikken op de
+  // waarschuwing probeert opnieuw te synchroniseren.
+  if (onlineBackupBeschikbaar()) {
+    if (state.onlineBackupStatus === "bezig") {
+      return `<span class="backup-indicator backup-indicator-ok">☁ Synchroniseren…</span>`;
+    }
+    if (state.onlineBackupStatus === "fout") {
+      return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="De laatste online back-up is mislukt. Klik om het opnieuw te proberen.">☁ ⚠ Online back-up mislukt</button>`;
+    }
+    if (state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0)) {
+      return `<button class="backup-indicator backup-indicator-ok" id="btnBackupNu" title="Alle wijzigingen staan versleuteld online. Klik om daarnaast een lokaal back-upbestand (.json) te maken.">☁ ✓ Online back-up actueel</button>`;
+    }
+    return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="Er zijn wijzigingen die nog niet online staan. Klik om nu te synchroniseren.">☁ Wijzigingen nog niet online</button>`;
+  }
   if (!state.laatsteBackupOp) {
     return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Er is nog nooit een back-up gemaakt. Klik om nu een back-up (.json) te downloaden.">\u26A0 Nog geen back-up gemaakt</button>`;
   }
@@ -1806,9 +1863,8 @@ function handleidingModalHTML() {
         wit zodra je daarna een contactmoment logt (of automatisch na 14 dagen), als er in de
         aanvraag niets meer te kiezen valt, of als je de aanvraag uit "Lopende aanvragen" verwijdert.
         <strong>Belangrijk om te weten:</strong> de AfspraakPlanner-koppeling is de enige plek in de
-        app die iets naar het internet stuurt — en dan alleen het regnr en het gekozen tijdslot, nooit
-        namen of adressen. Werkt dit niet, controleer dan eerst de API-sleutel bij
-        Instellingen → AfspraakPlanner.</p>
+        app die met het internet communiceert, en er gaan nooit leesbare namen of adressen over de
+        lijn. Werkt dit niet, controleer dan eerst de API-sleutel bij Instellingen → AfspraakPlanner.</p>
 
         <h4 id="hl-momenten">Bijzondere momenten</h4>
         <p>Een apart overzicht met alles wat een kaartje of belletje waard is:</p>
@@ -1978,6 +2034,35 @@ function instellingenPaginaHTML() {
         </div>
       </section>
 
+      ${heeftServerFeature("online-backup") ? `
+      <section class="instellingen-kaart">
+        <h4>Extra functies</h4>
+        <p class="instellingen-uitleg">
+          Door de beheerder voor jouw API-sleutel ingeschakeld.
+        </p>
+        <h4 style="font-size:13.5px;margin-top:10px;">Online back-up</h4>
+        <p class="instellingen-uitleg">
+          Bewaart na elke wijziging automatisch een back-up op de AfspraakPlanner-server, en haalt
+          bij het opstarten de nieuwste versie op als een ander apparaat recenter was. De back-up
+          wordt op dit apparaat versleuteld met een sleutel afgeleid van je API-sleutel — de server
+          (en de beheerder) kan de inhoud niet lezen. Handmatige lokale back-ups blijven daarnaast
+          gewoon mogelijk via menu → Back-up maken.
+        </p>
+        <div class="schema-grid">
+          <div class="schema-opt ${state.onlineBackupActief ? "active" : ""}" data-onlinebackup="aan">Aan — automatisch synchroniseren</div>
+          <div class="schema-opt ${!state.onlineBackupActief ? "active" : ""}" data-onlinebackup="uit">Uit</div>
+        </div>
+        ${state.onlineBackupActief ? `
+          <p class="instellingen-uitleg" style="margin-top:10px;">
+            ${state.onlineBackupStatus === "bezig" ? "Bezig met synchroniseren…"
+              : state.onlineBackupStatus === "fout" ? `<span style="color:var(--red);">Laatste synchronisatie is mislukt — kijk bij Debug voor details.</span>`
+              : state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0) ? "✓ Alle wijzigingen staan online."
+              : "Er zijn wijzigingen die nog niet online staan."}
+          </p>
+          <button class="btn-sm" id="btnOnlineBackupNu" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""}>Nu synchroniseren</button>
+        ` : ""}
+      </section>` : ""}
+
       <section class="instellingen-kaart instellingen-kaart-breed">
         <h4>Berichtsjablonen (afspraak inplannen)</h4>
         <p class="instellingen-uitleg">
@@ -2068,7 +2153,7 @@ function topbarHTML() {
       <button class="btn-ghost btn-sm" id="btnVergrendelNu" title="Nu vergrendelen">Vergrendelen</button>
     </div>
   </div>
-  <div id="foutBanner" class="fout-banner" style="display:${foutBannerTekst ? "flex" : "none"};">
+  <div id="foutBanner" class="fout-banner${foutBannerType === "info" ? " info-banner" : ""}" style="display:${foutBannerTekst ? "flex" : "none"};">
     <span>${esc(foutBannerTekst)}</span>
     <button class="btn-sm" id="btnSluitFoutBanner">\u2715</button>
   </div>`;
@@ -2296,24 +2381,54 @@ const SCIPIO_UITLEG_HTML = `
 function uploadHTML() {
   return `
   <div class="upload-wrap">
-    <div class="upload-card">
-      <div class="upload-mark">XLS</div>
-      <div class="upload-title">Begin met je Excel-export</div>
+    <div class="upload-card upload-card-breed">
+      <img class="upload-logo" src="icons/icon-192.png" alt="ContactPlanner" />
+      <div class="upload-title">Waarmee wil je beginnen?</div>
       <p class="upload-desc">
-        Upload de Excel-export met regnr, naam en de overige basisgegevens. Je koppelt zelf welke
-        kolom bij welk gegeven hoort. Alles wat je hierna in de app invoert \u2014 contactmomenten,
-        schema's, notities \u2014 blijft bewaard op deze computer, ook bij een volgende import.
-        Regnr. is het kenmerk waarmee personen worden herkend.
+        Alles wat je in de app invoert \u2014 contactmomenten, schema's, notities \u2014 blijft versleuteld
+        bewaard op deze computer. Kies hieronder hoe je de gegevens binnenhaalt.
       </p>
-      <details class="uitleg-details">
-        <summary>Hoe maak ik deze Excel-export in Scipio?</summary>
-        ${SCIPIO_UITLEG_HTML}
-      </details>
       <input id="fileFirstUpload" type="file" accept=".xlsx,.xls" style="display:none" />
-      <button class="btn-primary" id="btnFirstUpload">Kies Excel-bestand</button>
-      <div style="margin-top:14px;">
-        <input id="fileFirstBackup" type="file" accept=".json" style="display:none" />
-        <button class="btn-ghost" id="btnFirstBackup" style="font-size:12.5px;">of zet een eerdere back-up terug (.json)</button>
+      <input id="fileFirstBackup" type="file" accept=".json" style="display:none" />
+      <div class="setup-opties">
+        <div class="setup-optie">
+          <div class="setup-icoon" style="background:var(--green-bg);color:var(--green);">XLS</div>
+          <strong>Excel inlezen</strong>
+          <p>Begin met de ledenexport uit Scipio (regnr, naam en basisgegevens). Je koppelt zelf
+          welke kolom bij welk gegeven hoort.</p>
+          <button class="btn-primary" id="btnFirstUpload">Kies Excel-bestand</button>
+          <details class="uitleg-details" style="margin-top:10px;">
+            <summary>Hoe maak ik deze export?</summary>
+            ${SCIPIO_UITLEG_HTML}
+          </details>
+        </div>
+        <div class="setup-optie">
+          <div class="setup-icoon" style="background:var(--amber-bg);color:var(--amber);">\u21ba</div>
+          <strong>Back-up terugzetten</strong>
+          <p>Zet een eerder gemaakt back-upbestand (.json) terug \u2014 bijvoorbeeld bij een verhuizing
+          naar een andere computer of browser.</p>
+          <button class="btn-primary" id="btnFirstBackup">Kies back-upbestand</button>
+        </div>
+        <div class="setup-optie">
+          <div class="setup-icoon" style="background:var(--blue-bg);color:var(--blue);">\u2601</div>
+          <strong>API-sleutel koppelen</strong>
+          <p>Vul je persoonlijke API-sleutel in en haal — als dat voor jouw sleutel is
+          ingeschakeld — direct de laatste versie van je gegevens op.</p>
+          ${state.setupApiOpen ? `
+            <div class="field-row" style="text-align:left;">
+              <label>API-sleutel</label>
+              <input type="password" id="setupApiSleutel" autocomplete="off" value="${esc(state.setupApiSleutelDraft)}" />
+            </div>
+            <div class="field-row" style="text-align:left;">
+              <label>Basis-URL (leeg = standaard)</label>
+              <input type="url" id="setupApiUrl" placeholder="https://afspraak.hhgputten.nl" value="${esc(state.setupApiUrlDraft)}" />
+            </div>
+            ${state.setupApiFout ? `<p style="color:var(--red);font-size:12px;">${esc(state.setupApiFout)}</p>` : ""}
+            <button class="btn-primary" id="btnSetupApiKoppelen" ${state.setupApiBezig ? "disabled" : ""}>${state.setupApiBezig ? "Ophalen\u2026" : "Gegevens ophalen"}</button>
+          ` : `
+            <button class="btn-primary" id="btnSetupApiTonen">API-sleutel invullen</button>
+          `}
+        </div>
       </div>
     </div>
   </div>`;
@@ -3070,6 +3185,7 @@ function attachEvents() {
   if ($("#btnPinWijzigen")) $("#btnPinWijzigen").addEventListener("click", pinWijzigen);
   if ($("#btnVergrendelNu")) $("#btnVergrendelNu").addEventListener("click", vergrendelNu);
   if ($("#btnBackupNu")) $("#btnBackupNu").addEventListener("click", exporteerBackup);
+  if ($("#btnOnlineBackupRetry")) $("#btnOnlineBackupRetry").addEventListener("click", () => synchroniseerOnlineBackup());
 
   if ($("#btnHamburger")) $("#btnHamburger").addEventListener("click", () => { state.menuOpen = !state.menuOpen; render(); });
   if ($("#btnSluitMenu")) $("#btnSluitMenu").addEventListener("click", () => { state.menuOpen = false; render(); });
@@ -3084,6 +3200,8 @@ function attachEvents() {
     if (state.stage !== "instellingen") state.instellingenTerug = state.stage;
     state.stage = "instellingen";
     state.menuOpen = false;
+    // Features kunnen net door de beheerder zijn omgezet: bij het openen verversen.
+    if (state.afspraakplannerApiSleutel) haalServerFeaturesOp().catch(() => {});
     render();
   });
   if ($("#btnInstellingenTerug")) $("#btnInstellingenTerug").addEventListener("click", () => {
@@ -3132,7 +3250,18 @@ function attachEvents() {
   if ($("#instAfspraakplannerSleutel")) $("#instAfspraakplannerSleutel").addEventListener("change", async (e) => {
     state.afspraakplannerApiSleutel = e.target.value.trim();
     await veiligOpslaan(() => dbSetInstelling("afspraakplannerApiSleutel", state.afspraakplannerApiSleutel), "instelling opslaan");
+    // Nieuwe sleutel → mogelijk andere features; meteen opnieuw ophalen.
+    haalServerFeaturesOp().catch(() => {});
   });
+  $$("[data-onlinebackup]").forEach((el) => el.addEventListener("click", async (e) => {
+    const aan = e.currentTarget.dataset.onlinebackup === "aan";
+    if (aan === state.onlineBackupActief) return;
+    state.onlineBackupActief = aan;
+    await veiligOpslaan(() => dbSetInstelling("onlineBackupActief", aan), "instelling opslaan");
+    if (aan) synchroniseerOnlineBackup();
+    render();
+  }));
+  if ($("#btnOnlineBackupNu")) $("#btnOnlineBackupNu").addEventListener("click", () => synchroniseerOnlineBackup());
   if ($("#instAfspraakplannerUrl")) $("#instAfspraakplannerUrl").addEventListener("change", async (e) => {
     state.afspraakplannerBasisUrl = e.target.value.trim() || "https://afspraak.hhgputten.nl";
     await veiligOpslaan(() => dbSetInstelling("afspraakplannerBasisUrl", state.afspraakplannerBasisUrl), "instelling opslaan");
@@ -3281,6 +3410,10 @@ function attachEvents() {
   if ($("#btnFirstUpload")) $("#btnFirstUpload").addEventListener("click", () => $("#fileFirstUpload").click());
   if ($("#fileFirstBackup")) $("#fileFirstBackup").addEventListener("change", handleBackupImport);
   if ($("#btnFirstBackup")) $("#btnFirstBackup").addEventListener("click", () => $("#fileFirstBackup").click());
+  if ($("#btnSetupApiTonen")) $("#btnSetupApiTonen").addEventListener("click", () => { state.setupApiOpen = true; render(); });
+  if ($("#setupApiSleutel")) $("#setupApiSleutel").addEventListener("input", (e) => { state.setupApiSleutelDraft = e.target.value; });
+  if ($("#setupApiUrl")) $("#setupApiUrl").addEventListener("input", (e) => { state.setupApiUrlDraft = e.target.value; });
+  if ($("#btnSetupApiKoppelen")) $("#btnSetupApiKoppelen").addEventListener("click", koppelViaApiSleutel);
 
   if ($("#fileImportExcel")) $("#fileImportExcel").addEventListener("change", handleFileSelect);
   if ($("#btnImportExcel")) $("#btnImportExcel").addEventListener("click", () => $("#fileImportExcel").click());
@@ -3513,6 +3646,185 @@ async function verversAlleAanvraagStatussen() {
   }));
   if (gewijzigd) await veiligOpslaan(bewaarGegevens, "aanvraagstatussen bijwerken");
   state.aanvragenVerversenBezig = false;
+  render();
+}
+
+// ---------------- server-features & online back-up ----------------
+// De beheerder van AfspraakPlanner kan per API-sleutel extra functies inschakelen
+// (GET /api/features.php). De bijbehorende instellingen verschijnen alleen als de
+// server de feature toekent. Eerste feature: "online-backup" — automatisch een
+// client-side versleutelde back-up naar de eigen server sturen en terughalen.
+
+function heeftServerFeature(naam) {
+  return state.serverFeatures.includes(naam);
+}
+
+async function haalServerFeaturesOp() {
+  if (!state.afspraakplannerApiSleutel) { state.serverFeatures = []; return; }
+  try {
+    const data = await afspraakplannerFetch("/features.php", { method: "GET" });
+    state.serverFeatures = Array.isArray(data.features) ? data.features : [];
+  } catch (e) {
+    logDebug("fout", "Kon server-features niet ophalen: " + e.message);
+  }
+  render();
+}
+
+// Sleutel voor de online back-up, afgeleid van de API-sleutel. De server kent alleen de
+// sha256-hash van de API-sleutel en kan deze afleiding dus niet maken: hij ziet alleen
+// ciphertext. Wie de API-sleutel heeft (alleen de ouderling zelf), kan de back-up lezen.
+async function onlineBackupSleutel(zoutBytes) {
+  const basis = await crypto.subtle.importKey("raw", new TextEncoder().encode("cp-online-backup-v1:" + state.afspraakplannerApiSleutel), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: zoutBytes, iterations: 100000, hash: "SHA-256" },
+    basis,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+function onlineBackupBeschikbaar() {
+  return heeftServerFeature("online-backup") && state.onlineBackupActief &&
+    !!state.afspraakplannerApiSleutel && versleutelingBeschikbaar();
+}
+
+async function uploadOnlineBackup() {
+  if (!onlineBackupBeschikbaar() || !state.personen.length) return;
+  state.onlineBackupStatus = "bezig";
+  render();
+  try {
+    const zout = crypto.getRandomValues(new Uint8Array(16));
+    const sleutel = await onlineBackupSleutel(zout);
+    const pakket = await versleutelJSON(sleutel, bouwBackupPayload());
+    await afspraakplannerFetch("/backup.php", {
+      method: "PUT",
+      body: JSON.stringify({
+        blob: { zout: bytesNaarB64(zout), iv: pakket.iv, data: pakket.data },
+        laatste_wijziging_op: state.laatsteWijzigingOp,
+      }),
+    });
+    state.onlineBackupStatus = "ok";
+    state.onlineBackupGesyncdTot = state.laatsteWijzigingOp;
+    await dbSetInstelling("onlineBackupGesyncdTot", state.onlineBackupGesyncdTot)
+      .catch((e) => logDebug("fout", "Kon online-backupadministratie niet opslaan: " + e.message));
+  } catch (e) {
+    state.onlineBackupStatus = "fout";
+    logDebug("fout", "Online back-up uploaden mislukt: " + e.message);
+  }
+  render();
+}
+
+// Debounce: na elke geslaagde wijziging wordt een upload ingepland; snel opeenvolgende
+// wijzigingen leveren zo één upload op in plaats van tien.
+let onlineBackupTimer = null;
+function planOnlineBackup() {
+  if (!onlineBackupBeschikbaar()) return;
+  if (onlineBackupTimer) clearTimeout(onlineBackupTimer);
+  onlineBackupTimer = setTimeout(() => {
+    onlineBackupTimer = null;
+    uploadOnlineBackup();
+  }, 4000);
+}
+
+// Bij het opstarten/ontgrendelen: is de cloud-versie nieuwer dan lokaal, dan wordt hij
+// automatisch overgenomen (gekozen gedrag — je kunt daarnaast altijd handmatig lokale
+// back-upbestanden blijven maken). Is lokaal nieuwer, dan wordt er stil geüpload.
+async function synchroniseerOnlineBackup() {
+  if (!onlineBackupBeschikbaar()) return;
+  try {
+    let meta = null;
+    try {
+      meta = await afspraakplannerFetch("/backup.php", { method: "GET" });
+    } catch (e) {
+      if (!/geen back-up/i.test(e.message)) throw e;
+    }
+    const cloudOp = meta && meta.laatste_wijziging_op ? meta.laatste_wijziging_op : 0;
+    const lokaalOp = state.laatsteWijzigingOp || 0;
+    if (cloudOp > lokaalOp) {
+      const vol = await afspraakplannerFetch("/backup.php?volledig=1", { method: "GET" });
+      const sleutel = await onlineBackupSleutel(b64NaarBytes(vol.blob.zout));
+      const data = await ontsleutelJSON(sleutel, { iv: vol.blob.iv, data: vol.blob.data });
+      const gelukt = await pasBackupToe(data);
+      if (gelukt) {
+        // Het wijzigingstijdstip gelijktrekken met de cloud, zodat er niet direct
+        // een overbodige upload van dezelfde inhoud volgt.
+        if (onlineBackupTimer) { clearTimeout(onlineBackupTimer); onlineBackupTimer = null; }
+        state.laatsteWijzigingOp = cloudOp;
+        state.onlineBackupGesyncdTot = cloudOp;
+        state.onlineBackupStatus = "ok";
+        await dbSetInstelling("laatsteWijzigingOp", cloudOp).catch(() => {});
+        await dbSetInstelling("onlineBackupGesyncdTot", cloudOp).catch(() => {});
+        toonInfoBanner("Online back-up overgenomen: de versie op de server was nieuwer dan de gegevens op dit apparaat.");
+      }
+    } else if (lokaalOp > cloudOp && state.personen.length) {
+      await uploadOnlineBackup();
+    } else if (state.onlineBackupStatus === "idle") {
+      state.onlineBackupStatus = "ok";
+    }
+  } catch (e) {
+    state.onlineBackupStatus = "fout";
+    logDebug("fout", "Online back-up synchroniseren mislukt: " + e.message);
+  }
+  render();
+}
+
+// Alles wat na ontgrendelen (of een herlaadbeurt binnen het uur) met de server
+// gesynchroniseerd moet worden, op de achtergrond.
+function startServerSync() {
+  haalServerFeaturesOp()
+    .then(() => synchroniseerOnlineBackup())
+    .catch((e) => logDebug("fout", "Server-synchronisatie mislukt: " + e.message));
+  verversAlleAanvraagStatussen().catch((e) => logDebug("fout", "Aanvraagstatussen verversen mislukt: " + e.message));
+}
+
+// Vanaf het startscherm: API-sleutel koppelen en de laatste online back-up terughalen.
+async function koppelViaApiSleutel() {
+  const sleutel = state.setupApiSleutelDraft.trim();
+  const url = state.setupApiUrlDraft.trim() || "https://afspraak.hhgputten.nl";
+  if (!sleutel) { state.setupApiFout = "Vul eerst je API-sleutel in."; render(); return; }
+  state.setupApiBezig = true;
+  state.setupApiFout = "";
+  state.afspraakplannerApiSleutel = sleutel;
+  state.afspraakplannerBasisUrl = url;
+  render();
+  try {
+    const feats = await afspraakplannerFetch("/features.php", { method: "GET" });
+    state.serverFeatures = Array.isArray(feats.features) ? feats.features : [];
+    if (!heeftServerFeature("online-backup")) {
+      throw new Error("Online back-up is niet ingeschakeld voor deze API-sleutel. Vraag de beheerder om de functie aan te zetten, of begin met een Excel-bestand of back-upbestand.");
+    }
+    const vol = await afspraakplannerFetch("/backup.php?volledig=1", { method: "GET" });
+    let data;
+    try {
+      const cryptoSleutel = await onlineBackupSleutel(b64NaarBytes(vol.blob.zout));
+      data = await ontsleutelJSON(cryptoSleutel, { iv: vol.blob.iv, data: vol.blob.data });
+    } catch (e) {
+      throw new Error("De online back-up kon niet ontsleuteld worden — hij is met een andere (oudere) API-sleutel gemaakt.");
+    }
+    const gelukt = await pasBackupToe(data);
+    if (!gelukt) throw new Error("De back-up kon niet lokaal opgeslagen worden — kijk bij Debug voor details.");
+    state.onlineBackupActief = true;
+    state.onlineBackupGesyncdTot = vol.laatste_wijziging_op || null;
+    state.onlineBackupStatus = "ok";
+    state.laatsteWijzigingOp = vol.laatste_wijziging_op || state.laatsteWijzigingOp;
+    await dbSetInstelling("afspraakplannerApiSleutel", state.afspraakplannerApiSleutel);
+    await dbSetInstelling("afspraakplannerBasisUrl", state.afspraakplannerBasisUrl);
+    await dbSetInstelling("onlineBackupActief", true);
+    await dbSetInstelling("onlineBackupGesyncdTot", state.onlineBackupGesyncdTot);
+    if (state.laatsteWijzigingOp) await dbSetInstelling("laatsteWijzigingOp", state.laatsteWijzigingOp);
+    state.stage = "dashboard";
+    controleerNieuweVersie().catch(() => {});
+    startServerSync();
+  } catch (e) {
+    // Mislukt: de sleutel niet bewaren, zodat een tikfout geen half-gekoppelde staat achterlaat.
+    state.afspraakplannerApiSleutel = "";
+    state.serverFeatures = [];
+    state.setupApiFout = /geen back-up/i.test(e.message)
+      ? "Er staat nog geen online back-up voor deze API-sleutel op de server. Begin met een Excel-bestand of een back-upbestand; daarna kun je online back-up aanzetten via Instellingen."
+      : e.message;
+  }
+  state.setupApiBezig = false;
   render();
 }
 
@@ -3885,9 +4197,9 @@ const PRIVACY_MELDING_HTML = `
   <div class="privacy-notice">
     <span class="privacy-icoon">\u{1F512}</span>
     <span><strong>Privacy is belangrijk.</strong> Alle gegevens blijven lokaal op uw computer en worden
-    daar versleuteld opgeslagen (AES-256, sleutel afgeleid van uw pin). Er gaan geen namen of adressen
-    naar internet; alleen de optionele AfspraakPlanner-koppeling wisselt registratienummers en
-    tijdslots uit met de eigen afsprakenserver.</span>
+    daar versleuteld opgeslagen (AES-256, sleutel afgeleid van uw pin). Er gaan geen leesbare namen of
+    adressen naar internet: de optionele AfspraakPlanner-koppeling wisselt uitsluitend
+    registratienummers, tijdslots en versleutelde gegevens uit met de eigen afsprakenserver.</span>
   </div>`;
 
 function lockScreenHTML() {
@@ -4074,6 +4386,8 @@ function vergrendelNu() {
     if (typeof instellingenMap.afspraakplannerBasisUrl === "string" && instellingenMap.afspraakplannerBasisUrl) state.afspraakplannerBasisUrl = instellingenMap.afspraakplannerBasisUrl;
     // Alleen relevant in de kluis-loze (Web Crypto-loze) situatie; met kluis overschrijft laadUitKluis dit.
     if (Array.isArray(instellingenMap.afspraakAanvragen)) state.afspraakAanvragen = instellingenMap.afspraakAanvragen;
+    if (typeof instellingenMap.onlineBackupActief === "boolean") state.onlineBackupActief = instellingenMap.onlineBackupActief;
+    if (typeof instellingenMap.onlineBackupGesyncdTot === "number") state.onlineBackupGesyncdTot = instellingenMap.onlineBackupGesyncdTot;
     if (!state.afspraakSjablonen.some((s) => s.id === STANDAARD_TIJDSLOT_SJABLOON.id)) {
       state.afspraakSjablonen.push({ ...STANDAARD_TIJDSLOT_SJABLOON });
     }
@@ -4110,9 +4424,9 @@ function vergrendelNu() {
           await laadUitKluis();
           state.vergrendeld = false;
           plantAutoVergrendel(ontgrendeldTot - nu);
-          // Ook bij een herlaadbeurt binnen het ontgrendelde uur (geen pin nodig) de
-          // lopende aanvragen op de achtergrond bijwerken.
-          verversAlleAanvraagStatussen().catch((e) => logDebug("fout", "Aanvraagstatussen verversen mislukt: " + e.message));
+          // Ook bij een herlaadbeurt binnen het ontgrendelde uur (geen pin nodig)
+          // op de achtergrond synchroniseren met de server.
+          startServerSync();
         } catch (e) {
           cryptoRuntime.sleutel = null;
           logDebug("fout", "Bewaarde sessiesleutel is onbruikbaar; de pin is opnieuw nodig: " + e.message);
