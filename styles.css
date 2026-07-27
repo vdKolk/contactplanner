@@ -384,6 +384,15 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .instellingen-kaart h4 { margin: 0 0 4px; font-size: 14.5px; }
 .instellingen-kaart-breed { grid-column: 1 / -1; }
 .instellingen-uitleg { font-size: 12.5px; color: var(--text-soft); margin: 0 0 10px; }
+
+/* Extra functies (per API-sleutel ingeschakeld): visueel onderscheiden van de gewone
+   instellingen met een accentrand en badge. Nieuwe functies vullen het raster eerst
+   horizontaal en klappen daarna naar een volgende rij. */
+.instellingen-kaart-features { border-left: 4px solid var(--accent); }
+.feature-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); vertical-align: middle; margin-left: 6px; }
+.features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.feature-kaart { border: 1px solid var(--accent-soft); background: var(--bg); border-radius: 10px; padding: 14px 16px; }
+.feature-kaart h4 { margin: 0 0 4px; font-size: 13.5px; color: var(--accent); }
 .instellingen-waarschuwing { font-size: 12px; color: var(--amber); background: var(--amber-bg); border-radius: 8px; padding: 8px 10px; margin: 0 0 10px; }
 .note-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 9px; }
 .sjabloon-editor { background: var(--grey-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }

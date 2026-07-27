@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.12"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.13"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -766,8 +766,11 @@ async function veiligOpslaan(schrijfFn, context) {
     await schrijfFn();
     state.saveState = "saved";
     // Elke geslaagde wijziging telt als "nog niet in de back-up" — behalve het
-    // bijwerken van de back-upadministratie zelf.
-    if (context !== "backup-administratie") {
+    // bijwerken van de back-upadministratie zelf, en het verversen van
+    // aanvraagstatussen: die zijn van de server afkomstig en altijd opnieuw op te
+    // halen, dus daarvoor hoeft er geen (online) back-up gemaakt te worden.
+    const teltNietAlsWijziging = ["backup-administratie", "aanvraagstatus bijwerken", "aanvraagstatussen bijwerken"];
+    if (!teltNietAlsWijziging.includes(context)) {
       state.laatsteWijzigingOp = Date.now();
       dbSetInstelling("laatsteWijzigingOp", state.laatsteWijzigingOp)
         .catch((e) => logDebug("fout", "Kon wijzigingstijdstip niet opslaan: " + e.message));
@@ -836,6 +839,13 @@ const state = {
   setupApiFout: "",
   setupApiSleutelDraft: "",
   setupApiUrlDraft: "",
+  // Bijbelgedeelten (server-feature "bijbelgedeelten"): eigen naslag van besproken
+  // gedeelten. Versleuteld in de kluis en mee in de back-up.
+  bijbelgedeelten: [], // { id, gedeelte, tekst, titel, thema, samenvatting, aangemaaktOp }
+  bijbelZoek: "", // alleen in-memory
+  bijbelBewerkId: null,
+  bijbelDraft: { gedeelte: "", tekst: "", titel: "", thema: "", samenvatting: "" },
+  bijbelTerug: null, // stage om naar terug te keren vanaf de Bijbelgedeelten-pagina
   selectieModusPlanning: false,
   geselecteerdeGezinnen: [], // gezinsKeys, alleen in-memory
   afspraakplannerStap: "samenstellen", // samenstellen | resultaat (op de pagina "Aanvraag uitzetten")
@@ -900,6 +910,7 @@ async function bewaarGegevens() {
       gezinsdata: state.gezinsdata,
       afspraakAanvragen: state.afspraakAanvragen,
       afspraakplannerApiSleutel: state.afspraakplannerApiSleutel,
+      bijbelgedeelten: state.bijbelgedeelten,
     });
     await dbPut(STORE_KLUIS, { naam: "gegevens", iv: pakket.iv, data: pakket.data });
   } else {
@@ -907,9 +918,11 @@ async function bewaarGegevens() {
     await dbClearAll(STORE_GEZINSDATA);
     await dbPutAll(STORE_PERSONEN, state.personen);
     await dbPutAll(STORE_GEZINSDATA, Object.values(state.gezinsdata));
-    // Zonder kluis (geen Web Crypto): aanvragen en sleutel dan maar plat bij de instellingen.
+    // Zonder kluis (geen Web Crypto): aanvragen, sleutel en bijbelgedeelten dan maar
+    // plat bij de instellingen.
     await dbSetInstelling("afspraakAanvragen", state.afspraakAanvragen);
     await dbSetInstelling("afspraakplannerApiSleutel", state.afspraakplannerApiSleutel);
+    await dbSetInstelling("bijbelgedeelten", state.bijbelgedeelten);
   }
   await werkMijlpalenCacheBij();
 }
@@ -933,6 +946,7 @@ async function laadUitKluis() {
     state.personen = inhoud.personen || [];
     state.gezinsdata = inhoud.gezinsdata || {};
     state.afspraakAanvragen = inhoud.afspraakAanvragen || [];
+    state.bijbelgedeelten = inhoud.bijbelgedeelten || [];
     if (typeof inhoud.afspraakplannerApiSleutel === "string" && inhoud.afspraakplannerApiSleutel) {
       state.afspraakplannerApiSleutel = inhoud.afspraakplannerApiSleutel;
     }
@@ -1394,6 +1408,7 @@ function bouwBackupPayload() {
     personen: state.personen,
     gezinsdata: state.gezinsdata,
     afspraakAanvragen: state.afspraakAanvragen,
+    bijbelgedeelten: state.bijbelgedeelten,
     instellingen: {
       mijlpalenLeeftijdDrempel: state.mijlpalenLeeftijdDrempel,
       mijlpalenHuwelijksJaren: state.mijlpalenHuwelijksJaren,
@@ -1458,6 +1473,7 @@ async function pasBackupToe(data) {
   state.personen = personen;
   state.gezinsdata = gezinsdata;
   if (Array.isArray(data.afspraakAanvragen)) state.afspraakAanvragen = data.afspraakAanvragen;
+  if (Array.isArray(data.bijbelgedeelten)) state.bijbelgedeelten = data.bijbelgedeelten;
   migreerOudeContactgegevens();
   herstelLaatsteContactAlleGezinnen();
   // Instellingen uit de back-up overnemen (versie 3+); de pin blijft buiten de back-up.
@@ -2065,35 +2081,6 @@ function instellingenPaginaHTML() {
         </div>
       </section>
 
-      ${heeftServerFeature("online-backup") ? `
-      <section class="instellingen-kaart">
-        <h4>Extra functies</h4>
-        <p class="instellingen-uitleg">
-          Door de beheerder voor jouw API-sleutel ingeschakeld.
-        </p>
-        <h4 style="font-size:13.5px;margin-top:10px;">Online back-up</h4>
-        <p class="instellingen-uitleg">
-          Bewaart na elke wijziging automatisch een back-up op de AfspraakPlanner-server, en haalt
-          bij het opstarten de nieuwste versie op als een ander apparaat recenter was. De back-up
-          wordt op dit apparaat versleuteld met een sleutel afgeleid van je API-sleutel — de server
-          (en de beheerder) kan de inhoud niet lezen. Handmatige lokale back-ups blijven daarnaast
-          gewoon mogelijk via menu → Back-up maken.
-        </p>
-        <div class="schema-grid">
-          <div class="schema-opt ${state.onlineBackupActief ? "active" : ""}" data-onlinebackup="aan">Aan — automatisch synchroniseren</div>
-          <div class="schema-opt ${!state.onlineBackupActief ? "active" : ""}" data-onlinebackup="uit">Uit</div>
-        </div>
-        ${state.onlineBackupActief ? `
-          <p class="instellingen-uitleg" style="margin-top:10px;">
-            ${state.onlineBackupStatus === "bezig" ? "Bezig met synchroniseren…"
-              : state.onlineBackupStatus === "fout" ? `<span style="color:var(--red);">Laatste synchronisatie is mislukt — kijk bij Debug voor details.</span>`
-              : state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0) ? "✓ Alle wijzigingen staan online."
-              : "Er zijn wijzigingen die nog niet online staan."}
-          </p>
-          <button class="btn-sm" id="btnOnlineBackupNu" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""}>Nu synchroniseren</button>
-        ` : ""}
-      </section>` : ""}
-
       <section class="instellingen-kaart instellingen-kaart-breed">
         <h4>Berichtsjablonen (afspraak inplannen)</h4>
         <p class="instellingen-uitleg">
@@ -2114,6 +2101,54 @@ function instellingenPaginaHTML() {
         `).join("")}
         <button class="btn-sm" id="btnSjabloonToevoegen">+ Nieuw sjabloon</button>
       </section>
+
+      ${state.serverFeatures.length ? `
+      <section class="instellingen-kaart instellingen-kaart-breed instellingen-kaart-features">
+        <h4>Extra functies <span class="feature-badge">per API-sleutel</span></h4>
+        <p class="instellingen-uitleg">
+          Door de beheerder voor jouw API-sleutel ingeschakeld. Deze functies zijn niet voor
+          iedereen zichtbaar.
+        </p>
+        <div class="features-grid">
+          ${heeftServerFeature("online-backup") ? `
+          <div class="feature-kaart">
+            <h4>Online back-up</h4>
+            <p class="instellingen-uitleg">
+              Bewaart na elke wijziging automatisch een back-up op de AfspraakPlanner-server, en
+              haalt bij het opstarten de nieuwste versie op als een ander apparaat recenter was.
+              De back-up wordt op dit apparaat versleuteld met een sleutel afgeleid van je
+              API-sleutel — de server (en de beheerder) kan de inhoud niet lezen. Handmatige
+              lokale back-ups blijven daarnaast gewoon mogelijk via menu → Back-up maken.
+            </p>
+            <div class="schema-grid">
+              <div class="schema-opt ${state.onlineBackupActief ? "active" : ""}" data-onlinebackup="aan">Aan</div>
+              <div class="schema-opt ${!state.onlineBackupActief ? "active" : ""}" data-onlinebackup="uit">Uit</div>
+            </div>
+            ${state.onlineBackupActief ? `
+              <p class="instellingen-uitleg" style="margin-top:10px;">
+                ${state.onlineBackupStatus === "bezig" ? "Bezig met synchroniseren…"
+                  : state.onlineBackupStatus === "fout" ? `<span style="color:var(--red);">Laatste synchronisatie is mislukt — kijk bij Debug voor details.</span>`
+                  : state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0) ? "✓ Alle wijzigingen staan online."
+                  : "Er zijn wijzigingen die nog niet online staan."}
+              </p>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn-sm" id="btnOnlineBackupNu" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""}>Nu synchroniseren</button>
+                <button class="btn-sm" id="btnHerstelLaatste" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""} title="Vervangt de gegevens op dit apparaat door de laatste versie op de server">Laatste serverversie terugzetten</button>
+                <button class="btn-sm" id="btnHerstelVorige" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""} title="Vervangt de gegevens op dit apparaat door het dagelijkse herstelpunt (de versie van vóór vandaag) — handig als er vandaag iets is misgegaan">Dagelijks herstelpunt terugzetten</button>
+              </div>
+            ` : ""}
+          </div>` : ""}
+          ${heeftServerFeature("bijbelgedeelten") ? `
+          <div class="feature-kaart">
+            <h4>Bijbelgedeelten</h4>
+            <p class="instellingen-uitleg">
+              Je eigen naslag van besproken bijbelgedeelten, doorzoekbaar op alle velden.
+              Je vindt het overzicht in het menu, onder "Pastoraal".
+            </p>
+            <button class="btn-sm" id="btnBijbelgedeeltenInstellingen">Open Bijbelgedeelten</button>
+          </div>` : ""}
+        </div>
+      </section>` : ""}
     </div>`;
 }
 
@@ -2146,6 +2181,11 @@ function sidebarMenuHTML() {
         <input id="fileImportBackup" type="file" accept=".json" style="display:none" />
         ${menuItemHTML("btnImportBackup", "\u21ba", "var(--amber)", "var(--amber-bg)", "Back-up terugzetten")}
         ${menuItemHTML("btnExportBackup", "\u2913", "var(--accent)", "var(--accent-soft)", "Back-up maken")}
+        <div class="sidebar-divider"></div>
+      ` : ""}
+      ${heeftServerFeature("bijbelgedeelten") ? `
+        <div class="sidebar-groep-label">Pastoraal</div>
+        ${menuItemHTML("btnBijbelgedeelten", "\ud83d\udcd6", "var(--accent)", "var(--accent-soft)", "Bijbelgedeelten")}
         <div class="sidebar-divider"></div>
       ` : ""}
       <div class="sidebar-groep-label">Systeem</div>
@@ -2220,6 +2260,137 @@ function releaseHistorieHTML() {
     <p style="color:var(--text-soft);font-size:12.5px;max-width:720px;">
       Van versies vóór ${esc(versies[versies.length - 1])} zijn geen release-notes in de app opgenomen.
     </p>`;
+}
+
+// ---------------- Bijbelgedeelten (server-feature "bijbelgedeelten") ----------------
+// Eigen naslag: per besproken bijbelgedeelte een titel, thema en samenvatting,
+// doorzoekbaar op alle velden. Volledig lokaal (kluis) en mee in de back-up.
+
+const BIJBEL_VELDEN = ["gedeelte", "tekst", "titel", "thema", "samenvatting"];
+
+function leegBijbelDraft() {
+  return { gedeelte: "", tekst: "", titel: "", thema: "", samenvatting: "" };
+}
+
+function gefilterdeBijbelgedeelten() {
+  // Numeriek-bewust sorteren, zodat "Psalm 23" vóór "Psalm 119" komt.
+  const lijst = state.bijbelgedeelten.slice().sort((a, b) =>
+    (a.gedeelte || a.titel || "").localeCompare(b.gedeelte || b.titel || "", "nl", { numeric: true, sensitivity: "base" }));
+  const q = normKey(state.bijbelZoek);
+  if (!q) return lijst;
+  return lijst.filter((b) => BIJBEL_VELDEN.some((veld) => normKey(b[veld]).includes(q)));
+}
+
+function bijbelItemHTML(b) {
+  return `
+    <div class="note-card">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+        <div style="min-width:0;">
+          <strong>${esc(b.titel || b.gedeelte || "Zonder titel")}</strong>
+          <div style="font-size:12.5px;color:var(--text-soft);margin-top:2px;">
+            ${esc(b.gedeelte)}${b.tekst ? ` · ${esc(b.tekst)}` : ""}
+          </div>
+        </div>
+        <span style="display:flex;gap:4px;align-items:center;flex-shrink:0;">
+          ${b.thema ? `<span class="tag-grey" style="margin:0;">${esc(b.thema)}</span>` : ""}
+          <button class="btn-sm" data-bijbel-bewerk="${esc(b.id)}">Bewerk</button>
+          <button class="btn-ghost btn-sm btn-danger" data-bijbel-verwijder="${esc(b.id)}" title="Verwijderen">✕</button>
+        </span>
+      </div>
+      ${b.samenvatting ? `<div style="font-size:13px;margin-top:6px;white-space:pre-wrap;">${esc(b.samenvatting)}</div>` : ""}
+    </div>`;
+}
+
+function bijbelLijstHTML() {
+  if (!state.bijbelgedeelten.length) {
+    return `<div class="empty-state">Nog geen bijbelgedeelten. Voeg hierboven je eerste toe.</div>`;
+  }
+  const lijst = gefilterdeBijbelgedeelten();
+  if (!lijst.length) return `<div class="empty-state">Niets gevonden voor deze zoekopdracht.</div>`;
+  return `
+    <p style="font-size:12px;color:var(--text-soft);margin:0 0 8px;">${lijst.length} van ${state.bijbelgedeelten.length} gedeelte${state.bijbelgedeelten.length === 1 ? "" : "n"}</p>
+    ${lijst.map(bijbelItemHTML).join("")}`;
+}
+
+function bijbelgedeeltenHTML() {
+  const bewerken = !!state.bijbelBewerkId;
+  const d = state.bijbelDraft;
+  return `
+    ${paginaSluitKnopHTML("btnBijbelgedeeltenSluiten")}
+    <h2 style="font-size:22px;margin:0 0 4px;">Bijbelgedeelten</h2>
+    <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px;max-width:720px;">
+      Je eigen naslag van besproken bijbelgedeelten: wat is de kern, en wat kun je erbij vertellen?
+      Alles is doorzoekbaar op gedeelte, tekst, titel, thema en samenvatting, en gaat mee in de back-up.
+    </p>
+
+    <section class="instellingen-kaart" style="max-width:720px;">
+      <h4>${bewerken ? "Bijbelgedeelte bewerken" : "Nieuw bijbelgedeelte"}</h4>
+      <div class="field-grid2">
+        <div class="field-row"><label>Bijbelgedeelte</label><input data-bijbel-veld="gedeelte" placeholder="Bijv. Johannes 3" value="${esc(d.gedeelte)}" /></div>
+        <div class="field-row"><label>Bijbeltekst</label><input data-bijbel-veld="tekst" placeholder="Bijv. vers 16" value="${esc(d.tekst)}" /></div>
+      </div>
+      <div class="field-grid2">
+        <div class="field-row"><label>Titel</label><input data-bijbel-veld="titel" placeholder="Bijv. De liefde van God" value="${esc(d.titel)}" /></div>
+        <div class="field-row"><label>Thema</label><input data-bijbel-veld="thema" placeholder="Bijv. troost, genade" value="${esc(d.thema)}" /></div>
+      </div>
+      <div class="field-row">
+        <label>Samenvatting</label>
+        <textarea data-bijbel-veld="samenvatting" style="min-height:110px;" placeholder="Kort verslag: wat kun je bij dit gedeelte vertellen?">${esc(d.samenvatting)}</textarea>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-primary" id="btnBijbelOpslaan">${bewerken ? "Wijzigingen opslaan" : "Toevoegen"}</button>
+        ${bewerken ? `<button class="btn-ghost" id="btnBijbelAnnuleer">Annuleren</button>` : ""}
+      </div>
+    </section>
+
+    <div class="toolbar" style="margin-top:16px;max-width:720px;">
+      <div class="search-box" style="flex:1;">
+        <input id="bijbelZoek" placeholder="Zoek op gedeelte, tekst, titel, thema of samenvatting…" value="${esc(state.bijbelZoek)}" />
+        <button class="search-clear ${state.bijbelZoek ? "" : "verborgen"}" id="btnBijbelZoekWissen" title="Zoekopdracht wissen">✕</button>
+      </div>
+    </div>
+    <div id="bijbelLijst" style="max-width:720px;">${bijbelLijstHTML()}</div>`;
+}
+
+async function bewaarBijbelgedeelte() {
+  const d = {};
+  BIJBEL_VELDEN.forEach((veld) => { d[veld] = (state.bijbelDraft[veld] || "").trim(); });
+  if (!d.gedeelte && !d.titel) { alert("Vul minstens een bijbelgedeelte of een titel in."); return; }
+  if (state.bijbelBewerkId) {
+    const idx = state.bijbelgedeelten.findIndex((b) => b.id === state.bijbelBewerkId);
+    if (idx !== -1) state.bijbelgedeelten[idx] = { ...state.bijbelgedeelten[idx], ...d };
+  } else {
+    state.bijbelgedeelten.push({ id: uid(), ...d, aangemaaktOp: todayISO() });
+  }
+  state.bijbelBewerkId = null;
+  state.bijbelDraft = leegBijbelDraft();
+  await veiligOpslaan(bewaarGegevens, "bijbelgedeelte opslaan");
+  render();
+}
+
+async function verwijderBijbelgedeelte(id) {
+  const b = state.bijbelgedeelten.find((x) => x.id === id);
+  if (!b) return;
+  if (!confirm(`"${b.titel || b.gedeelte || "dit bijbelgedeelte"}" verwijderen?`)) return;
+  state.bijbelgedeelten = state.bijbelgedeelten.filter((x) => x.id !== id);
+  if (state.bijbelBewerkId === id) { state.bijbelBewerkId = null; state.bijbelDraft = leegBijbelDraft(); }
+  await veiligOpslaan(bewaarGegevens, "bijbelgedeelte verwijderen");
+  render();
+}
+
+function attachBijbelLijstEvents() {
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  $$("[data-bijbel-bewerk]").forEach((el) => el.addEventListener("click", (e) => {
+    const b = state.bijbelgedeelten.find((x) => x.id === e.currentTarget.dataset.bijbelBewerk);
+    if (!b) return;
+    state.bijbelBewerkId = b.id;
+    state.bijbelDraft = { gedeelte: b.gedeelte || "", tekst: b.tekst || "", titel: b.titel || "", thema: b.thema || "", samenvatting: b.samenvatting || "" };
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }));
+  $$("[data-bijbel-verwijder]").forEach((el) => el.addEventListener("click", (e) => {
+    verwijderBijbelgedeelte(e.currentTarget.dataset.bijbelVerwijder);
+  }));
 }
 
 function versieMeldingModalHTML() {
@@ -2395,6 +2566,7 @@ function mainHTML() {
   if (state.stage === "instellingen") return instellingenPaginaHTML();
   if (state.stage === "aanvraagUitzetten") return afspraakplannerPaginaHTML();
   if (state.stage === "releaseHistorie") return releaseHistorieHTML();
+  if (state.stage === "bijbelgedeelten") return bijbelgedeeltenHTML();
   return "";
 }
 
@@ -3256,6 +3428,37 @@ function attachEvents() {
     state.stage = state.releaseHistorieTerug || (state.personen.length ? "dashboard" : "upload");
     render();
   });
+
+  const openBijbelgedeelten = () => {
+    if (state.stage !== "bijbelgedeelten") state.bijbelTerug = state.stage;
+    state.stage = "bijbelgedeelten";
+    state.menuOpen = false;
+    render();
+  };
+  if ($("#btnBijbelgedeelten")) $("#btnBijbelgedeelten").addEventListener("click", openBijbelgedeelten);
+  if ($("#btnBijbelgedeeltenInstellingen")) $("#btnBijbelgedeeltenInstellingen").addEventListener("click", openBijbelgedeelten);
+  if ($("#btnBijbelgedeeltenSluiten")) $("#btnBijbelgedeeltenSluiten").addEventListener("click", () => {
+    state.stage = state.bijbelTerug || (state.personen.length ? "dashboard" : "upload");
+    render();
+  });
+  $$("[data-bijbel-veld]").forEach((el) => el.addEventListener("input", (e) => {
+    state.bijbelDraft[e.currentTarget.dataset.bijbelVeld] = e.target.value;
+  }));
+  if ($("#btnBijbelOpslaan")) $("#btnBijbelOpslaan").addEventListener("click", bewaarBijbelgedeelte);
+  if ($("#btnBijbelAnnuleer")) $("#btnBijbelAnnuleer").addEventListener("click", () => {
+    state.bijbelBewerkId = null;
+    state.bijbelDraft = leegBijbelDraft();
+    render();
+  });
+  // Zoeken ververst alleen de lijst, zodat de focus in het zoekveld blijft.
+  if ($("#bijbelZoek")) $("#bijbelZoek").addEventListener("input", (e) => {
+    state.bijbelZoek = e.target.value;
+    if ($("#btnBijbelZoekWissen")) $("#btnBijbelZoekWissen").classList.toggle("verborgen", !state.bijbelZoek);
+    const lijstEl = document.getElementById("bijbelLijst");
+    if (lijstEl) { lijstEl.innerHTML = bijbelLijstHTML(); attachBijbelLijstEvents(); }
+  });
+  if ($("#btnBijbelZoekWissen")) $("#btnBijbelZoekWissen").addEventListener("click", () => { state.bijbelZoek = ""; render(); });
+  attachBijbelLijstEvents();
   if ($("#instSchemaLeeftijd")) $("#instSchemaLeeftijd").addEventListener("change", async (e) => {
     const n = parseInt(e.target.value, 10);
     if (n > 0) { state.schemaAutoLeeftijd = n; await veiligOpslaan(() => dbSetInstelling("schemaAutoLeeftijd", n), "instelling opslaan"); }
@@ -3294,6 +3497,8 @@ function attachEvents() {
     render();
   }));
   if ($("#btnOnlineBackupNu")) $("#btnOnlineBackupNu").addEventListener("click", () => synchroniseerOnlineBackup());
+  if ($("#btnHerstelLaatste")) $("#btnHerstelLaatste").addEventListener("click", () => herstelOnlineBackup("laatste"));
+  if ($("#btnHerstelVorige")) $("#btnHerstelVorige").addEventListener("click", () => herstelOnlineBackup("vorige"));
   if ($("#instAfspraakplannerUrl")) $("#instAfspraakplannerUrl").addEventListener("change", async (e) => {
     state.afspraakplannerBasisUrl = e.target.value.trim() || "https://afspraak.hhgputten.nl";
     await veiligOpslaan(() => dbSetInstelling("afspraakplannerBasisUrl", state.afspraakplannerBasisUrl), "instelling opslaan");
@@ -3797,6 +4002,32 @@ async function synchroniseerOnlineBackup() {
   } catch (e) {
     state.onlineBackupStatus = "fout";
     logDebug("fout", "Online back-up synchroniseren mislukt: " + e.message);
+  }
+  render();
+}
+
+// Handmatig een serverversie terugzetten: "laatste" (de actuele) of "vorige"
+// (het dagelijkse herstelpunt — handig als er vandaag iets is misgegaan).
+// Het herstel telt als nieuwe wijziging, zodat de teruggezette versie bij de
+// eerstvolgende synchronisatie vanzelf weer de nieuwe "laatste" op de server wordt.
+async function herstelOnlineBackup(slot) {
+  if (!onlineBackupBeschikbaar()) return;
+  try {
+    const vol = await afspraakplannerFetch(`/backup.php?slot=${encodeURIComponent(slot)}&volledig=1`, { method: "GET" });
+    const omschrijving = slot === "vorige" ? "het dagelijkse herstelpunt" : "de laatste serverversie";
+    if (!confirm(`Dit vervangt de gegevens op dit apparaat door ${omschrijving} (opgeslagen op de server: ${vol.updated_at || "onbekend"}). Doorgaan?`)) return;
+    const sleutel = await onlineBackupSleutel(b64NaarBytes(vol.blob.zout));
+    const data = await ontsleutelJSON(sleutel, { iv: vol.blob.iv, data: vol.blob.data });
+    const gelukt = await pasBackupToe(data);
+    if (gelukt) {
+      state.stage = "dashboard";
+      toonInfoBanner(`Teruggezet: ${omschrijving}. Deze versie wordt bij de volgende wijziging weer als nieuwste geüpload.`);
+    }
+  } catch (e) {
+    logDebug("fout", `Serverversie (${slot}) terugzetten mislukt: ` + e.message);
+    alert(/geen back-up/i.test(e.message)
+      ? "Er staat (nog) geen versie in dit slot op de server."
+      : "Terugzetten mislukt: " + e.message);
   }
   render();
 }
@@ -4421,6 +4652,7 @@ function vergrendelNu() {
     if (Array.isArray(instellingenMap.afspraakAanvragen)) state.afspraakAanvragen = instellingenMap.afspraakAanvragen;
     if (typeof instellingenMap.onlineBackupActief === "boolean") state.onlineBackupActief = instellingenMap.onlineBackupActief;
     if (typeof instellingenMap.onlineBackupGesyncdTot === "number") state.onlineBackupGesyncdTot = instellingenMap.onlineBackupGesyncdTot;
+    if (Array.isArray(instellingenMap.bijbelgedeelten)) state.bijbelgedeelten = instellingenMap.bijbelgedeelten;
     if (!state.afspraakSjablonen.some((s) => s.id === STANDAARD_TIJDSLOT_SJABLOON.id)) {
       state.afspraakSjablonen.push({ ...STANDAARD_TIJDSLOT_SJABLOON });
     }
