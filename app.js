@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.11"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.12"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -80,6 +80,12 @@ const VERSIE_NOTITIES = {
     nieuw: [
       "Nieuw startscherm met drie opties om te beginnen: Excel inlezen, een back-upbestand terugzetten of je API-sleutel koppelen",
       "Instellingen: nieuwe sectie \"Extra functies\", voor functies die de beheerder per API-sleutel kan inschakelen",
+    ],
+  },
+  "1.7.12": {
+    nieuw: [
+      "De API-sleutel wordt voortaan versleuteld in de kluis bewaard in plaats van los in de browseropslag",
+      "De back-upindicator rechtsboven herinnert je er voortaan aan minstens één keer per maand een lokaal back-upbestand (.json) te maken",
     ],
   },
 };
@@ -887,15 +893,23 @@ function findGezin(gezinsKey) { return computeGezinnen().find((g) => g.gezinsKey
 // Zonder Web Crypto (zeldzaam): plat, zoals in eerdere versies, zodat de app blijft werken.
 async function bewaarGegevens() {
   if (cryptoRuntime.sleutel) {
-    const pakket = await versleutelJSON(cryptoRuntime.sleutel, { personen: state.personen, gezinsdata: state.gezinsdata, afspraakAanvragen: state.afspraakAanvragen });
+    // De API-sleutel gaat bewust mee in de kluis (en dus niet plat in de instellingen-store):
+    // wie het apparaat in handen krijgt, kan hem dan niet uitlezen zonder de pin.
+    const pakket = await versleutelJSON(cryptoRuntime.sleutel, {
+      personen: state.personen,
+      gezinsdata: state.gezinsdata,
+      afspraakAanvragen: state.afspraakAanvragen,
+      afspraakplannerApiSleutel: state.afspraakplannerApiSleutel,
+    });
     await dbPut(STORE_KLUIS, { naam: "gegevens", iv: pakket.iv, data: pakket.data });
   } else {
     await dbClearAll(STORE_PERSONEN);
     await dbClearAll(STORE_GEZINSDATA);
     await dbPutAll(STORE_PERSONEN, state.personen);
     await dbPutAll(STORE_GEZINSDATA, Object.values(state.gezinsdata));
-    // Zonder kluis (geen Web Crypto): aanvragen dan maar plat bij de instellingen.
+    // Zonder kluis (geen Web Crypto): aanvragen en sleutel dan maar plat bij de instellingen.
     await dbSetInstelling("afspraakAanvragen", state.afspraakAanvragen);
+    await dbSetInstelling("afspraakplannerApiSleutel", state.afspraakplannerApiSleutel);
   }
   await werkMijlpalenCacheBij();
 }
@@ -919,6 +933,17 @@ async function laadUitKluis() {
     state.personen = inhoud.personen || [];
     state.gezinsdata = inhoud.gezinsdata || {};
     state.afspraakAanvragen = inhoud.afspraakAanvragen || [];
+    if (typeof inhoud.afspraakplannerApiSleutel === "string" && inhoud.afspraakplannerApiSleutel) {
+      state.afspraakplannerApiSleutel = inhoud.afspraakplannerApiSleutel;
+    }
+  }
+  // Eenmalige migratie: een API-sleutel die nog plat in de instellingen-store staat
+  // (t/m v1.7.11) verhuist naar de kluis en wordt daarna uit de platte opslag gewist.
+  const platteSleutel = await dbGetInstelling("afspraakplannerApiSleutel");
+  if (typeof platteSleutel === "string" && platteSleutel) {
+    if (!state.afspraakplannerApiSleutel) state.afspraakplannerApiSleutel = platteSleutel;
+    await bewaarGegevens();
+    await dbDeleteInstelling("afspraakplannerApiSleutel");
   }
   migreerOudeContactgegevens();
   herstelLaatsteContactAlleGezinnen();
@@ -1726,6 +1751,12 @@ function backupIndicatorHTML() {
       return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="De laatste online back-up is mislukt. Klik om het opnieuw te proberen.">☁ ⚠ Online back-up mislukt</button>`;
     }
     if (state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0)) {
+      // Het lokale .json-bestand blijft het enige vangnet dat los van de API-sleutel
+      // staat — daarom ook met online back-up aan een maandelijkse herinnering.
+      const lokaalVerouderd = !state.laatsteBackupOp || (Date.now() - state.laatsteBackupOp > 30 * 86400000);
+      if (lokaalVerouderd) {
+        return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Alles staat versleuteld online, maar het laatste lokale back-upbestand is ouder dan een maand (of er is er nog geen). Klik om er nu een te maken — dat bestand is je vangnet als de API-sleutel ooit kwijt is.">☁ ✓ online · ⚠ maak ook een lokale back-up</button>`;
+      }
       return `<button class="backup-indicator backup-indicator-ok" id="btnBackupNu" title="Alle wijzigingen staan versleuteld online. Klik om daarnaast een lokaal back-upbestand (.json) te maken.">☁ ✓ Online back-up actueel</button>`;
     }
     return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="Er zijn wijzigingen die nog niet online staan. Klik om nu te synchroniseren.">☁ Wijzigingen nog niet online</button>`;
@@ -3249,7 +3280,8 @@ function attachEvents() {
   }));
   if ($("#instAfspraakplannerSleutel")) $("#instAfspraakplannerSleutel").addEventListener("change", async (e) => {
     state.afspraakplannerApiSleutel = e.target.value.trim();
-    await veiligOpslaan(() => dbSetInstelling("afspraakplannerApiSleutel", state.afspraakplannerApiSleutel), "instelling opslaan");
+    // De sleutel wordt versleuteld in de kluis bewaard (bewaarGegevens), niet plat.
+    await veiligOpslaan(bewaarGegevens, "API-sleutel opslaan");
     // Nieuwe sleutel → mogelijk andere features; meteen opnieuw ophalen.
     haalServerFeaturesOp().catch(() => {});
   });
@@ -3808,7 +3840,8 @@ async function koppelViaApiSleutel() {
     state.onlineBackupGesyncdTot = vol.laatste_wijziging_op || null;
     state.onlineBackupStatus = "ok";
     state.laatsteWijzigingOp = vol.laatste_wijziging_op || state.laatsteWijzigingOp;
-    await dbSetInstelling("afspraakplannerApiSleutel", state.afspraakplannerApiSleutel);
+    // De API-sleutel zit al in de kluis: pasBackupToe heeft bewaarGegevens aangeroepen
+    // terwijl de sleutel in de state stond. Alleen de (niet-gevoelige) basis-URL plat.
     await dbSetInstelling("afspraakplannerBasisUrl", state.afspraakplannerBasisUrl);
     await dbSetInstelling("onlineBackupActief", true);
     await dbSetInstelling("onlineBackupGesyncdTot", state.onlineBackupGesyncdTot);
