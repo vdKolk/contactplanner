@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.13"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.7.14"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -842,7 +842,12 @@ const state = {
   // Bijbelgedeelten (server-feature "bijbelgedeelten"): eigen naslag van besproken
   // gedeelten. Versleuteld in de kluis en mee in de back-up.
   bijbelgedeelten: [], // { id, gedeelte, tekst, titel, thema, samenvatting, aangemaaktOp }
+  bijbelgedeeltenActief: false, // instelling: module aan/uit (alleen zinvol mét server-feature)
   bijbelZoek: "", // alleen in-memory
+  bijbelSortBy: "gedeelte", // gedeelte | tekst | titel | thema
+  bijbelSortDir: "asc",
+  bijbelDetailId: null, // item waarvan het detailvenster openstaat
+  bijbelFormOpen: false, // formulier-venster (nieuw of bewerken) open
   bijbelBewerkId: null,
   bijbelDraft: { gedeelte: "", tekst: "", titel: "", thema: "", samenvatting: "" },
   bijbelTerug: null, // stage om naar terug te keren vanaf de Bijbelgedeelten-pagina
@@ -1727,7 +1732,7 @@ function render() {
     return;
   }
   const breed = state.stage === "dashboard" && (state.weergave === "tabel" || state.weergave === "planning");
-  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + aanvragenOverzichtModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
+  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + aanvragenOverzichtModalHTML() + bijbelModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
   attachEvents();
   if (state.menuOpen) {
     requestAnimationFrame(() => {
@@ -2143,9 +2148,16 @@ function instellingenPaginaHTML() {
             <h4>Bijbelgedeelten</h4>
             <p class="instellingen-uitleg">
               Je eigen naslag van besproken bijbelgedeelten, doorzoekbaar op alle velden.
-              Je vindt het overzicht in het menu, onder "Pastoraal".
+              Staat de functie aan, dan vind je het overzicht in het menu, onder "Pastoraal".
             </p>
-            <button class="btn-sm" id="btnBijbelgedeeltenInstellingen">Open Bijbelgedeelten</button>
+            <div class="schema-grid">
+              <div class="schema-opt ${state.bijbelgedeeltenActief ? "active" : ""}" data-bijbelgedeelten="aan">Aan</div>
+              <div class="schema-opt ${!state.bijbelgedeeltenActief ? "active" : ""}" data-bijbelgedeelten="uit">Uit</div>
+            </div>
+            ${state.bijbelgedeeltenActief ? `
+              <div style="margin-top:10px;">
+                <button class="btn-sm" id="btnBijbelgedeeltenInstellingen">Open Bijbelgedeelten</button>
+              </div>` : ""}
           </div>` : ""}
         </div>
       </section>` : ""}
@@ -2183,7 +2195,7 @@ function sidebarMenuHTML() {
         ${menuItemHTML("btnExportBackup", "\u2913", "var(--accent)", "var(--accent-soft)", "Back-up maken")}
         <div class="sidebar-divider"></div>
       ` : ""}
-      ${heeftServerFeature("bijbelgedeelten") ? `
+      ${heeftServerFeature("bijbelgedeelten") && state.bijbelgedeeltenActief ? `
         <div class="sidebar-groep-label">Pastoraal</div>
         ${menuItemHTML("btnBijbelgedeelten", "\ud83d\udcd6", "var(--accent)", "var(--accent-soft)", "Bijbelgedeelten")}
         <div class="sidebar-divider"></div>
@@ -2272,84 +2284,131 @@ function leegBijbelDraft() {
   return { gedeelte: "", tekst: "", titel: "", thema: "", samenvatting: "" };
 }
 
+const BIJBEL_KOLOMMEN = [
+  { key: "gedeelte", label: "Bijbelgedeelte" },
+  { key: "tekst", label: "Bijbeltekst" },
+  { key: "titel", label: "Titel" },
+  { key: "thema", label: "Thema" },
+];
+
 function gefilterdeBijbelgedeelten() {
-  // Numeriek-bewust sorteren, zodat "Psalm 23" vóór "Psalm 119" komt.
-  const lijst = state.bijbelgedeelten.slice().sort((a, b) =>
-    (a.gedeelte || a.titel || "").localeCompare(b.gedeelte || b.titel || "", "nl", { numeric: true, sensitivity: "base" }));
+  const veld = state.bijbelSortBy;
+  const richting = state.bijbelSortDir === "desc" ? -1 : 1;
+  // Numeriek-bewust sorteren, zodat "Psalm 23" vóór "Psalm 119" komt; lege waarden achteraan.
+  const lijst = state.bijbelgedeelten.slice().sort((a, b) => {
+    const va = (a[veld] || "").trim(), vb = (b[veld] || "").trim();
+    if (va && !vb) return -1;
+    if (!va && vb) return 1;
+    return richting * va.localeCompare(vb, "nl", { numeric: true, sensitivity: "base" });
+  });
   const q = normKey(state.bijbelZoek);
   if (!q) return lijst;
-  return lijst.filter((b) => BIJBEL_VELDEN.some((veld) => normKey(b[veld]).includes(q)));
-}
-
-function bijbelItemHTML(b) {
-  return `
-    <div class="note-card">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-        <div style="min-width:0;">
-          <strong>${esc(b.titel || b.gedeelte || "Zonder titel")}</strong>
-          <div style="font-size:12.5px;color:var(--text-soft);margin-top:2px;">
-            ${esc(b.gedeelte)}${b.tekst ? ` · ${esc(b.tekst)}` : ""}
-          </div>
-        </div>
-        <span style="display:flex;gap:4px;align-items:center;flex-shrink:0;">
-          ${b.thema ? `<span class="tag-grey" style="margin:0;">${esc(b.thema)}</span>` : ""}
-          <button class="btn-sm" data-bijbel-bewerk="${esc(b.id)}">Bewerk</button>
-          <button class="btn-ghost btn-sm btn-danger" data-bijbel-verwijder="${esc(b.id)}" title="Verwijderen">✕</button>
-        </span>
-      </div>
-      ${b.samenvatting ? `<div style="font-size:13px;margin-top:6px;white-space:pre-wrap;">${esc(b.samenvatting)}</div>` : ""}
-    </div>`;
+  return lijst.filter((b) => BIJBEL_VELDEN.some((v) => normKey(b[v]).includes(q)));
 }
 
 function bijbelLijstHTML() {
   if (!state.bijbelgedeelten.length) {
-    return `<div class="empty-state">Nog geen bijbelgedeelten. Voeg hierboven je eerste toe.</div>`;
+    return `<div class="empty-state">Nog geen bijbelgedeelten. Klik op "+ Nieuw bijbelgedeelte" om je eerste toe te voegen.</div>`;
   }
   const lijst = gefilterdeBijbelgedeelten();
   if (!lijst.length) return `<div class="empty-state">Niets gevonden voor deze zoekopdracht.</div>`;
+  const koppen = BIJBEL_KOLOMMEN.map((k) => {
+    const actief = state.bijbelSortBy === k.key;
+    const pijl = actief ? (state.bijbelSortDir === "desc" ? " ↓" : " ↑") : "";
+    return `<th><span class="th-inner" data-bijbel-sort="${k.key}" style="cursor:pointer;">${esc(k.label)}${pijl}</span></th>`;
+  }).join("");
+  const rijen = lijst.map((b) => `
+    <tr data-bijbel-detail="${esc(b.id)}" title="Klik voor de volledige inhoud">
+      <td class="td-clip">${esc(b.gedeelte)}</td>
+      <td class="td-clip">${esc(b.tekst)}</td>
+      <td class="td-clip">${esc(b.titel)}</td>
+      <td class="td-clip">${b.thema ? `<span class="tag-grey" style="margin:0;">${esc(b.thema)}</span>` : ""}</td>
+    </tr>`).join("");
   return `
-    <p style="font-size:12px;color:var(--text-soft);margin:0 0 8px;">${lijst.length} van ${state.bijbelgedeelten.length} gedeelte${state.bijbelgedeelten.length === 1 ? "" : "n"}</p>
-    ${lijst.map(bijbelItemHTML).join("")}`;
+    <p style="font-size:12px;color:var(--text-soft);margin:0 0 8px;">${lijst.length} van ${state.bijbelgedeelten.length} gedeelte${state.bijbelgedeelten.length === 1 ? "" : "n"} · klik op een rij voor de volledige inhoud</p>
+    <div class="preview-wrap" style="max-height:none;">
+      <table class="gezin-table">
+        <thead><tr>${koppen}</tr></thead>
+        <tbody>${rijen}</tbody>
+      </table>
+    </div>`;
 }
 
 function bijbelgedeeltenHTML() {
-  const bewerken = !!state.bijbelBewerkId;
-  const d = state.bijbelDraft;
   return `
     ${paginaSluitKnopHTML("btnBijbelgedeeltenSluiten")}
     <h2 style="font-size:22px;margin:0 0 4px;">Bijbelgedeelten</h2>
-    <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px;max-width:720px;">
-      Je eigen naslag van besproken bijbelgedeelten: wat is de kern, en wat kun je erbij vertellen?
-      Alles is doorzoekbaar op gedeelte, tekst, titel, thema en samenvatting, en gaat mee in de back-up.
+    <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px;max-width:860px;">
+      Je eigen naslag van besproken bijbelgedeelten. Sorteer via de kolomkoppen, zoek over alle
+      velden (ook de samenvatting) en klik op een rij voor de volledige inhoud.
     </p>
-
-    <section class="instellingen-kaart" style="max-width:720px;">
-      <h4>${bewerken ? "Bijbelgedeelte bewerken" : "Nieuw bijbelgedeelte"}</h4>
-      <div class="field-grid2">
-        <div class="field-row"><label>Bijbelgedeelte</label><input data-bijbel-veld="gedeelte" placeholder="Bijv. Johannes 3" value="${esc(d.gedeelte)}" /></div>
-        <div class="field-row"><label>Bijbeltekst</label><input data-bijbel-veld="tekst" placeholder="Bijv. vers 16" value="${esc(d.tekst)}" /></div>
-      </div>
-      <div class="field-grid2">
-        <div class="field-row"><label>Titel</label><input data-bijbel-veld="titel" placeholder="Bijv. De liefde van God" value="${esc(d.titel)}" /></div>
-        <div class="field-row"><label>Thema</label><input data-bijbel-veld="thema" placeholder="Bijv. troost, genade" value="${esc(d.thema)}" /></div>
-      </div>
-      <div class="field-row">
-        <label>Samenvatting</label>
-        <textarea data-bijbel-veld="samenvatting" style="min-height:110px;" placeholder="Kort verslag: wat kun je bij dit gedeelte vertellen?">${esc(d.samenvatting)}</textarea>
-      </div>
-      <div style="display:flex;gap:6px;">
-        <button class="btn-primary" id="btnBijbelOpslaan">${bewerken ? "Wijzigingen opslaan" : "Toevoegen"}</button>
-        ${bewerken ? `<button class="btn-ghost" id="btnBijbelAnnuleer">Annuleren</button>` : ""}
-      </div>
-    </section>
-
-    <div class="toolbar" style="margin-top:16px;max-width:720px;">
+    <div class="toolbar" style="max-width:860px;">
+      <button class="btn-primary" id="btnBijbelNieuw">+ Nieuw bijbelgedeelte</button>
       <div class="search-box" style="flex:1;">
         <input id="bijbelZoek" placeholder="Zoek op gedeelte, tekst, titel, thema of samenvatting…" value="${esc(state.bijbelZoek)}" />
         <button class="search-clear ${state.bijbelZoek ? "" : "verborgen"}" id="btnBijbelZoekWissen" title="Zoekopdracht wissen">✕</button>
       </div>
     </div>
-    <div id="bijbelLijst" style="max-width:720px;">${bijbelLijstHTML()}</div>`;
+    <div id="bijbelLijst" style="max-width:860px;">${bijbelLijstHTML()}</div>`;
+}
+
+// Detail- en formulier-venster (boven de tabel): klik op een rij → volledige inhoud;
+// "+ Nieuw" of "Bewerken" → het formulier.
+function bijbelModalHTML() {
+  if (state.bijbelFormOpen) {
+    const bewerken = !!state.bijbelBewerkId;
+    const d = state.bijbelDraft;
+    return `
+    <div class="modal-overlay" id="bijbelFormOverlay">
+      <div class="modal-box" style="max-width:560px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h3 style="margin:0;font-size:18px;">${bewerken ? "Bijbelgedeelte bewerken" : "Nieuw bijbelgedeelte"}</h3>
+          <button class="btn-ghost btn-sm" id="btnBijbelAnnuleer">✕</button>
+        </div>
+        <div class="field-grid2">
+          <div class="field-row"><label>Bijbelgedeelte</label><input data-bijbel-veld="gedeelte" placeholder="Bijv. Johannes 3" value="${esc(d.gedeelte)}" /></div>
+          <div class="field-row"><label>Bijbeltekst</label><input data-bijbel-veld="tekst" placeholder="Bijv. vers 16" value="${esc(d.tekst)}" /></div>
+        </div>
+        <div class="field-grid2">
+          <div class="field-row"><label>Titel</label><input data-bijbel-veld="titel" placeholder="Bijv. De liefde van God" value="${esc(d.titel)}" /></div>
+          <div class="field-row"><label>Thema</label><input data-bijbel-veld="thema" placeholder="Bijv. troost, genade" value="${esc(d.thema)}" /></div>
+        </div>
+        <div class="field-row">
+          <label>Samenvatting</label>
+          <textarea data-bijbel-veld="samenvatting" style="min-height:140px;" placeholder="Kort verslag: wat kun je bij dit gedeelte vertellen?">${esc(d.samenvatting)}</textarea>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-primary" id="btnBijbelOpslaan">${bewerken ? "Wijzigingen opslaan" : "Toevoegen"}</button>
+          <button class="btn-ghost" id="btnBijbelAnnuleer2">Annuleren</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  if (!state.bijbelDetailId) return "";
+  const b = state.bijbelgedeelten.find((x) => x.id === state.bijbelDetailId);
+  if (!b) return "";
+  return `
+  <div class="modal-overlay" id="bijbelDetailOverlay">
+    <div class="modal-box" style="max-width:560px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+        <div>
+          <h3 style="margin:0;font-size:18px;">${esc(b.titel || b.gedeelte || "Zonder titel")}</h3>
+          <div style="font-size:12.5px;color:var(--text-soft);margin-top:2px;">
+            ${esc(b.gedeelte)}${b.tekst ? ` · ${esc(b.tekst)}` : ""}${b.aangemaaktOp ? ` · toegevoegd ${fmtDatum(b.aangemaaktOp)}` : ""}
+          </div>
+        </div>
+        <button class="btn-ghost btn-sm" id="btnBijbelDetailSluiten">✕</button>
+      </div>
+      ${b.thema ? `<span class="tag-grey" style="margin:0 0 8px;">${esc(b.thema)}</span>` : ""}
+      ${b.samenvatting
+        ? `<div style="font-size:13.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap;">${esc(b.samenvatting)}</div>`
+        : `<p style="font-size:12.5px;color:var(--text-soft);margin-top:8px;">Nog geen samenvatting.</p>`}
+      <div style="display:flex;gap:6px;margin-top:16px;">
+        <button class="btn-primary" id="btnBijbelDetailBewerk">Bewerken</button>
+        <button class="btn-ghost btn-sm btn-danger" id="btnBijbelDetailVerwijder">Verwijderen</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 async function bewaarBijbelgedeelte() {
@@ -2364,6 +2423,7 @@ async function bewaarBijbelgedeelte() {
   }
   state.bijbelBewerkId = null;
   state.bijbelDraft = leegBijbelDraft();
+  state.bijbelFormOpen = false;
   await veiligOpslaan(bewaarGegevens, "bijbelgedeelte opslaan");
   render();
 }
@@ -2373,23 +2433,27 @@ async function verwijderBijbelgedeelte(id) {
   if (!b) return;
   if (!confirm(`"${b.titel || b.gedeelte || "dit bijbelgedeelte"}" verwijderen?`)) return;
   state.bijbelgedeelten = state.bijbelgedeelten.filter((x) => x.id !== id);
-  if (state.bijbelBewerkId === id) { state.bijbelBewerkId = null; state.bijbelDraft = leegBijbelDraft(); }
+  if (state.bijbelBewerkId === id) { state.bijbelBewerkId = null; state.bijbelDraft = leegBijbelDraft(); state.bijbelFormOpen = false; }
+  if (state.bijbelDetailId === id) state.bijbelDetailId = null;
   await veiligOpslaan(bewaarGegevens, "bijbelgedeelte verwijderen");
   render();
 }
 
 function attachBijbelLijstEvents() {
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-  $$("[data-bijbel-bewerk]").forEach((el) => el.addEventListener("click", (e) => {
-    const b = state.bijbelgedeelten.find((x) => x.id === e.currentTarget.dataset.bijbelBewerk);
-    if (!b) return;
-    state.bijbelBewerkId = b.id;
-    state.bijbelDraft = { gedeelte: b.gedeelte || "", tekst: b.tekst || "", titel: b.titel || "", thema: b.thema || "", samenvatting: b.samenvatting || "" };
+  $$("[data-bijbel-sort]").forEach((el) => el.addEventListener("click", (e) => {
+    const key = e.currentTarget.dataset.bijbelSort;
+    if (state.bijbelSortBy === key) {
+      state.bijbelSortDir = state.bijbelSortDir === "asc" ? "desc" : "asc";
+    } else {
+      state.bijbelSortBy = key;
+      state.bijbelSortDir = "asc";
+    }
     render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }));
-  $$("[data-bijbel-verwijder]").forEach((el) => el.addEventListener("click", (e) => {
-    verwijderBijbelgedeelte(e.currentTarget.dataset.bijbelVerwijder);
+  $$("[data-bijbel-detail]").forEach((el) => el.addEventListener("click", (e) => {
+    state.bijbelDetailId = e.currentTarget.dataset.bijbelDetail;
+    render();
   }));
 }
 
@@ -3444,12 +3508,34 @@ function attachEvents() {
   $$("[data-bijbel-veld]").forEach((el) => el.addEventListener("input", (e) => {
     state.bijbelDraft[e.currentTarget.dataset.bijbelVeld] = e.target.value;
   }));
+  if ($("#btnBijbelNieuw")) $("#btnBijbelNieuw").addEventListener("click", () => {
+    state.bijbelBewerkId = null;
+    state.bijbelDraft = leegBijbelDraft();
+    state.bijbelFormOpen = true;
+    render();
+  });
   if ($("#btnBijbelOpslaan")) $("#btnBijbelOpslaan").addEventListener("click", bewaarBijbelgedeelte);
-  if ($("#btnBijbelAnnuleer")) $("#btnBijbelAnnuleer").addEventListener("click", () => {
+  const sluitBijbelForm = () => {
+    state.bijbelFormOpen = false;
     state.bijbelBewerkId = null;
     state.bijbelDraft = leegBijbelDraft();
     render();
+  };
+  if ($("#btnBijbelAnnuleer")) $("#btnBijbelAnnuleer").addEventListener("click", sluitBijbelForm);
+  if ($("#btnBijbelAnnuleer2")) $("#btnBijbelAnnuleer2").addEventListener("click", sluitBijbelForm);
+  if ($("#bijbelFormOverlay")) $("#bijbelFormOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "bijbelFormOverlay") sluitBijbelForm(); });
+  if ($("#btnBijbelDetailSluiten")) $("#btnBijbelDetailSluiten").addEventListener("click", () => { state.bijbelDetailId = null; render(); });
+  if ($("#bijbelDetailOverlay")) $("#bijbelDetailOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "bijbelDetailOverlay") { state.bijbelDetailId = null; render(); } });
+  if ($("#btnBijbelDetailBewerk")) $("#btnBijbelDetailBewerk").addEventListener("click", () => {
+    const b = state.bijbelgedeelten.find((x) => x.id === state.bijbelDetailId);
+    if (!b) return;
+    state.bijbelBewerkId = b.id;
+    state.bijbelDraft = { gedeelte: b.gedeelte || "", tekst: b.tekst || "", titel: b.titel || "", thema: b.thema || "", samenvatting: b.samenvatting || "" };
+    state.bijbelDetailId = null;
+    state.bijbelFormOpen = true;
+    render();
   });
+  if ($("#btnBijbelDetailVerwijder")) $("#btnBijbelDetailVerwijder").addEventListener("click", () => verwijderBijbelgedeelte(state.bijbelDetailId));
   // Zoeken ververst alleen de lijst, zodat de focus in het zoekveld blijft.
   if ($("#bijbelZoek")) $("#bijbelZoek").addEventListener("input", (e) => {
     state.bijbelZoek = e.target.value;
@@ -3499,6 +3585,13 @@ function attachEvents() {
   if ($("#btnOnlineBackupNu")) $("#btnOnlineBackupNu").addEventListener("click", () => synchroniseerOnlineBackup());
   if ($("#btnHerstelLaatste")) $("#btnHerstelLaatste").addEventListener("click", () => herstelOnlineBackup("laatste"));
   if ($("#btnHerstelVorige")) $("#btnHerstelVorige").addEventListener("click", () => herstelOnlineBackup("vorige"));
+  $$("[data-bijbelgedeelten]").forEach((el) => el.addEventListener("click", async (e) => {
+    const aan = e.currentTarget.dataset.bijbelgedeelten === "aan";
+    if (aan === state.bijbelgedeeltenActief) return;
+    state.bijbelgedeeltenActief = aan;
+    await veiligOpslaan(() => dbSetInstelling("bijbelgedeeltenActief", aan), "instelling opslaan");
+    render();
+  }));
   if ($("#instAfspraakplannerUrl")) $("#instAfspraakplannerUrl").addEventListener("change", async (e) => {
     state.afspraakplannerBasisUrl = e.target.value.trim() || "https://afspraak.hhgputten.nl";
     await veiligOpslaan(() => dbSetInstelling("afspraakplannerBasisUrl", state.afspraakplannerBasisUrl), "instelling opslaan");
@@ -3628,6 +3721,13 @@ function attachEvents() {
   if ($("#btnHandleiding")) $("#btnHandleiding").addEventListener("click", () => { state.handleidingOpen = true; state.menuOpen = false; render(); });
   if ($("#btnSluitHandleiding")) $("#btnSluitHandleiding").addEventListener("click", () => { state.handleidingOpen = false; render(); });
   if ($("#handleidingOverlay")) $("#handleidingOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "handleidingOverlay") { state.handleidingOpen = false; render(); } });
+  // Handleiding-index: zelf scrollen in plaats van de standaard ankernavigatie, zodat er
+  // geen #hl-… in de adresbalk komt en de terugknop niet langs alle ankers hoeft.
+  $$('#handleidingOverlay a[href^="#hl-"]').forEach((el) => el.addEventListener("click", (e) => {
+    e.preventDefault();
+    const doel = document.getElementById(el.getAttribute("href").slice(1));
+    if (doel) doel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
   if ($("#btnSluitDebug")) $("#btnSluitDebug").addEventListener("click", () => { state.debugOpen = false; render(); });
   if ($("#debugOverlay")) $("#debugOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "debugOverlay") { state.debugOpen = false; render(); } });
   const sluitVersieMelding = async () => {
@@ -4616,6 +4716,9 @@ function vergrendelNu() {
 // ---------------- init ----------------
 
 (async function init() {
+  // Een eerder achtergebleven #hl-…-hash (van de handleiding-index) uit de adresbalk opruimen;
+  // de app gebruikt zelf geen hashes.
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   if (!window.indexedDB) {
     logDebug("fout", "IndexedDB is niet beschikbaar in deze browser/omgeving.");
     toonFoutBanner("Deze browser staat geen lokale opslag toe. Wijzigingen kunnen NIET bewaard worden \u2014 probeer een andere browser (Edge of Chrome) of browserinstelling.");
@@ -4653,6 +4756,7 @@ function vergrendelNu() {
     if (typeof instellingenMap.onlineBackupActief === "boolean") state.onlineBackupActief = instellingenMap.onlineBackupActief;
     if (typeof instellingenMap.onlineBackupGesyncdTot === "number") state.onlineBackupGesyncdTot = instellingenMap.onlineBackupGesyncdTot;
     if (Array.isArray(instellingenMap.bijbelgedeelten)) state.bijbelgedeelten = instellingenMap.bijbelgedeelten;
+    if (typeof instellingenMap.bijbelgedeeltenActief === "boolean") state.bijbelgedeeltenActief = instellingenMap.bijbelgedeeltenActief;
     if (!state.afspraakSjablonen.some((s) => s.id === STANDAARD_TIJDSLOT_SJABLOON.id)) {
       state.afspraakSjablonen.push({ ...STANDAARD_TIJDSLOT_SJABLOON });
     }
