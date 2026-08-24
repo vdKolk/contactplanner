@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.7.14"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.8.1"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -86,6 +86,12 @@ const VERSIE_NOTITIES = {
     nieuw: [
       "De API-sleutel wordt voortaan versleuteld in de kluis bewaard in plaats van los in de browseropslag",
       "De back-upindicator rechtsboven herinnert je er voortaan aan minstens één keer per maand een lokaal back-upbestand (.json) te maken",
+    ],
+  },
+  "1.8.1": {
+    nieuw: [
+      "De weergave \"Lijst\" toont de gezinskaarten voortaan in twee kolommen (op een smal scherm één); de aparte knop \"2 kolommen\" is vervallen",
+      "Nieuw filter \"Boven leeftijdsgrens\" bovenin het overzicht: alle gezinnen waarvan het gezinshoofd de leeftijdsgrens uit de instellingen heeft bereikt — werkt in elke weergave",
     ],
   },
 };
@@ -196,6 +202,13 @@ function bepaalAutoSchema(gezin) {
 
 function effectiefSchema(gd, gezin) {
   return gd.schema === "auto" ? bepaalAutoSchema(gezin) : gd.schema;
+}
+
+// Zelfde grens als het automatische schema: het gezinshoofd heeft de ingestelde
+// leeftijdsgrens bereikt. Onbekende geboortedatum telt niet mee.
+function isBovenLeeftijdsgrens(gezin) {
+  const lft = berekenLeeftijd(gezin.gezinshoofd.geboortedatum);
+  return lft !== null && lft >= state.schemaAutoLeeftijd;
 }
 
 function volgendeJaarlijkseDatum(datumISO) {
@@ -817,7 +830,7 @@ const state = {
   filterStatus: "alle",
   sortBy: "status", // status | naam | adres | plaats | laatsteContact | volgendContact
   sortDir: "asc",
-  weergave: "planning", // lijst | kolommen2 | tabel | planning
+  weergave: "planning", // lijst | tabel | planning
   tabelKolomBreedtes: { naam: 170, overigeLeden: 170, adres: 170, plaats: 110, laatsteContact: 120, volgendContact: 120, status: 150 },
   noteDraft: { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" },
   bewerkNotitieId: null,
@@ -1674,6 +1687,8 @@ function gefilterdeGezinnen() {
     list = list.filter((g) => getGezinsdata(g.gezinsKey).favoriet);
   } else if (state.filterStatus === "opmerking") {
     list = list.filter((g) => getGezinsdata(g.gezinsKey).algemeneNotitie);
+  } else if (state.filterStatus === "bovenLeeftijdsgrens") {
+    list = list.filter((g) => isBovenLeeftijdsgrens(g));
   } else if (state.filterStatus !== "alle") {
     list = list.filter((g) => berekenStatus(getGezinsdata(g.gezinsKey), g) === state.filterStatus);
   }
@@ -1709,12 +1724,13 @@ function gefilterdeGezinnen() {
 }
 
 function telStatussen() {
-  const c = { nooit: 0, teLaat: 0, binnenkort: 0, opSchema: 0, nietInLaatsteImport: 0, opmerking: 0 };
+  const c = { nooit: 0, teLaat: 0, binnenkort: 0, opSchema: 0, nietInLaatsteImport: 0, opmerking: 0, bovenLeeftijdsgrens: 0 };
   computeGezinnen().forEach((g) => {
     const gd = getGezinsdata(g.gezinsKey);
     c[berekenStatus(gd, g)]++;
     if (g.leden.some((p) => p._nietInLaatsteImport)) c.nietInLaatsteImport++;
     if (gd.algemeneNotitie) c.opmerking++;
+    if (isBovenLeeftijdsgrens(g)) c.bovenLeeftijdsgrens++;
   });
   return c;
 }
@@ -1899,7 +1915,7 @@ function handleidingModalHTML() {
         een tijdslot gekozen heeft. Een gekozen afspraak zet je daar met de knop
         <strong>"Zet in planning"</strong> direct als gepland bijzonder contactmoment in het
         gezinsdossier, zodat hij ook in Bijzondere momenten verschijnt. Op de gezinskaarten in de
-        lijst-, kolommen- en planbordweergave zie je bovendien een label zodra er een aanvraag
+        lijst- en planbordweergave zie je bovendien een label zodra er een aanvraag
         uitstaat (⏳) en de gekozen datum zodra het gezin een tijdslot heeft gekozen (✓).</p>
         <p>Een lopende aanvraag kun je daar ook <strong>uitbreiden</strong>: voeg extra tijdslots toe
         (direct kiesbaar via de al verstuurde links) of extra gezinnen (die krijgen een eigen link).
@@ -1931,8 +1947,12 @@ function handleidingModalHTML() {
 
         <h4 id="hl-weergaves">Sorteren en weergaves</h4>
         <p>Boven het overzicht kies je een sortering (urgentie, naam, adres, plaats, laatste/volgend contact)
-        en een weergave: Lijst, 2 kolommen, Tabel (met sorteerbare, sleepbare kolommen) of Planning (een
-        kanban-bord met kolommen Achterstallig / Komende maand / Dit kwartaal / Komend halfjaar / Verder vooruit).</p>
+        en een weergave: Lijst (kaarten in twee kolommen; op een smal scherm één), Tabel (met sorteerbare,
+        sleepbare kolommen) of Planning (een kanban-bord met kolommen Achterstallig / Komende maand /
+        Dit kwartaal / Komend halfjaar / Verder vooruit).</p>
+        <p>Met de tellers bovenaan filter je het overzicht — in elke weergave. Naast de statusfilters is er
+        de teller "70+ jaar" (het getal volgt de leeftijdsgrens uit de instellingen): die toont alle gezinnen
+        waarvan het gezinshoofd de leeftijdsgrens heeft bereikt.</p>
 
         <h4 id="hl-markeren">Markeren</h4>
         <p>Met het sterretje rechtsboven op een kaart (of naast de naam in het gezinsdetail) markeer je een
@@ -2840,6 +2860,7 @@ function statsRowHTML() {
     ["binnenkort", counts.binnenkort, "Binnenkort", "var(--amber)"],
     ["opSchema", counts.opSchema, "Op schema", "var(--green)"],
     ["opmerking", counts.opmerking, "Opmerkingen", "var(--amber)"],
+    ["bovenLeeftijdsgrens", counts.bovenLeeftijdsgrens, `${state.schemaAutoLeeftijd}+ jaar`, "var(--accent)"],
     ["nietInLaatsteImport", counts.nietInLaatsteImport, "Wijziging in gezin", "var(--text-soft)"],
   ];
   return pillen.map(([key, num, label, color]) => `
@@ -2922,9 +2943,8 @@ function resultsAreaHTML() {
   const lijst = gefilterdeGezinnen();
   if (lijst.length === 0) return `<div class="empty-state">Geen gezinnen gevonden. Pas je zoekopdracht of filter aan.</div>`;
   if (state.weergave === "tabel") return gezinTabelHTML(lijst);
-  if (state.weergave === "kolommen2") return `<div class="fam-grid-2">${lijst.map((g) => famCardHTML(g)).join("")}</div>`;
   if (state.weergave === "planning") return planningHTML(lijst);
-  return `<div class="fam-list">${lijst.map((g) => famCardHTML(g)).join("")}</div>`;
+  return `<div class="fam-grid-2">${lijst.map((g) => famCardHTML(g)).join("")}</div>`;
 }
 
 const TABEL_KOLOMMEN = [
@@ -3000,7 +3020,6 @@ function dashboardHTML() {
       </div>
       <div class="view-toggle">
         <button class="btn-sm ${state.weergave === "lijst" ? "active" : ""}" data-weergave="lijst">Lijst</button>
-        <button class="btn-sm ${state.weergave === "kolommen2" ? "active" : ""}" data-weergave="kolommen2">2 kolommen</button>
         <button class="btn-sm ${state.weergave === "tabel" ? "active" : ""}" data-weergave="tabel">Tabel</button>
         <button class="btn-sm ${state.weergave === "planning" ? "active" : ""}" data-weergave="planning">Planning</button>
       </div>
