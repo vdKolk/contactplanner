@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.8.1"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.8.2"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -92,6 +92,17 @@ const VERSIE_NOTITIES = {
     nieuw: [
       "De weergave \"Lijst\" toont de gezinskaarten voortaan in twee kolommen (op een smal scherm één); de aparte knop \"2 kolommen\" is vervallen",
       "Nieuw filter \"Boven leeftijdsgrens\" bovenin het overzicht: alle gezinnen waarvan het gezinshoofd de leeftijdsgrens uit de instellingen heeft bereikt — werkt in elke weergave",
+    ],
+  },
+  "1.8.2": {
+    nieuw: [
+      "AfspraakPlanner werkt nu met planrondes: maak eerst een set tijdslots aan (\"+ Nieuwe planronde\", ook zonder gezinnen) en voeg daarna gezinnen toe — in één keer via \"Selecteren\" in de Planningweergave, of later één voor één",
+      "Bij het toevoegen van geselecteerde gezinnen kies je voortaan een bestaande planronde of maak je direct een nieuwe",
+      "\"Lopende aanvragen\" is vervangen door de volledige pagina \"Planrondes\": een overzicht met per planronde de voortgang en het eerstvolgende vrije tijdslot, met per planronde een eigen detailpagina (gezinnen links, tijdslots rechts) — geen popup meer",
+      "Het aparte resultaatscherm na het uitzetten is vervallen: na het aanmaken of toevoegen kom je direct op de detailpagina, waar je de uitnodigingen verstuurt en de voortgang volgt",
+      "WhatsApp-knoppen openen WhatsApp Web voortaan steeds in hetzelfde tabblad, zodat je niet bij elke klik in het vorige tabblad wordt afgemeld",
+      "Nieuwe instelling WhatsApp: kies tussen WhatsApp Web (browser) of de WhatsApp-app op deze computer — met de app opent het bericht direct, zonder tabbladen",
+      "De browser of password manager biedt niet meer aan om de pin op te slaan — een pin hoort niet in een password manager (de API-sleutel bij Instellingen mag daar wél in en blijft een gewoon wachtwoordveld)",
     ],
   },
 };
@@ -839,6 +850,7 @@ const state = {
   afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }, { ...STANDAARD_TIJDSLOT_SJABLOON }],
   afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
   mailMethode: "outlook", // mailto | outlook — Outlook op het web is de standaard voor nieuwe gebruikers
+  whatsappMethode: "web", // web | desktop — WhatsApp Web in één vast tabblad, of de WhatsApp-app op deze computer
   backupOpslagMethode: "download", // download | opslaanAls
   afspraakplannerApiSleutel: "",
   afspraakplannerBasisUrl: "https://afspraak.hhgputten.nl",
@@ -866,15 +878,15 @@ const state = {
   bijbelTerug: null, // stage om naar terug te keren vanaf de Bijbelgedeelten-pagina
   selectieModusPlanning: false,
   geselecteerdeGezinnen: [], // gezinsKeys, alleen in-memory
-  afspraakplannerStap: "samenstellen", // samenstellen | resultaat (op de pagina "Aanvraag uitzetten")
   afspraakplannerOmschrijving: "",
   afspraakplannerTijdslots: [],
-  afspraakplannerResultaat: null, // { tijdslots, deelnemers } na een succesvolle aanvraag
   afspraakplannerFout: "",
   afspraakplannerBezig: false,
   afspraakplannerSjabloonId: STANDAARD_TIJDSLOT_SJABLOON.id,
-  afspraakAanvragen: [], // uitgezette aanvragen: { id, omschrijving, aangemaaktOp, deelnemers, status, laatstVernieuwdOp, overgenomen } — versleuteld mee in de kluis
-  aanvragenOverzichtOpen: false,
+  afspraakAanvragen: [], // planrondes: { id, omschrijving, aangemaaktOp, deelnemers, status, laatstVernieuwdOp, overgenomen } — versleuteld mee in de kluis
+  planrondeDetailId: null, // geopende planronde op de Planrondes-pagina (null = het overzicht)
+  planrondeDoelId: "nieuw", // op de toevoegen-pagina: "nieuw" of het id van een bestaande planronde
+  aanvraagUitzettenTerug: "dashboard", // stage om naar terug te keren vanaf de toevoegen-pagina
   aanvraagStatusBezigId: null, // id van de aanvraag waarvan de status nu wordt opgehaald
   aanvraagFouten: {}, // id -> foutmelding van de laatste statusaanvraag, alleen in-memory
   aanvragenVerversenBezig: false, // alle aanvraagstatussen worden nu ververst (na ontgrendelen of via ↻)
@@ -1438,6 +1450,7 @@ function bouwBackupPayload() {
       afspraakSjablonen: state.afspraakSjablonen,
       afspraakSjabloonId: state.afspraakSjabloonId,
       mailMethode: state.mailMethode,
+      whatsappMethode: state.whatsappMethode,
       backupOpslagMethode: state.backupOpslagMethode,
     },
   };
@@ -1507,6 +1520,7 @@ async function pasBackupToe(data) {
     if (Array.isArray(inst.afspraakSjablonen) && inst.afspraakSjablonen.length) state.afspraakSjablonen = inst.afspraakSjablonen;
     if (typeof inst.afspraakSjabloonId === "string") state.afspraakSjabloonId = inst.afspraakSjabloonId;
     if (inst.mailMethode === "mailto" || inst.mailMethode === "outlook") state.mailMethode = inst.mailMethode;
+    if (inst.whatsappMethode === "web" || inst.whatsappMethode === "desktop") state.whatsappMethode = inst.whatsappMethode;
     if (inst.backupOpslagMethode === "download" || inst.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = inst.backupOpslagMethode;
   }
   const gelukt = await veiligOpslaan(async () => {
@@ -1521,6 +1535,7 @@ async function pasBackupToe(data) {
       await dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen);
       await dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId);
       await dbSetInstelling("mailMethode", state.mailMethode);
+      await dbSetInstelling("whatsappMethode", state.whatsappMethode);
       await dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode);
       await Promise.all(Object.keys(state.mijlpalenGedaan).map((sleutel) =>
         dbSetInstelling("mijlpaal-gedaan:" + sleutel, state.mijlpalenGedaan[sleutel])));
@@ -1748,7 +1763,7 @@ function render() {
     return;
   }
   const breed = state.stage === "dashboard" && (state.weergave === "tabel" || state.weergave === "planning");
-  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + aanvragenOverzichtModalHTML() + bijbelModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
+  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
   attachEvents();
   if (state.menuOpen) {
     requestAnimationFrame(() => {
@@ -1834,7 +1849,7 @@ function handleidingModalHTML() {
           <li><a href="#hl-schema">Terugkeerschema en de kleurbalk/het bolletje</a></li>
           <li><a href="#hl-bijzonder">Inplannen — Bijzonder contactmoment</a></li>
           <li><a href="#hl-afspraak">Afspraak inplannen en berichtsjablonen</a></li>
-          <li><a href="#hl-afspraakplanner">AfspraakPlanner: zelf een tijdslot laten kiezen</a></li>
+          <li><a href="#hl-afspraakplanner">AfspraakPlanner: planrondes — zelf een tijdslot laten kiezen</a></li>
           <li><a href="#hl-momenten">Bijzondere momenten</a></li>
           <li><a href="#hl-weergaves">Sorteren en weergaves</a></li>
           <li><a href="#hl-markeren">Markeren</a></li>
@@ -1894,42 +1909,51 @@ function handleidingModalHTML() {
         want je kunt er zoveel maken als je wilt en per afspraak kiezen welke je gebruikt. Ook "Mail sturen"
         bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
         standaard mailprogramma van je apparaat (mailto), of direct een nieuw bericht in Outlook op het
-        web (Microsoft 365) — instelbaar via menu → Instellingen → E-mail.</p>
+        web (Microsoft 365) — instelbaar via menu → Instellingen → E-mail.
+        Voor de WhatsApp-knoppen is er een vergelijkbare instelling (menu → Instellingen → WhatsApp):
+        <strong>WhatsApp Web</strong> opent steeds hetzelfde tabblad (zodat WhatsApp je niet bij elke
+        klik in het vorige tabblad afmeldt), of kies <strong>de WhatsApp-app op deze computer</strong> —
+        dan opent het bericht direct in de app, helemaal zonder tabbladen.</p>
 
-        <h4 id="hl-afspraakplanner">AfspraakPlanner: zelf een tijdslot laten kiezen</h4>
-        <p>Wil je niet zelf een datum voorstellen, maar een aantal gezinnen laten kiezen uit
-        dezelfde tijdslots? Ga naar de <strong>Planningweergave</strong> en klik op
-        <strong>"Selecteren"</strong>. Klik daarna de gezinnen aan die je een uitnodiging wilt
-        sturen — onderin verschijnt een balkje met het aantal geselecteerde gezinnen en de knop
-        <strong>"Aanvraag uitzetten"</strong>. Vul de tijdslots in die je aanbiedt (de eindtijd is
-        optioneel — laat die leeg als alleen de starttijd vaststaat) en verstuur de
-        aanvraag; per gezin krijg je daarna een link terug die je met één klik als mail of
-        WhatsApp-bericht kunt versturen (met een eigen sjabloon, plekhouder
-        <span class="mono">[link]</span> — zie hierboven). Het gemeentelid kiest zelf een moment
-        via die link; kiest iemand een tijdslot, dan is dat voor de anderen niet meer beschikbaar.</p>
-        <p>Vul je veel tijdslots in hetzelfde ritme in? Gebruik <strong>"Wekelijks herhalen"</strong>:
-        vul één tijdslot in (bijv. dinsdag 20:00), kies het aantal weken en de app vult de rest
-        automatisch aan — dezelfde dag en tijd, week na week.</p>
-        <p>Via <strong>"Lopende aanvragen"</strong> (naast de knop "Selecteren" in de Planningweergave)
-        volg je de uitgezette aanvragen: klik op <strong>"Status vernieuwen"</strong> om te zien wie al
-        een tijdslot gekozen heeft. Een gekozen afspraak zet je daar met de knop
+        <h4 id="hl-afspraakplanner">AfspraakPlanner: planrondes — zelf een tijdslot laten kiezen</h4>
+        <p>Wil je niet zelf een datum voorstellen, maar gezinnen laten kiezen uit dezelfde
+        tijdslots? Dat gaat via een <strong>planronde</strong>: een set tijdslots waaruit elk
+        toegevoegd gezin er zelf één kiest via een persoonlijke link. Je maakt eerst een planronde
+        aan en voegt daarna gezinnen toe — in één keer of verspreid over dagen, precies zoals het
+        uitkomt.</p>
+        <p><strong>Planronde aanmaken:</strong> klik in de Planningweergave op
+        <strong>"Planrondes"</strong> en dan op <strong>"+ Nieuwe planronde"</strong>. Vul een
+        omschrijving en de tijdslots in (de eindtijd is optioneel — laat die leeg als alleen de
+        starttijd vaststaat). Vul je veel tijdslots in hetzelfde ritme in? Gebruik
+        <strong>"Wekelijks herhalen"</strong>: vul één tijdslot in (bijv. dinsdag 20:00), kies het
+        aantal weken en de app vult de rest automatisch aan.</p>
+        <p><strong>Gezinnen toevoegen:</strong> klik in de Planningweergave op
+        <strong>"Selecteren"</strong>, klik de gezinnen aan en kies onderin
+        <strong>"Toevoegen aan planronde"</strong> — daar kies je een bestaande planronde of maak
+        je er direct een nieuwe. Toevoegen kan ook per gezin op de detailpagina van een planronde.
+        Elk toegevoegd gezin krijgt een eigen link die je met één klik als mail of WhatsApp-bericht
+        verstuurt (met een eigen sjabloon, plekhouder <span class="mono">[link]</span> — zie
+        hierboven). Het gemeentelid kiest zelf een moment via die link; kiest iemand een tijdslot,
+        dan is dat voor de anderen niet meer beschikbaar.</p>
+        <p><strong>Volgen en afronden:</strong> de pagina <strong>Planrondes</strong> toont per
+        planronde de voortgang (hoeveel gezinnen al gekozen hebben en hoeveel tijdslots nog vrij
+        zijn); klik op een planronde voor de details. Een gekozen afspraak zet je daar met
         <strong>"Zet in planning"</strong> direct als gepland bijzonder contactmoment in het
         gezinsdossier, zodat hij ook in Bijzondere momenten verschijnt. Op de gezinskaarten in de
-        lijst- en planbordweergave zie je bovendien een label zodra er een aanvraag
-        uitstaat (⏳) en de gekozen datum zodra het gezin een tijdslot heeft gekozen (✓).</p>
-        <p>Een lopende aanvraag kun je daar ook <strong>uitbreiden</strong>: voeg extra tijdslots toe
-        (direct kiesbaar via de al verstuurde links) of extra gezinnen (die krijgen een eigen link).
-        Nog vrije tijdslots kun je <strong>intrekken</strong> als je toch niet meer kunt; een al
-        gekozen tijdslot intrekken kan bewust niet — dat regel je persoonlijk met het gezin. Tijdslots
-        waarvan de starttijd verstreken is, zijn automatisch niet meer kiesbaar en tonen als
-        <em>verlopen</em>. Voor gezinnen die nog niet gekozen hebben kun je de uitnodiging vanuit
-        ditzelfde overzicht opnieuw versturen.
-        De app ververst de status van lopende aanvragen automatisch: na het ontgrendelen, bij het
-        herladen en daarna elke 10 minuten; handmatig kan het met het ↻-icoon naast "Lopende
-        aanvragen". De gezinskaarten kleuren mee: licht blauw zolang een aanvraag uitstaat, licht
-        groen zodra een tijdslot gekozen is, licht geel vanaf de dag na het gekozen moment — en weer
-        wit zodra je daarna een contactmoment logt (of automatisch na 14 dagen), als er in de
-        aanvraag niets meer te kiezen valt, of als je de aanvraag uit "Lopende aanvragen" verwijdert.
+        lijst- en planbordweergave zie je bovendien een label zodra een gezin in een planronde zit
+        (⏳) en de gekozen datum zodra het een tijdslot heeft gekozen (✓).</p>
+        <p>Op de detailpagina kun je een planronde ook <strong>uitbreiden</strong> met extra
+        tijdslots (direct kiesbaar via de al verstuurde links). Nog vrije tijdslots kun je
+        <strong>intrekken</strong> als je toch niet meer kunt; een al gekozen tijdslot intrekken kan
+        bewust niet — dat regel je persoonlijk met het gezin. Tijdslots waarvan de starttijd
+        verstreken is, zijn automatisch niet meer kiesbaar en tonen als <em>verlopen</em>. Voor
+        gezinnen die nog niet gekozen hebben kun je de uitnodiging opnieuw versturen.
+        De app ververst de status van planrondes automatisch: na het ontgrendelen, bij het
+        herladen en daarna elke 10 minuten; handmatig kan het met <strong>"↻ Alles vernieuwen"</strong>
+        op de Planrondes-pagina. De gezinskaarten kleuren mee: licht blauw zolang een gezin nog kan
+        kiezen, licht groen zodra een tijdslot gekozen is, licht geel vanaf de dag na het gekozen
+        moment — en weer wit zodra je daarna een contactmoment logt (of automatisch na 14 dagen),
+        als er niets meer te kiezen valt, of als je de planronde verwijdert.
         <strong>Belangrijk om te weten:</strong> de AfspraakPlanner-koppeling is de enige plek in de
         app die met het internet communiceert, en er gaan nooit leesbare namen of adressen over de
         lijn. Werkt dit niet, controleer dan eerst de API-sleutel bij Instellingen → AfspraakPlanner.</p>
@@ -2063,8 +2087,20 @@ function instellingenPaginaHTML() {
             Waar de knoppen "Mail sturen" en "Open in e-mail" naartoe moeten linken.
           </p>
           <div class="schema-grid">
-            <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Standaard mailprogramma (mailto)</div>
-            <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook op het web (Microsoft 365)</div>
+            <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook Web</div>
+            <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Mail-app op deze computer</div>
+          </div>
+        </section>
+
+        <section class="instellingen-kaart">
+          <h4>WhatsApp</h4>
+          <p class="instellingen-uitleg">
+            Hoe de "WhatsApp"-knoppen openen. WhatsApp Web gebruikt steeds hetzelfde tabblad;
+            heb je de WhatsApp-app op deze computer, dan opent die direct — zonder tabbladen.
+          </p>
+          <div class="schema-grid">
+            <div class="schema-opt ${state.whatsappMethode === "web" ? "active" : ""}" data-whatsappmethode="web">WhatsApp Web (browser)</div>
+            <div class="schema-opt ${state.whatsappMethode === "desktop" ? "active" : ""}" data-whatsappmethode="desktop">WhatsApp-app op deze computer</div>
           </div>
         </section>
 
@@ -2086,7 +2122,7 @@ function instellingenPaginaHTML() {
       <section class="instellingen-kaart">
         <h4>AfspraakPlanner</h4>
         <p class="instellingen-uitleg">
-          Voor "Aanvraag uitzetten" in de Planningweergave: gemeenteleden kiezen daar zelf een
+          Voor de planrondes in de Planningweergave: gemeenteleden kiezen daar zelf een
           tijdslot. Alleen regnr en tijdslot gaan naar deze server, nooit namen of adressen.
           Je persoonlijke API-sleutel vraag je op bij Ruben van der Kolk —
           <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>. Vul hem hier in en deel hem
@@ -2497,38 +2533,17 @@ function versieMeldingModalHTML() {
   </div>`;
 }
 
+// De pagina "Toevoegen aan planronde" / "Nieuwe planronde": met een selectie uit de
+// Planningweergave kies je hier een bestaande planronde of maak je een nieuwe (omschrijving +
+// tijdslots); zonder selectie (via "+ Nieuwe planronde") maak je alleen de planronde aan.
 function afspraakplannerPaginaHTML() {
-  if (state.afspraakplannerStap === "resultaat" && state.afspraakplannerResultaat) {
-    return afspraakplannerResultaatHTML();
-  }
   const gezinnen = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
   const geenSleutel = !state.afspraakplannerApiSleutel;
-  return `
-  ${paginaSluitKnopHTML("btnSluitAfspraakplanner")}
-  <div class="pagina-smal">
-      <h2 style="font-size:22px;margin:0 0 4px;">Aanvraag uitzetten</h2>
-      ${geenSleutel ? `
-      <div class="instellingen-waarschuwing" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px;">
-        <span style="flex:1;min-width:220px;">⚠ Er is nog geen API-sleutel ingesteld, dus een aanvraag versturen kan nog niet.
-        Vul de sleutel eerst in bij Instellingen → AfspraakPlanner (op te vragen bij Ruben van der Kolk —
-        <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>). Je selectie blijft gewoon staan.</span>
-        <button class="btn-sm" id="btnNaarInstellingen">Naar Instellingen</button>
-      </div>` : ""}
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
-        Elk gezinshoofd krijgt een link waarmee ze zelf één van de onderstaande tijdslots kunnen
-        kiezen. Alleen regnr en tijdslot gaan naar de AfspraakPlanner-server, geen namen of adressen.
-      </p>
+  const bestaande = state.afspraakAanvragen.slice().sort((a, b) => (b.id || 0) - (a.id || 0));
+  const naarBestaand = state.planrondeDoelId !== "nieuw" && gezinnen.length > 0;
+  const doel = naarBestaand ? bestaande.find((a) => String(a.id) === String(state.planrondeDoelId)) : null;
 
-      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Geselecteerde gezinnen (${gezinnen.length})</label>
-      <div style="margin:4px 0 12px;">
-        ${gezinnen.length === 0 ? `<p style="font-size:12.5px;color:var(--text-soft);">Geen gezinnen meer geselecteerd.</p>` : gezinnen.map((g) => `
-          <span class="tag-grey" style="margin:0 4px 4px 0;display:inline-flex;align-items:center;gap:5px;">
-            ${esc(g.gezinshoofd.naam || "Naamloos")}
-            <button data-verwijder-selectie="${esc(g.gezinsKey)}" style="border:none;background:transparent;padding:0;cursor:pointer;color:var(--text-soft);font-size:12px;">✕</button>
-          </span>
-        `).join("")}
-      </div>
-
+  const nieuweRondeVelden = `
       <div class="field-row">
         <label>Omschrijving (optioneel, zichtbaar voor het gezin)</label>
         <input id="afspraakplannerOmschrijving" placeholder="Bijv. Huisbezoek najaar 2026" value="${esc(state.afspraakplannerOmschrijving)}" />
@@ -2559,58 +2574,75 @@ function afspraakplannerPaginaHTML() {
       <p style="font-size:11.5px;color:var(--text-soft);margin:6px 0 0;">
         Tip: vul één tijdslot in (bijv. dinsdag 20:00) en klik op "Wekelijks herhalen" — de app vult
         dan dezelfde dag en tijd voor de opgegeven weken in.
+      </p>`;
+
+  return `
+  ${paginaSluitKnopHTML("btnSluitAfspraakplanner")}
+  <div class="pagina-smal">
+      <h2 style="font-size:22px;margin:0 0 4px;">${gezinnen.length ? "Toevoegen aan planronde" : "Nieuwe planronde"}</h2>
+      ${geenSleutel ? `
+      <div class="instellingen-waarschuwing" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px;">
+        <span style="flex:1;min-width:220px;">⚠ Er is nog geen API-sleutel ingesteld, dus een planronde aanmaken kan nog niet.
+        Vul de sleutel eerst in bij Instellingen → AfspraakPlanner (op te vragen bij Ruben van der Kolk —
+        <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>). Je selectie blijft gewoon staan.</span>
+        <button class="btn-sm" id="btnNaarInstellingen">Naar Instellingen</button>
+      </div>` : ""}
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
+        Een planronde is een set tijdslots. Elk toegevoegd gezinshoofd krijgt een link waarmee ze
+        zelf één van de tijdslots kiezen. Gezinnen toevoegen kan ook later nog, via de pagina
+        <strong>Planrondes</strong>. Alleen regnr en tijdslot gaan naar de AfspraakPlanner-server,
+        geen namen of adressen.
       </p>
+
+      ${gezinnen.length && bestaande.length ? `
+      <div class="field-row">
+        <label>Aan welke planronde toevoegen?</label>
+        <select id="planrondeDoelSelect">
+          <option value="nieuw" ${!naarBestaand ? "selected" : ""}>— een nieuwe planronde —</option>
+          ${bestaande.map((a) => `<option value="${esc(a.id)}" ${String(state.planrondeDoelId) === String(a.id) ? "selected" : ""}>${esc(a.omschrijving || `Planronde #${a.id}`)} (uitgezet op ${esc(fmtDatum(a.aangemaaktOp))})</option>`).join("")}
+        </select>
+      </div>` : ""}
+
+      ${gezinnen.length ? `
+      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Geselecteerde gezinnen (${gezinnen.length})</label>
+      <div style="margin:4px 0 12px;">
+        ${gezinnen.map((g) => `
+          <span class="tag-grey" style="margin:0 4px 4px 0;display:inline-flex;align-items:center;gap:5px;">
+            ${esc(g.gezinshoofd.naam || "Naamloos")}
+            <button data-verwijder-selectie="${esc(g.gezinsKey)}" style="border:none;background:transparent;padding:0;cursor:pointer;color:var(--text-soft);font-size:12px;">✕</button>
+          </span>
+        `).join("")}
+      </div>` : `
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
+        Er zijn nog geen gezinnen geselecteerd — dat hoeft ook niet: maak eerst de planronde aan en
+        voeg gezinnen later toe (via de Planningweergave of de pagina Planrondes).
+      </p>`}
+
+      ${naarBestaand ? (doel ? planrondeDoelSamenvattingHTML(doel) : "") : nieuweRondeVelden}
 
       ${state.afspraakplannerFout ? `<p style="color:var(--red);font-size:12.5px;margin-top:12px;">${esc(state.afspraakplannerFout)}</p>` : ""}
 
       <div class="quick-actions" style="margin-top:16px;">
-        <button class="btn-primary" id="btnAfspraakplannerVersturen" ${state.afspraakplannerBezig || geenSleutel ? "disabled" : ""} ${geenSleutel ? `title="Vul eerst een API-sleutel in bij Instellingen → AfspraakPlanner"` : ""}>${state.afspraakplannerBezig ? "Versturen…" : "Aanvraag uitzetten"}</button>
+        <button class="btn-primary" id="btnAfspraakplannerVersturen" ${state.afspraakplannerBezig || geenSleutel ? "disabled" : ""} ${geenSleutel ? `title="Vul eerst een API-sleutel in bij Instellingen → AfspraakPlanner"` : ""}>${state.afspraakplannerBezig ? "Bezig…" : (naarBestaand ? "Toevoegen aan planronde" : "Planronde aanmaken")}</button>
       </div>
   </div>`;
 }
 
-function afspraakplannerResultaatHTML() {
-  const res = state.afspraakplannerResultaat;
-  const sjabloon = haalAfspraakSjabloon(state.afspraakplannerSjabloonId);
-  const gezinnenGeselecteerd = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
-  const rijen = (res.deelnemers || []).map((d) => {
-    const gezin = gezinnenGeselecteerd.find((g) => g.gezinshoofd.regnr === d.regnr);
-    const hoofd = gezin ? gezin.gezinshoofd : null;
-    const naam = hoofd ? (hoofd.naam || "Naamloos") : `Regnr. ${esc(d.regnr)}`;
-    const aanhef = hoofd ? (hoofd.roepnaam || hoofd.naam || "") : "";
-    const ingevuld = pasAfspraakSjabloonToe(sjabloon, aanhef);
-    const tekst = vulSjabloonIn(ingevuld.tekst, "", "", d.link);
-    const mobielClean = hoofd && hoofd.mobiel ? String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31") : "";
-    return `
-      <div class="note-card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <strong>${esc(naam)}</strong>
-        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
-          ${hoofd && hoofd.email ? `<a class="btn btn-sm" href="${mailUrl(hoofd.email, ingevuld.onderwerp, tekst)}" target="_blank" rel="noopener">Mail</a>` : ""}
-          ${mobielClean ? `<a class="btn btn-sm" href="https://wa.me/${mobielClean}?text=${encodeURIComponent(tekst)}" target="_blank" rel="noopener">WhatsApp</a>` : ""}
-          ${!hoofd || (!hoofd.email && !mobielClean) ? `<span style="font-size:11.5px;color:var(--text-soft);">Geen e-mail/mobiel — link: <span class="mono">${esc(d.link)}</span></span>` : ""}
-        </span>
-      </div>`;
-  }).join("");
-  return `
-  ${paginaSluitKnopHTML("btnSluitAfspraakplanner")}
-  <div class="pagina-smal">
-      <h2 style="font-size:22px;margin:0 0 4px;">Aanvraag aangemaakt</h2>
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 10px;">
-        ${(res.deelnemers || []).length} uitnodiging(en) klaar. Verstuur ze hieronder per gezin.
-      </p>
-      <div class="field-row">
-        <label>Sjabloon</label>
-        <select id="afspraakplannerSjabloonSelect">
-          ${state.afspraakSjablonen.map((s) => `<option value="${esc(s.id)}" ${state.afspraakplannerSjabloonId === s.id ? "selected" : ""}>${esc(s.naam)}</option>`).join("")}
-        </select>
-      </div>
-      ${rijen}
-      <p style="font-size:12.5px;color:var(--text-soft);margin:12px 0 0;">
-        Je vindt deze aanvraag later terug via <strong>"Lopende aanvragen"</strong> in de
-        Planningweergave — daar zie je ook wie al een tijdslot gekozen heeft.
-      </p>
-      <button class="btn-primary" id="btnAfspraakplannerKlaar" style="margin-top:12px;">Klaar</button>
-  </div>`;
+// Samenvatting van de gekozen bestaande planronde op de toevoegen-pagina: hoeveel
+// tijdslots er nog vrij zijn en wat het eerstvolgende vrije moment is.
+function planrondeDoelSamenvattingHTML(a) {
+  let inhoud;
+  if (a.status) {
+    const slots = a.status.tijdslots || [];
+    const vrij = slots.filter((t) => t.status === "vrij");
+    const eerstvolgend = vrij.slice().sort((x, y) => String(x.start_tijd).localeCompare(String(y.start_tijd)))[0];
+    inhoud = vrij.length
+      ? `${vrij.length} van de ${slots.length} tijdslots nog vrij · eerstvolgend: ${esc(fmtSlotTijd(eerstvolgend.start_tijd, eerstvolgend.eind_tijd))}`
+      : `⚠ Geen vrije tijdslots meer — voeg eerst tijdslots toe via de pagina Planrondes, anders valt er niets te kiezen.`;
+  } else {
+    inhoud = "De status van deze planronde is nog niet opgehaald; na het toevoegen zie je direct de actuele stand.";
+  }
+  return `<p style="font-size:12.5px;color:var(--text-soft);margin:0 0 4px;">${inhoud}</p>`;
 }
 
 function debugModalHTML() {
@@ -2649,6 +2681,7 @@ function mainHTML() {
   if (state.stage === "mijlpalen") return mijlpalenHTML();
   if (state.stage === "instellingen") return instellingenPaginaHTML();
   if (state.stage === "aanvraagUitzetten") return afspraakplannerPaginaHTML();
+  if (state.stage === "planrondes") return planrondesPaginaHTML();
   if (state.stage === "releaseHistorie") return releaseHistorieHTML();
   if (state.stage === "bijbelgedeelten") return bijbelgedeeltenHTML();
   return "";
@@ -3026,15 +3059,14 @@ function dashboardHTML() {
       ${state.weergave === "planning" ? `
       <div class="view-toggle">
         <button class="btn-sm ${state.selectieModusPlanning ? "active" : ""}" id="btnToggleSelectie">Selecteren</button>
-        <button class="btn-sm" id="btnLopendeAanvragen">Lopende aanvragen${state.afspraakAanvragen.length ? ` (${state.afspraakAanvragen.length})` : ""}</button>
-        ${state.afspraakAanvragen.length ? `<button class="btn-sm" id="btnAanvragenVerversen" title="Status van alle lopende aanvragen vernieuwen" ${state.aanvragenVerversenBezig ? "disabled" : ""}>${state.aanvragenVerversenBezig ? "…" : "↻"}</button>` : ""}
+        <button class="btn-sm" id="btnPlanrondes">Planrondes${state.afspraakAanvragen.length ? ` (${state.afspraakAanvragen.length})` : ""}</button>
       </div>` : ""}
     </div>
     <div id="resultsArea">${resultsAreaHTML()}</div>
     ${state.weergave === "planning" && state.geselecteerdeGezinnen.length > 0 ? `
     <div class="actiebalk-selectie">
       <span>${state.geselecteerdeGezinnen.length} geselecteerd</span>
-      <button class="btn-sm" id="btnAfspraakplannerUitzetten">Aanvraag uitzetten</button>
+      <button class="btn-sm" id="btnAfspraakplannerUitzetten">Toevoegen aan planronde</button>
       <button class="actiebalk-selectie-sluit" id="btnSelectieLeegmaken" title="Selectie wissen">✕</button>
     </div>` : ""}`;
 }
@@ -3110,13 +3142,7 @@ function attachSortenWeergaveEvents() {
     render();
   });
   if ($("#btnAfspraakplannerUitzetten")) $("#btnAfspraakplannerUitzetten").addEventListener("click", () => {
-    state.stage = "aanvraagUitzetten";
-    state.afspraakplannerStap = "samenstellen";
-    state.afspraakplannerOmschrijving = "";
-    state.afspraakplannerTijdslots = [{ datum: "", start: "19:00", eind: "" }];
-    state.afspraakplannerResultaat = null;
-    state.afspraakplannerFout = "";
-    render();
+    startPlanrondeToevoegen();
   });
 }
 
@@ -3254,7 +3280,7 @@ function detailHTML() {
 
       <div class="quick-actions">
         ${hoofd.email ? `<a class="btn" href="${mailUrl(hoofd.email, "Contact")}" target="_blank" rel="noopener">Mail sturen</a>` : ""}
-        ${hoofd.mobiel ? `<a class="btn" href="https://wa.me/${String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31")}" target="_blank">WhatsApp</a>` : ""}
+        ${hoofd.mobiel ? `<a class="btn" href="${whatsappUrl(String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31"), "")}"${whatsappTargetAttr()}>WhatsApp</a>` : ""}
         ${scipioUrl(hoofd.regnr) ? `<a class="btn" href="${scipioUrl(hoofd.regnr)}" target="_blank" rel="noopener">Scipio</a>` : ""}
       </div>
 
@@ -3581,6 +3607,11 @@ function attachEvents() {
     await veiligOpslaan(() => dbSetInstelling("mailMethode", state.mailMethode), "instelling opslaan");
     render();
   }));
+  $$("[data-whatsappmethode]").forEach((el) => el.addEventListener("click", async (e) => {
+    state.whatsappMethode = e.currentTarget.dataset.whatsappmethode;
+    await veiligOpslaan(() => dbSetInstelling("whatsappMethode", state.whatsappMethode), "instelling opslaan");
+    render();
+  }));
   $$("[data-backupopslag]").forEach((el) => el.addEventListener("click", async (e) => {
     state.backupOpslagMethode = e.currentTarget.dataset.backupopslag;
     await veiligOpslaan(() => dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode), "instelling opslaan");
@@ -3641,13 +3672,17 @@ function attachEvents() {
   });
 
   const sluitAfspraakplannerPagina = () => {
-    state.stage = "dashboard";
+    state.stage = state.aanvraagUitzettenTerug || "dashboard";
     state.geselecteerdeGezinnen = [];
     state.selectieModusPlanning = false;
     render();
   };
   if ($("#btnSluitAfspraakplanner")) $("#btnSluitAfspraakplanner").addEventListener("click", sluitAfspraakplannerPagina);
-  if ($("#btnAfspraakplannerKlaar")) $("#btnAfspraakplannerKlaar").addEventListener("click", sluitAfspraakplannerPagina);
+  if ($("#planrondeDoelSelect")) $("#planrondeDoelSelect").addEventListener("change", (e) => {
+    state.planrondeDoelId = e.target.value;
+    state.afspraakplannerFout = "";
+    render();
+  });
   $$("[data-verwijder-selectie]").forEach((el) => el.addEventListener("click", (e) => {
     const key = e.currentTarget.dataset.verwijderSelectie;
     state.geselecteerdeGezinnen = state.geselecteerdeGezinnen.filter((k) => k !== key);
@@ -3696,12 +3731,19 @@ function attachEvents() {
     render();
   });
 
-  if ($("#btnLopendeAanvragen")) $("#btnLopendeAanvragen").addEventListener("click", () => { state.aanvragenOverzichtOpen = true; render(); });
-  if ($("#btnAanvragenVerversen")) $("#btnAanvragenVerversen").addEventListener("click", () => {
-    verversAlleAanvraagStatussen().catch((e) => logDebug("fout", "Aanvraagstatussen verversen mislukt: " + e.message));
+  if ($("#btnPlanrondes")) $("#btnPlanrondes").addEventListener("click", () => { state.stage = "planrondes"; state.planrondeDetailId = null; render(); });
+  if ($("#btnPlanrondesSluiten")) $("#btnPlanrondesSluiten").addEventListener("click", () => { state.stage = "dashboard"; state.planrondeDetailId = null; render(); });
+  if ($("#btnPlanrondeTerug")) $("#btnPlanrondeTerug").addEventListener("click", () => { state.planrondeDetailId = null; render(); });
+  if ($("#btnNieuwePlanronde")) $("#btnNieuwePlanronde").addEventListener("click", () => {
+    state.geselecteerdeGezinnen = [];
+    startPlanrondeToevoegen();
   });
-  if ($("#btnSluitAanvragen")) $("#btnSluitAanvragen").addEventListener("click", () => { state.aanvragenOverzichtOpen = false; render(); });
-  if ($("#aanvragenOverlay")) $("#aanvragenOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "aanvragenOverlay") { state.aanvragenOverzichtOpen = false; render(); } });
+  $$("[data-open-planronde]").forEach((el) => el.addEventListener("click", (e) => {
+    openPlanronde(parseInt(e.currentTarget.dataset.openPlanronde, 10));
+  }));
+  if ($("#btnAanvragenVerversen")) $("#btnAanvragenVerversen").addEventListener("click", () => {
+    verversAlleAanvraagStatussen().catch((e) => logDebug("fout", "Statussen van planrondes verversen mislukt: " + e.message));
+  });
   $$("[data-aanvraag-vernieuw]").forEach((el) => el.addEventListener("click", (e) => {
     vernieuwAanvraagStatus(parseInt(e.currentTarget.dataset.aanvraagVernieuw, 10));
   }));
@@ -3714,7 +3756,6 @@ function attachEvents() {
   $$("[data-open-regnr]").forEach((el) => el.addEventListener("click", (e) => {
     const gezin = computeGezinnen().find((g) => g.gezinshoofd.regnr === e.currentTarget.dataset.openRegnr);
     if (!gezin) return;
-    state.aanvragenOverzichtOpen = false;
     openGezinDetail(gezin.gezinsKey);
   }));
   $$("[data-slot-intrek-aanvraag]").forEach((el) => el.addEventListener("click", (e) => {
@@ -3898,7 +3939,7 @@ function pasAfspraakSjabloonToe(sjabloon, aanhef) {
 }
 
 // Enige plek in de hele app die het internet op gaat — en alleen na een bewuste klik
-// ("Aanvraag uitzetten", "Status vernieuwen", "Intrekken", "+ Tijdslot"/"+ Gezin"). Er gaan nooit
+// ("Planronde aanmaken", "Status vernieuwen", "Intrekken", "+ Tijdslot"/"+ Gezin"). Er gaan nooit
 // namen of adressen over de lijn, alleen regnr en tijdslot (zie afspraakplanner/docs/API.md).
 async function afspraakplannerFetch(pad, opties) {
   if (!state.afspraakplannerApiSleutel) {
@@ -3919,9 +3960,49 @@ async function afspraakplannerFetch(pad, opties) {
   return data;
 }
 
+// Opent de pagina "Toevoegen aan planronde" (met de huidige selectie) of "Nieuwe
+// planronde" (zonder selectie), met een schoon formulier.
+function startPlanrondeToevoegen() {
+  state.aanvraagUitzettenTerug = state.stage === "planrondes" ? "planrondes" : "dashboard";
+  state.stage = "aanvraagUitzetten";
+  state.afspraakplannerOmschrijving = "";
+  state.afspraakplannerTijdslots = [{ datum: "", start: "19:00", eind: "" }];
+  state.afspraakplannerFout = "";
+  state.planrondeDoelId = "nieuw";
+  render();
+}
+
+// Naar de detailpagina van één planronde (na aanmaken/toevoegen, of via het overzicht).
+function openPlanronde(id) {
+  state.stage = "planrondes";
+  state.planrondeDetailId = id;
+  state.geselecteerdeGezinnen = [];
+  state.selectieModusPlanning = false;
+  render();
+}
+
+// De knop op de toevoegen-pagina: maakt een nieuwe planronde aan (POST, ook zonder
+// gezinnen) of voegt de geselecteerde gezinnen toe aan een bestaande (PATCH), en
+// opent daarna de detailpagina van die planronde.
 async function verstuurAfspraakplannerAanvraag() {
   const gezinnen = state.geselecteerdeGezinnen.map((key) => findGezin(key)).filter(Boolean);
-  if (!gezinnen.length) { state.afspraakplannerFout = "Selecteer minstens één gezin."; render(); return; }
+
+  if (state.planrondeDoelId !== "nieuw" && gezinnen.length) {
+    const doelId = parseInt(state.planrondeDoelId, 10);
+    state.afspraakplannerBezig = true;
+    state.afspraakplannerFout = "";
+    render();
+    const gelukt = await breidAanvraagUit(doelId, { regnrs: gezinnen.map((g) => g.gezinshoofd.regnr) });
+    state.afspraakplannerBezig = false;
+    if (gelukt) {
+      openPlanronde(doelId);
+    } else {
+      state.afspraakplannerFout = state.aanvraagFouten[doelId] || "Toevoegen aan de planronde is niet gelukt.";
+      render();
+    }
+    return;
+  }
+
   // De eindtijd is optioneel (sinds AfspraakPlanner die ook niet meer vereist).
   const tijdslots = state.afspraakplannerTijdslots
     .filter((t) => t.datum && t.start)
@@ -3943,10 +4024,8 @@ async function verstuurAfspraakplannerAanvraag() {
         regnrs: gezinnen.map((g) => g.gezinshoofd.regnr),
       }),
     });
-    state.afspraakplannerResultaat = data;
-    state.afspraakplannerStap = "resultaat";
-    // De aanvraag lokaal bewaren (in de kluis), zodat je later de status kunt volgen
-    // via "Lopende aanvragen" en de links per gezin opnieuw kunt versturen.
+    // De planronde lokaal bewaren (in de kluis), zodat je de status kunt volgen
+    // via de Planrondes-pagina en de links per gezin opnieuw kunt versturen.
     state.afspraakAanvragen.push({
       id: data.aanvraag_id,
       omschrijving: state.afspraakplannerOmschrijving,
@@ -3956,7 +4035,12 @@ async function verstuurAfspraakplannerAanvraag() {
       laatstVernieuwdOp: null,
       overgenomen: {}, // regnr -> true zodra de gekozen afspraak in de planning is gezet
     });
-    await veiligOpslaan(bewaarGegevens, "aanvraag bewaren");
+    await veiligOpslaan(bewaarGegevens, "planronde bewaren");
+    state.afspraakplannerBezig = false;
+    openPlanronde(data.aanvraag_id);
+    // Status direct ophalen, zodat de tijdslots meteen op de detailpagina staan.
+    vernieuwAanvraagStatus(data.aanvraag_id).catch((e) => logDebug("fout", "Status van nieuwe planronde ophalen mislukt: " + e.message));
+    return;
   } catch (e) {
     state.afspraakplannerFout = e.message;
   }
@@ -3983,7 +4067,7 @@ async function vernieuwAanvraagStatus(id) {
 }
 
 // Ververst de status van álle bewaarde aanvragen in één keer: automatisch na het
-// ontgrendelen, en handmatig via het ↻-icoon naast "Lopende aanvragen". Fouten per
+// ontgrendelen, en handmatig via "↻ Alles vernieuwen" op de Planrondes-pagina. Fouten per
 // aanvraag (bv. even geen internet) worden gelogd maar blokkeren niets.
 async function verversAlleAanvraagStatussen() {
   if (!state.afspraakplannerApiSleutel || !state.afspraakAanvragen.length || state.aanvragenVerversenBezig) return;
@@ -4212,7 +4296,7 @@ async function koppelViaApiSleutel() {
 }
 
 // Zolang de app ontgrendeld is elke 10 minuten de aanvraagstatussen verversen, zodat de
-// kaartkleuren en "Lopende aanvragen" actueel blijven. Een beurt wordt overgeslagen terwijl
+// kaartkleuren en de Planrondes-pagina actueel blijven. Een beurt wordt overgeslagen terwijl
 // je ergens in een invoerveld staat — de herteken-slag zou anders je focus verstoren.
 setInterval(() => {
   if (state.vergrendeld) return;
@@ -4224,9 +4308,10 @@ setInterval(() => {
 async function verwijderAanvraagLokaal(id) {
   const aanvraag = state.afspraakAanvragen.find((a) => a.id === id);
   if (!aanvraag) return;
-  if (!confirm("Deze aanvraag uit het overzicht verwijderen? De aanvraag zelf (en al gemaakte keuzes) blijft op de AfspraakPlanner-server bestaan; je kunt de status daarna alleen niet meer volgen vanuit ContactPlanner.")) return;
+  if (!confirm("Deze planronde uit ContactPlanner verwijderen? De planronde zelf (en al gemaakte keuzes) blijft op de AfspraakPlanner-server bestaan; je kunt de status daarna alleen niet meer volgen vanuit ContactPlanner.")) return;
   state.afspraakAanvragen = state.afspraakAanvragen.filter((a) => a.id !== id);
-  await veiligOpslaan(bewaarGegevens, "aanvraag verwijderen");
+  if (state.planrondeDetailId === id) state.planrondeDetailId = null;
+  await veiligOpslaan(bewaarGegevens, "planronde verwijderen");
   render();
 }
 
@@ -4344,7 +4429,7 @@ async function voegGezinToeAanAanvraag(aanvraagId) {
 }
 
 // Mail/WhatsApp-knoppen om een uitnodigingslink (opnieuw) te versturen, met het
-// tijdslot-sjabloon — zowel in het resultaatscherm als bij Lopende aanvragen.
+// tijdslot-sjabloon — op de detailpagina van een planronde.
 function uitnodigingsKnoppenHTML(regnr, link) {
   const p = findPersoon(regnr);
   const sjabloon = haalAfspraakSjabloon(state.afspraakplannerSjabloonId);
@@ -4354,7 +4439,7 @@ function uitnodigingsKnoppenHTML(regnr, link) {
   const mobielClean = p && p.mobiel ? String(p.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31") : "";
   const knoppen = [
     p && p.email ? `<a class="btn btn-sm" href="${mailUrl(p.email, ingevuld.onderwerp, tekst)}" target="_blank" rel="noopener">Mail</a>` : "",
-    mobielClean ? `<a class="btn btn-sm" href="https://wa.me/${mobielClean}?text=${encodeURIComponent(tekst)}" target="_blank" rel="noopener">WhatsApp</a>` : "",
+    mobielClean ? `<a class="btn btn-sm" href="${whatsappUrl(mobielClean, tekst)}"${whatsappTargetAttr()}>WhatsApp</a>` : "",
   ].filter(Boolean).join("");
   return knoppen || `<span style="font-size:11.5px;color:var(--text-soft);">geen e-mail/mobiel bekend</span>`;
 }
@@ -4405,7 +4490,7 @@ function afspraakBadgeHTML(info) {
   if (info.gekozen) {
     return `<span class="tag-afspraak tag-afspraak-gekozen" title="Dit gezin heeft via AfspraakPlanner een tijdslot gekozen">✓ gekozen: ${esc(info.tekst)}</span>`;
   }
-  return `<span class="tag-afspraak" title="Er staat een AfspraakPlanner-aanvraag uit voor dit gezin; vernieuw de status via Lopende aanvragen">⏳ aanvraag uitgezet</span>`;
+  return `<span class="tag-afspraak" title="Dit gezin zit in een planronde en kan nog een tijdslot kiezen; vernieuw de status via de Planrondes-pagina">⏳ in planronde</span>`;
 }
 
 const SLOT_STATUS_META = {
@@ -4415,112 +4500,185 @@ const SLOT_STATUS_META = {
   verlopen: { label: "verlopen", kleur: "var(--amber)", bg: "var(--amber-bg)" },
 };
 
-function aanvraagKaartHTML(a) {
+// Eerstvolgende nog vrije tijdslot van een planronde (of null, ook als de status onbekend is).
+function eersteVrijeSlot(a) {
+  if (!a.status) return null;
+  const vrij = (a.status.tijdslots || []).filter((t) => t.status === "vrij");
+  return vrij.slice().sort((x, y) => String(x.start_tijd).localeCompare(String(y.start_tijd)))[0] || null;
+}
+
+// De Planrondes-pagina: het overzicht van alle planrondes, of het detail van één
+// planronde als die is geopend.
+function planrondesPaginaHTML() {
+  if (state.planrondeDetailId != null) {
+    const a = state.afspraakAanvragen.find((x) => x.id === state.planrondeDetailId);
+    if (a) return planrondeDetailHTML(a);
+    state.planrondeDetailId = null;
+  }
+  const aanvragen = state.afspraakAanvragen.slice().sort((a, b) => (b.id || 0) - (a.id || 0));
+  const rijen = aanvragen.map((a) => {
+    const deel = a.deelnemers || [];
+    const fout = state.aanvraagFouten[a.id];
+    let voortgangHTML;
+    if (a.status) {
+      const gekozen = (a.status.deelnemers || []).filter((d) => d.gekozen_slot_id).length;
+      const alles = deel.length > 0 && gekozen === deel.length;
+      const vrij = (a.status.tijdslots || []).filter((t) => t.status === "vrij").length;
+      voortgangHTML = `
+        <span class="planronde-voortgang ${alles ? "planronde-voortgang-klaar" : ""}">${gekozen}/${deel.length} gekozen${alles ? " ✓" : ""}</span>
+        <span class="planronde-vrij">${vrij} tijdslot${vrij === 1 ? "" : "s"} vrij</span>`;
+    } else {
+      voortgangHTML = `<span class="planronde-vrij">${deel.length} gezin${deel.length === 1 ? "" : "nen"} · status nog niet opgehaald</span>`;
+    }
+    const eerstvolgend = eersteVrijeSlot(a);
+    return `
+      <div class="planronde-rij" data-open-planronde="${esc(a.id)}">
+        <div class="planronde-rij-links">
+          <strong>${esc(a.omschrijving || `Planronde #${a.id}`)}</strong>
+          <div class="planronde-rij-meta">
+            Uitgezet op ${esc(fmtDatum(a.aangemaaktOp))}${eerstvolgend ? ` · eerstvolgend vrij: ${esc(fmtSlotTijd(eerstvolgend.start_tijd, eerstvolgend.eind_tijd))}` : ""}
+          </div>
+          ${fout ? `<div style="color:var(--red);font-size:12px;">${esc(fout)}</div>` : ""}
+        </div>
+        <div class="planronde-rij-rechts">
+          ${voortgangHTML}
+          <span class="chev">›</span>
+        </div>
+      </div>`;
+  }).join("");
+
+  return `
+  ${paginaSluitKnopHTML("btnPlanrondesSluiten")}
+  <div class="pagina-middel">
+      <h2 style="font-size:22px;margin:0 0 4px;">Planrondes</h2>
+      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
+        Een planronde is een set tijdslots waaruit gezinnen zelf hun moment kiezen. Maak eerst een
+        planronde aan; gezinnen toevoegen kan hier of via "Selecteren" in de Planningweergave.
+        Klik op een planronde voor de details.
+      </p>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 12px;">
+        <button class="btn-primary btn-sm" id="btnNieuwePlanronde">+ Nieuwe planronde</button>
+        ${aanvragen.length ? `<button class="btn-sm" id="btnAanvragenVerversen" ${state.aanvragenVerversenBezig ? "disabled" : ""}>${state.aanvragenVerversenBezig ? "Bezig…" : "↻ Alles vernieuwen"}</button>` : ""}
+      </div>
+      ${aanvragen.length === 0
+        ? `<div class="empty-state">Nog geen planrondes. Klik op "+ Nieuwe planronde" om tijdslots aan te bieden — gezinnen toevoegen kan daarna altijd.</div>`
+        : rijen}
+  </div>`;
+}
+
+// Detailpagina van één planronde: links de gezinnen (met uitnodigen en "zet in planning"),
+// rechts de tijdslots (met intrekken en toevoegen).
+function planrondeDetailHTML(a) {
   const bezig = state.aanvraagStatusBezigId === a.id;
   const fout = state.aanvraagFouten[a.id];
-  let statusHTML = "";
-  if (a.status) {
-    const statusDeelnemers = a.status.deelnemers || [];
-    const gekozenAantal = statusDeelnemers.filter((d) => d.gekozen_slot_id).length;
-    const deelnemerRijen = (a.deelnemers || []).map((d) => {
-      const sd = statusDeelnemers.find((s) => s.regnr === d.regnr);
-      const slot = sd && sd.gekozen_slot_id ? (a.status.tijdslots || []).find((t) => t.id === sd.gekozen_slot_id) : null;
-      const overgenomen = (a.overgenomen || {})[d.regnr];
-      return `
-        <div class="aanvraag-deelnemer">
-          <span class="aanvraag-deelnemer-naam" data-open-regnr="${esc(d.regnr)}">${esc(naamVoorRegnr(d.regnr))}</span>
-          ${slot ? `
-            <span class="aanvraag-slot mono">✓ ${esc(fmtSlotTijd(slot.start_tijd, slot.eind_tijd))}</span>
-            ${overgenomen
-              ? `<span class="tag-grey" title="Deze afspraak staat als gepland bijzonder contactmoment in het gezinsdossier">✓ in planning</span>`
-              : `<button class="btn-sm btn-primary" data-overneem-aanvraag="${esc(a.id)}" data-overneem-regnr="${esc(d.regnr)}">Zet in planning</button>`}
-          ` : `
-            <span class="aanvraag-nog-niet">nog niet gekozen</span>
-            <span style="display:flex;gap:4px;">${uitnodigingsKnoppenHTML(d.regnr, d.link)}</span>
-          `}
-        </div>`;
-    }).join("");
-    const slotRijen = (a.status.tijdslots || []).map((t) => {
-      const meta = SLOT_STATUS_META[t.status] || SLOT_STATUS_META.vrij;
-      return `
-        <div class="aanvraag-tijdslot">
-          <span class="mono" style="flex:1;">${esc(fmtSlotTijd(t.start_tijd, t.eind_tijd))}</span>
-          <span class="tag-opmerking" style="background:${meta.bg};color:${meta.kleur};margin:0;">${meta.label}${t.status === "bezet" && t.regnr ? `: ${esc(naamVoorRegnr(t.regnr))}` : ""}</span>
-          ${t.status === "vrij" ? `<button class="btn-ghost btn-sm btn-danger" data-slot-intrek-aanvraag="${esc(a.id)}" data-slot-intrek-id="${esc(t.id)}" title="Tijdslot intrekken" ${bezig ? "disabled" : ""}>Intrekken</button>` : ""}
-        </div>`;
-    }).join("");
-    statusHTML = `
-      <p style="font-size:12.5px;color:var(--text-soft);margin:8px 0 6px;">
-        ${gekozenAantal} van ${(a.deelnemers || []).length} gezinnen ${gekozenAantal === 1 ? "heeft" : "hebben"} gekozen
-        · status van ${esc(fmtRelatiefMoment(a.laatstVernieuwdOp))}
-      </p>
-      ${deelnemerRijen}
-      <div class="aanvraag-subkop">Tijdslots</div>
-      ${slotRijen || `<p style="font-size:12.5px;color:var(--text-soft);">Geen tijdslots.</p>`}`;
-  } else {
-    statusHTML = `<p style="font-size:12.5px;color:var(--text-soft);margin:8px 0 0;">
-      ${(a.deelnemers || []).length} uitnodiging(en) verstuurd. Klik op "Status vernieuwen" om te zien wie al een tijdslot gekozen heeft.
-    </p>`;
-  }
+  const deelnemers = a.deelnemers || [];
+  const statusDeelnemers = a.status ? (a.status.deelnemers || []) : [];
+  const gekozenAantal = statusDeelnemers.filter((d) => d.gekozen_slot_id).length;
+
+  const deelnemerRijen = deelnemers.map((d) => {
+    const sd = statusDeelnemers.find((s) => s.regnr === d.regnr);
+    const slot = sd && sd.gekozen_slot_id ? (a.status.tijdslots || []).find((t) => t.id === sd.gekozen_slot_id) : null;
+    const overgenomen = (a.overgenomen || {})[d.regnr];
+    return `
+      <div class="aanvraag-deelnemer">
+        <span class="aanvraag-deelnemer-naam" data-open-regnr="${esc(d.regnr)}">${esc(naamVoorRegnr(d.regnr))}</span>
+        ${slot ? `
+          <span class="aanvraag-slot mono">✓ ${esc(fmtSlotTijd(slot.start_tijd, slot.eind_tijd))}</span>
+          ${overgenomen
+            ? `<span class="tag-grey" title="Deze afspraak staat als gepland bijzonder contactmoment in het gezinsdossier">✓ in planning</span>`
+            : `<button class="btn-sm btn-primary" data-overneem-aanvraag="${esc(a.id)}" data-overneem-regnr="${esc(d.regnr)}">Zet in planning</button>`}
+        ` : `
+          <span class="aanvraag-nog-niet">nog niet gekozen</span>
+          <span style="display:flex;gap:4px;">${uitnodigingsKnoppenHTML(d.regnr, d.link)}</span>
+        `}
+      </div>`;
+  }).join("");
+
+  const slotRijen = a.status ? (a.status.tijdslots || []).map((t) => {
+    const meta = SLOT_STATUS_META[t.status] || SLOT_STATUS_META.vrij;
+    return `
+      <div class="aanvraag-tijdslot">
+        <span class="mono" style="flex:1;">${esc(fmtSlotTijd(t.start_tijd, t.eind_tijd))}</span>
+        <span class="tag-opmerking" style="background:${meta.bg};color:${meta.kleur};margin:0;">${meta.label}${t.status === "bezet" && t.regnr ? `: ${esc(naamVoorRegnr(t.regnr))}` : ""}</span>
+        ${t.status === "vrij" ? `<button class="btn-ghost btn-sm btn-danger" data-slot-intrek-aanvraag="${esc(a.id)}" data-slot-intrek-id="${esc(t.id)}" title="Tijdslot intrekken" ${bezig ? "disabled" : ""}>Intrekken</button>` : ""}
+      </div>`;
+  }).join("") : "";
 
   const slotDraft = state.aanvraagSlotDraft[a.id] || { datum: "", start: "19:00", eind: "" };
-  const gezinnenInAanvraag = new Set((a.deelnemers || []).map((d) => d.regnr));
+  const gezinnenInAanvraag = new Set(deelnemers.map((d) => d.regnr));
   const kandidaten = computeGezinnen()
     .filter((g) => !gezinnenInAanvraag.has(g.gezinshoofd.regnr))
     .sort((x, y) => (x.gezinshoofd.naam || "").localeCompare(y.gezinshoofd.naam || ""));
-  const uitbreidenHTML = `
-    <div class="aanvraag-subkop">Uitbreiden</div>
-    <div class="aanvraag-uitbreiden-rij">
-      <input type="date" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="datum" value="${esc(slotDraft.datum)}" />
-      <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="start" value="${esc(slotDraft.start)}" />
-      <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="eind" value="${esc(slotDraft.eind)}" title="Eindtijd (optioneel)" />
-      <button class="btn-sm" data-slot-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Tijdslot</button>
-    </div>
-    <div class="aanvraag-uitbreiden-rij">
-      <select data-aanvraag-gezindraft="${esc(a.id)}" style="flex:1;min-width:0;">
-        <option value="">— kies een gezin —</option>
-        ${kandidaten.map((g) => `<option value="${esc(g.gezinsKey)}" ${state.aanvraagGezinDraft[a.id] === g.gezinsKey ? "selected" : ""}>${esc(g.gezinshoofd.naam || "Naamloos")}${g.adres ? ` (${esc(g.adres)})` : ""}</option>`).join("")}
-      </select>
-      <button class="btn-sm" data-gezin-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Gezin</button>
-    </div>`;
+  const heeftOnbeantwoord = deelnemers.length > gekozenAantal;
 
   return `
-    <div class="aanvraag-kaart">
-      <div class="aanvraag-kaart-kop">
+  ${paginaSluitKnopHTML("btnPlanrondeTerug")}
+  <div class="pagina-middel">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
         <div>
-          <strong>${esc(a.omschrijving || `Aanvraag #${a.id}`)}</strong>
-          <div style="font-size:11.5px;color:var(--text-soft);">Uitgezet op ${esc(fmtDatum(a.aangemaaktOp))}</div>
+          <h2 style="font-size:22px;margin:0 0 4px;">${esc(a.omschrijving || `Planronde #${a.id}`)}</h2>
+          <p style="font-size:12px;color:var(--text-soft);margin:0;">
+            Uitgezet op ${esc(fmtDatum(a.aangemaaktOp))}
+            ${a.status ? ` · ${gekozenAantal} van ${deelnemers.length} gezinnen ${gekozenAantal === 1 ? "heeft" : "hebben"} gekozen · status van ${esc(fmtRelatiefMoment(a.laatstVernieuwdOp))}` : ""}
+          </p>
         </div>
         <span style="display:flex;gap:6px;">
-          <button class="btn-sm" data-aanvraag-vernieuw="${esc(a.id)}" ${bezig ? "disabled" : ""}>${bezig ? "Bezig…" : "Status vernieuwen"}</button>
-          <button class="btn-ghost btn-sm btn-danger" data-aanvraag-verwijder="${esc(a.id)}" title="Verwijder uit dit overzicht">✕</button>
+          <button class="btn-sm" data-aanvraag-vernieuw="${esc(a.id)}" ${bezig ? "disabled" : ""}>${bezig ? "Bezig…" : "↻ Status vernieuwen"}</button>
+          <button class="btn-ghost btn-sm btn-danger" data-aanvraag-verwijder="${esc(a.id)}" title="Verwijder deze planronde uit ContactPlanner (blijft op de server bestaan)">Verwijderen</button>
         </span>
       </div>
-      ${fout ? `<p style="color:var(--red);font-size:12.5px;margin:8px 0 0;">${esc(fout)}</p>` : ""}
-      ${statusHTML}
-      ${uitbreidenHTML}
-    </div>`;
+      ${fout ? `<p style="color:var(--red);font-size:12.5px;margin:10px 0 0;">${esc(fout)}</p>` : ""}
+      ${!a.status ? `<p style="font-size:12.5px;color:var(--text-soft);margin:10px 0 0;">De status is nog niet opgehaald — klik op "↻ Status vernieuwen" voor de actuele stand.</p>` : ""}
+
+      <div class="planronde-grid">
+        <div>
+          <div class="aanvraag-subkop">Gezinnen (${deelnemers.length})</div>
+          ${heeftOnbeantwoord ? `
+          <div class="field-row" style="margin-bottom:6px;">
+            <label>Sjabloon voor uitnodigingen</label>
+            <select id="afspraakplannerSjabloonSelect">
+              ${state.afspraakSjablonen.map((s) => `<option value="${esc(s.id)}" ${state.afspraakplannerSjabloonId === s.id ? "selected" : ""}>${esc(s.naam)}</option>`).join("")}
+            </select>
+          </div>` : ""}
+          ${deelnemerRijen || `<p style="font-size:12.5px;color:var(--text-soft);margin:4px 0 8px;">Nog geen gezinnen in deze planronde — voeg ze hieronder toe, of via "Selecteren" in de Planningweergave.</p>`}
+          <div class="aanvraag-uitbreiden-rij" style="margin-top:8px;">
+            <select data-aanvraag-gezindraft="${esc(a.id)}" style="flex:1;min-width:0;">
+              <option value="">— kies een gezin —</option>
+              ${kandidaten.map((g) => `<option value="${esc(g.gezinsKey)}" ${state.aanvraagGezinDraft[a.id] === g.gezinsKey ? "selected" : ""}>${esc(g.gezinshoofd.naam || "Naamloos")}${g.adres ? ` (${esc(g.adres)})` : ""}</option>`).join("")}
+            </select>
+            <button class="btn-sm" data-gezin-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Gezin</button>
+          </div>
+        </div>
+        <div>
+          <div class="aanvraag-subkop">Tijdslots${a.status ? ` (${(a.status.tijdslots || []).length})` : ""}</div>
+          ${slotRijen || (a.status ? `<p style="font-size:12.5px;color:var(--text-soft);margin:4px 0 8px;">Geen tijdslots.</p>` : `<p style="font-size:12.5px;color:var(--text-soft);margin:4px 0 8px;">Tijdslots verschijnen hier zodra de status is opgehaald.</p>`)}
+          <div class="aanvraag-uitbreiden-rij" style="margin-top:8px;">
+            <input type="date" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="datum" value="${esc(slotDraft.datum)}" />
+            <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="start" value="${esc(slotDraft.start)}" />
+            <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="eind" value="${esc(slotDraft.eind)}" title="Eindtijd (optioneel)" />
+            <button class="btn-sm" data-slot-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Tijdslot</button>
+          </div>
+        </div>
+      </div>
+  </div>`;
 }
 
-function aanvragenOverzichtModalHTML() {
-  if (!state.aanvragenOverzichtOpen) return "";
-  const aanvragen = state.afspraakAanvragen.slice().sort((a, b) => (b.id || 0) - (a.id || 0));
-  return `
-  <div class="modal-overlay" id="aanvragenOverlay">
-    <div class="modal-box" style="max-width:620px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h3 style="margin:0;font-size:18px;">Lopende aanvragen</h3>
-        <button class="btn-ghost btn-sm" id="btnSluitAanvragen">✕</button>
-      </div>
-      <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
-        Alle aanvragen die je via AfspraakPlanner hebt uitgezet. Vernieuw de status om te zien wie al
-        een tijdslot gekozen heeft, en zet een gekozen afspraak met één klik in de planning van het gezin.
-      </p>
-      ${aanvragen.length === 0
-        ? `<div class="empty-state">Nog geen lopende aanvragen. Klik in de Planningweergave op "Selecteren", kies gezinnen en klik op "Aanvraag uitzetten".</div>`
-        : aanvragen.map(aanvraagKaartHTML).join("")}
-    </div>
-  </div>`;
+// Bouwt de WhatsApp-URL volgens de gekozen methode (Instellingen → WhatsApp): WhatsApp Web
+// via wa.me, of de WhatsApp-app op deze computer via het whatsapp://-protocol.
+function whatsappUrl(mobielClean, tekst) {
+  const q = tekst ? encodeURIComponent(tekst) : "";
+  if (state.whatsappMethode === "desktop") {
+    return `whatsapp://send?phone=${mobielClean}${q ? `&text=${q}` : ""}`;
+  }
+  return `https://wa.me/${mobielClean}${q ? `?text=${q}` : ""}`;
+}
+
+// Attributen voor een WhatsApp-link. WhatsApp Web duldt maar één actief tabblad; door alle
+// links hetzelfde benoemde tabblad ("cp-whatsapp") te laten hergebruiken meldt elke volgende
+// klik je niet steeds af in het vorige tabblad. De desktop-app opent buiten de browser, dus
+// daar hoort geen target bij (de pagina blijft gewoon staan).
+function whatsappTargetAttr() {
+  return state.whatsappMethode === "desktop" ? "" : ` target="cp-whatsapp" rel="noopener"`;
 }
 
 // Bouwt de mail-URL volgens de gekozen methode (Instellingen → E-mail): het standaard
@@ -4559,7 +4717,11 @@ function openAfspraakWhatsapp(gezinsKey) {
   const tijd = document.getElementById("afspraakTijd").value;
   const tekst = vulSjabloonIn(document.getElementById("afspraakTekst").value, datum, tijd);
   const mobiel = String(gezin.gezinshoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31");
-  window.open(`https://wa.me/${mobiel}?text=${encodeURIComponent(tekst)}`, "_blank");
+  const url = whatsappUrl(mobiel, tekst);
+  // De desktop-app opent buiten de browser (de pagina blijft staan); WhatsApp Web
+  // hergebruikt één benoemd tabblad, zie whatsappTargetAttr().
+  if (state.whatsappMethode === "desktop") window.location.href = url;
+  else window.open(url, "cp-whatsapp");
 }
 
 let autoVergrendelTimer = null;
@@ -4600,8 +4762,8 @@ function lockScreenHTML() {
           terugzetten \u2014 zorg dus dat je die hebt.
         </p>
         ${PRIVACY_MELDING_HTML}
-        <div class="field-row"><label>Nieuwe pin</label><input type="password" id="pinNieuw1" autocomplete="off" /></div>
-        <div class="field-row"><label>Herhaal pin</label><input type="password" id="pinNieuw2" autocomplete="off" /></div>
+        <div class="field-row"><label>Nieuwe pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw1" /></div>
+        <div class="field-row"><label>Herhaal pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw2" /></div>
         ${state.pinFout ? `<p style="color:var(--red);font-size:13px;">${esc(state.pinFout)}</p>` : ""}
         <button class="btn-primary" id="btnPinInstellen">Pin instellen en beginnen</button>
       </div>
@@ -4614,7 +4776,7 @@ function lockScreenHTML() {
         <div class="upload-title">Vergrendeld</div>
         <p class="upload-desc">Voer je pin in om verder te gaan. Na het invoeren heb je weer \u00e9\u00e9n uur toegang.</p>
         ${PRIVACY_MELDING_HTML}
-        <div class="field-row"><label>Pin</label><input type="password" id="pinInvoer" autocomplete="off" /></div>
+        <div class="field-row"><label>Pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinInvoer" /></div>
         ${state.pinFout ? `<p style="color:var(--red);font-size:13px;">${esc(state.pinFout)}</p>` : ""}
         <button class="btn-primary" id="btnPinInvoeren">Ontgrendelen</button>
         <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;">
@@ -4767,6 +4929,7 @@ function vergrendelNu() {
     if (Array.isArray(instellingenMap.afspraakSjablonen) && instellingenMap.afspraakSjablonen.length) state.afspraakSjablonen = instellingenMap.afspraakSjablonen;
     if (typeof instellingenMap.afspraakSjabloonId === "string") state.afspraakSjabloonId = instellingenMap.afspraakSjabloonId;
     if (instellingenMap.mailMethode === "mailto" || instellingenMap.mailMethode === "outlook") state.mailMethode = instellingenMap.mailMethode;
+    if (instellingenMap.whatsappMethode === "web" || instellingenMap.whatsappMethode === "desktop") state.whatsappMethode = instellingenMap.whatsappMethode;
     if (instellingenMap.backupOpslagMethode === "download" || instellingenMap.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = instellingenMap.backupOpslagMethode;
     if (typeof instellingenMap.afspraakplannerApiSleutel === "string") state.afspraakplannerApiSleutel = instellingenMap.afspraakplannerApiSleutel;
     if (typeof instellingenMap.afspraakplannerBasisUrl === "string" && instellingenMap.afspraakplannerBasisUrl) state.afspraakplannerBasisUrl = instellingenMap.afspraakplannerBasisUrl;
