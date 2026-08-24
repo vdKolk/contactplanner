@@ -100,6 +100,8 @@ const VERSIE_NOTITIES = {
       "Bij het toevoegen van geselecteerde gezinnen kies je voortaan een bestaande planronde of maak je direct een nieuwe",
       "\"Lopende aanvragen\" is vervangen door de volledige pagina \"Planrondes\": een overzicht met per planronde de voortgang en het eerstvolgende vrije tijdslot, met per planronde een eigen detailpagina (gezinnen links, tijdslots rechts) — geen popup meer",
       "Het aparte resultaatscherm na het uitzetten is vervallen: na het aanmaken of toevoegen kom je direct op de detailpagina, waar je de uitnodigingen verstuurt en de voortgang volgt",
+      "WhatsApp-knoppen openen WhatsApp Web voortaan steeds in hetzelfde tabblad, zodat je niet bij elke klik in het vorige tabblad wordt afgemeld",
+      "Nieuwe instelling WhatsApp: kies tussen WhatsApp Web (browser) of de WhatsApp-app op deze computer — met de app opent het bericht direct, zonder tabbladen",
     ],
   },
 };
@@ -847,6 +849,7 @@ const state = {
   afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }, { ...STANDAARD_TIJDSLOT_SJABLOON }],
   afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
   mailMethode: "outlook", // mailto | outlook — Outlook op het web is de standaard voor nieuwe gebruikers
+  whatsappMethode: "web", // web | desktop — WhatsApp Web in één vast tabblad, of de WhatsApp-app op deze computer
   backupOpslagMethode: "download", // download | opslaanAls
   afspraakplannerApiSleutel: "",
   afspraakplannerBasisUrl: "https://afspraak.hhgputten.nl",
@@ -1446,6 +1449,7 @@ function bouwBackupPayload() {
       afspraakSjablonen: state.afspraakSjablonen,
       afspraakSjabloonId: state.afspraakSjabloonId,
       mailMethode: state.mailMethode,
+      whatsappMethode: state.whatsappMethode,
       backupOpslagMethode: state.backupOpslagMethode,
     },
   };
@@ -1515,6 +1519,7 @@ async function pasBackupToe(data) {
     if (Array.isArray(inst.afspraakSjablonen) && inst.afspraakSjablonen.length) state.afspraakSjablonen = inst.afspraakSjablonen;
     if (typeof inst.afspraakSjabloonId === "string") state.afspraakSjabloonId = inst.afspraakSjabloonId;
     if (inst.mailMethode === "mailto" || inst.mailMethode === "outlook") state.mailMethode = inst.mailMethode;
+    if (inst.whatsappMethode === "web" || inst.whatsappMethode === "desktop") state.whatsappMethode = inst.whatsappMethode;
     if (inst.backupOpslagMethode === "download" || inst.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = inst.backupOpslagMethode;
   }
   const gelukt = await veiligOpslaan(async () => {
@@ -1529,6 +1534,7 @@ async function pasBackupToe(data) {
       await dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen);
       await dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId);
       await dbSetInstelling("mailMethode", state.mailMethode);
+      await dbSetInstelling("whatsappMethode", state.whatsappMethode);
       await dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode);
       await Promise.all(Object.keys(state.mijlpalenGedaan).map((sleutel) =>
         dbSetInstelling("mijlpaal-gedaan:" + sleutel, state.mijlpalenGedaan[sleutel])));
@@ -1902,7 +1908,11 @@ function handleidingModalHTML() {
         want je kunt er zoveel maken als je wilt en per afspraak kiezen welke je gebruikt. Ook "Mail sturen"
         bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
         standaard mailprogramma van je apparaat (mailto), of direct een nieuw bericht in Outlook op het
-        web (Microsoft 365) — instelbaar via menu → Instellingen → E-mail.</p>
+        web (Microsoft 365) — instelbaar via menu → Instellingen → E-mail.
+        Voor de WhatsApp-knoppen is er een vergelijkbare instelling (menu → Instellingen → WhatsApp):
+        <strong>WhatsApp Web</strong> opent steeds hetzelfde tabblad (zodat WhatsApp je niet bij elke
+        klik in het vorige tabblad afmeldt), of kies <strong>de WhatsApp-app op deze computer</strong> —
+        dan opent het bericht direct in de app, helemaal zonder tabbladen.</p>
 
         <h4 id="hl-afspraakplanner">AfspraakPlanner: planrondes — zelf een tijdslot laten kiezen</h4>
         <p>Wil je niet zelf een datum voorstellen, maar gezinnen laten kiezen uit dezelfde
@@ -2078,6 +2088,18 @@ function instellingenPaginaHTML() {
           <div class="schema-grid">
             <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Standaard mailprogramma (mailto)</div>
             <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook op het web (Microsoft 365)</div>
+          </div>
+        </section>
+
+        <section class="instellingen-kaart">
+          <h4>WhatsApp</h4>
+          <p class="instellingen-uitleg">
+            Hoe de "WhatsApp"-knoppen openen. WhatsApp Web gebruikt steeds hetzelfde tabblad;
+            heb je de WhatsApp-app op deze computer, dan opent die direct — zonder tabbladen.
+          </p>
+          <div class="schema-grid">
+            <div class="schema-opt ${state.whatsappMethode === "web" ? "active" : ""}" data-whatsappmethode="web">WhatsApp Web (browser)</div>
+            <div class="schema-opt ${state.whatsappMethode === "desktop" ? "active" : ""}" data-whatsappmethode="desktop">WhatsApp-app op deze computer</div>
           </div>
         </section>
 
@@ -3257,7 +3279,7 @@ function detailHTML() {
 
       <div class="quick-actions">
         ${hoofd.email ? `<a class="btn" href="${mailUrl(hoofd.email, "Contact")}" target="_blank" rel="noopener">Mail sturen</a>` : ""}
-        ${hoofd.mobiel ? `<a class="btn" href="https://wa.me/${String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31")}" target="_blank">WhatsApp</a>` : ""}
+        ${hoofd.mobiel ? `<a class="btn" href="${whatsappUrl(String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31"), "")}"${whatsappTargetAttr()}>WhatsApp</a>` : ""}
         ${scipioUrl(hoofd.regnr) ? `<a class="btn" href="${scipioUrl(hoofd.regnr)}" target="_blank" rel="noopener">Scipio</a>` : ""}
       </div>
 
@@ -3582,6 +3604,11 @@ function attachEvents() {
   $$("[data-mailmethode]").forEach((el) => el.addEventListener("click", async (e) => {
     state.mailMethode = e.currentTarget.dataset.mailmethode;
     await veiligOpslaan(() => dbSetInstelling("mailMethode", state.mailMethode), "instelling opslaan");
+    render();
+  }));
+  $$("[data-whatsappmethode]").forEach((el) => el.addEventListener("click", async (e) => {
+    state.whatsappMethode = e.currentTarget.dataset.whatsappmethode;
+    await veiligOpslaan(() => dbSetInstelling("whatsappMethode", state.whatsappMethode), "instelling opslaan");
     render();
   }));
   $$("[data-backupopslag]").forEach((el) => el.addEventListener("click", async (e) => {
@@ -4411,7 +4438,7 @@ function uitnodigingsKnoppenHTML(regnr, link) {
   const mobielClean = p && p.mobiel ? String(p.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31") : "";
   const knoppen = [
     p && p.email ? `<a class="btn btn-sm" href="${mailUrl(p.email, ingevuld.onderwerp, tekst)}" target="_blank" rel="noopener">Mail</a>` : "",
-    mobielClean ? `<a class="btn btn-sm" href="https://wa.me/${mobielClean}?text=${encodeURIComponent(tekst)}" target="_blank" rel="noopener">WhatsApp</a>` : "",
+    mobielClean ? `<a class="btn btn-sm" href="${whatsappUrl(mobielClean, tekst)}"${whatsappTargetAttr()}>WhatsApp</a>` : "",
   ].filter(Boolean).join("");
   return knoppen || `<span style="font-size:11.5px;color:var(--text-soft);">geen e-mail/mobiel bekend</span>`;
 }
@@ -4635,6 +4662,24 @@ function planrondeDetailHTML(a) {
   </div>`;
 }
 
+// Bouwt de WhatsApp-URL volgens de gekozen methode (Instellingen → WhatsApp): WhatsApp Web
+// via wa.me, of de WhatsApp-app op deze computer via het whatsapp://-protocol.
+function whatsappUrl(mobielClean, tekst) {
+  const q = tekst ? encodeURIComponent(tekst) : "";
+  if (state.whatsappMethode === "desktop") {
+    return `whatsapp://send?phone=${mobielClean}${q ? `&text=${q}` : ""}`;
+  }
+  return `https://wa.me/${mobielClean}${q ? `?text=${q}` : ""}`;
+}
+
+// Attributen voor een WhatsApp-link. WhatsApp Web duldt maar één actief tabblad; door alle
+// links hetzelfde benoemde tabblad ("cp-whatsapp") te laten hergebruiken meldt elke volgende
+// klik je niet steeds af in het vorige tabblad. De desktop-app opent buiten de browser, dus
+// daar hoort geen target bij (de pagina blijft gewoon staan).
+function whatsappTargetAttr() {
+  return state.whatsappMethode === "desktop" ? "" : ` target="cp-whatsapp" rel="noopener"`;
+}
+
 // Bouwt de mail-URL volgens de gekozen methode (Instellingen → E-mail): het standaard
 // mailprogramma via mailto:, of een kant-en-klaar compose-venster in Outlook op het web.
 function mailUrl(email, onderwerp, tekst) {
@@ -4671,7 +4716,11 @@ function openAfspraakWhatsapp(gezinsKey) {
   const tijd = document.getElementById("afspraakTijd").value;
   const tekst = vulSjabloonIn(document.getElementById("afspraakTekst").value, datum, tijd);
   const mobiel = String(gezin.gezinshoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31");
-  window.open(`https://wa.me/${mobiel}?text=${encodeURIComponent(tekst)}`, "_blank");
+  const url = whatsappUrl(mobiel, tekst);
+  // De desktop-app opent buiten de browser (de pagina blijft staan); WhatsApp Web
+  // hergebruikt één benoemd tabblad, zie whatsappTargetAttr().
+  if (state.whatsappMethode === "desktop") window.location.href = url;
+  else window.open(url, "cp-whatsapp");
 }
 
 let autoVergrendelTimer = null;
@@ -4879,6 +4928,7 @@ function vergrendelNu() {
     if (Array.isArray(instellingenMap.afspraakSjablonen) && instellingenMap.afspraakSjablonen.length) state.afspraakSjablonen = instellingenMap.afspraakSjablonen;
     if (typeof instellingenMap.afspraakSjabloonId === "string") state.afspraakSjabloonId = instellingenMap.afspraakSjabloonId;
     if (instellingenMap.mailMethode === "mailto" || instellingenMap.mailMethode === "outlook") state.mailMethode = instellingenMap.mailMethode;
+    if (instellingenMap.whatsappMethode === "web" || instellingenMap.whatsappMethode === "desktop") state.whatsappMethode = instellingenMap.whatsappMethode;
     if (instellingenMap.backupOpslagMethode === "download" || instellingenMap.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = instellingenMap.backupOpslagMethode;
     if (typeof instellingenMap.afspraakplannerApiSleutel === "string") state.afspraakplannerApiSleutel = instellingenMap.afspraakplannerApiSleutel;
     if (typeof instellingenMap.afspraakplannerBasisUrl === "string" && instellingenMap.afspraakplannerBasisUrl) state.afspraakplannerBasisUrl = instellingenMap.afspraakplannerBasisUrl;
