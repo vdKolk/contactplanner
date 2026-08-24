@@ -102,6 +102,7 @@ const VERSIE_NOTITIES = {
       "Het aparte resultaatscherm na het uitzetten is vervallen: na het aanmaken of toevoegen kom je direct op de detailpagina, waar je de uitnodigingen verstuurt en de voortgang volgt",
       "WhatsApp-knoppen openen WhatsApp Web voortaan steeds in hetzelfde tabblad, zodat je niet bij elke klik in het vorige tabblad wordt afgemeld",
       "Nieuwe instelling WhatsApp: kies tussen WhatsApp Web (browser) of de WhatsApp-app op deze computer — met de app opent het bericht direct, zonder tabbladen",
+      "De browser of password manager biedt niet meer aan om de pin op te slaan — een pin hoort niet in een password manager (de API-sleutel bij Instellingen mag daar wél in en blijft een gewoon wachtwoordveld)",
     ],
   },
 };
@@ -4761,8 +4762,8 @@ function lockScreenHTML() {
           terugzetten \u2014 zorg dus dat je die hebt.
         </p>
         ${PRIVACY_MELDING_HTML}
-        <div class="field-row"><label>Nieuwe pin</label><input type="password" id="pinNieuw1" autocomplete="off" /></div>
-        <div class="field-row"><label>Herhaal pin</label><input type="password" id="pinNieuw2" autocomplete="off" /></div>
+        <div class="field-row"><label>Nieuwe pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw1" /></div>
+        <div class="field-row"><label>Herhaal pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw2" /></div>
         ${state.pinFout ? `<p style="color:var(--red);font-size:13px;">${esc(state.pinFout)}</p>` : ""}
         <button class="btn-primary" id="btnPinInstellen">Pin instellen en beginnen</button>
       </div>
@@ -4775,7 +4776,7 @@ function lockScreenHTML() {
         <div class="upload-title">Vergrendeld</div>
         <p class="upload-desc">Voer je pin in om verder te gaan. Na het invoeren heb je weer \u00e9\u00e9n uur toegang.</p>
         ${PRIVACY_MELDING_HTML}
-        <div class="field-row"><label>Pin</label><input type="password" id="pinInvoer" autocomplete="off" /></div>
+        <div class="field-row"><label>Pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinInvoer" /></div>
         ${state.pinFout ? `<p style="color:var(--red);font-size:13px;">${esc(state.pinFout)}</p>` : ""}
         <button class="btn-primary" id="btnPinInvoeren">Ontgrendelen</button>
         <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;">

@@ -373,6 +373,10 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .pagina-sluit { font-size: 16px; padding: 6px 12px; color: var(--text-soft); }
 .pagina-sluit:hover { color: var(--text); }
 .pagina-smal { max-width: 560px; }
+
+/* Pinvelden: gemaskeerd tekstveld i.p.v. echt wachtwoordveld, zodat password managers
+   nooit aanbieden de pin op te slaan (dat hoort niet bij een pin). */
+.invoer-geheim { -webkit-text-security: disc; }
 .pagina-middel { max-width: 900px; }
 
 /* Planrondes: overzichtsrijen en de tweekoloms-detailpagina */
