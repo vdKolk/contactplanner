@@ -2086,8 +2086,8 @@ function instellingenPaginaHTML() {
             Waar de knoppen "Mail sturen" en "Open in e-mail" naartoe moeten linken.
           </p>
           <div class="schema-grid">
-            <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook op het web (browser)</div>
-            <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Mailprogramma op deze computer</div>
+            <div class="schema-opt ${state.mailMethode === "outlook" ? "active" : ""}" data-mailmethode="outlook">Outlook Web</div>
+            <div class="schema-opt ${state.mailMethode === "mailto" ? "active" : ""}" data-mailmethode="mailto">Mail-app op deze computer</div>
           </div>
         </section>
 
