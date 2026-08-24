@@ -336,8 +336,6 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .tijdslot-koppen span:nth-child(4) { width: 30px; }
 
 /* Lopende AfspraakPlanner-aanvragen */
-.aanvraag-kaart { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
-.aanvraag-kaart-kop { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .aanvraag-deelnemer { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; }
 .aanvraag-deelnemer-naam { font-weight: 600; flex: 1; min-width: 140px; cursor: pointer; }
 .aanvraag-deelnemer-naam:hover { text-decoration: underline; }
@@ -375,6 +373,27 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .pagina-sluit { font-size: 16px; padding: 6px 12px; color: var(--text-soft); }
 .pagina-sluit:hover { color: var(--text); }
 .pagina-smal { max-width: 560px; }
+
+/* Pinvelden: gemaskeerd tekstveld i.p.v. echt wachtwoordveld, zodat password managers
+   nooit aanbieden de pin op te slaan (dat hoort niet bij een pin). */
+.invoer-geheim { -webkit-text-security: disc; }
+.pagina-middel { max-width: 900px; }
+
+/* Planrondes: overzichtsrijen en de tweekoloms-detailpagina */
+.planronde-rij {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color .12s, box-shadow .12s;
+}
+.planronde-rij:hover { border-color: #C7CBD3; box-shadow: 0 1px 3px rgba(16,24,40,0.06); }
+.planronde-rij-links { min-width: 0; }
+.planronde-rij-meta { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+.planronde-rij-rechts { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.planronde-voortgang { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--blue-bg); color: var(--blue); white-space: nowrap; }
+.planronde-voortgang-klaar { background: var(--green-bg); color: var(--green); }
+.planronde-vrij { font-size: 12px; color: var(--text-soft); white-space: nowrap; }
+.planronde-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 14px; }
+@media (max-width: 800px) { .planronde-grid { grid-template-columns: 1fr; } }
 
 /* Instellingenpagina */
 .instellingen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; margin-top: 14px; align-items: start; }
