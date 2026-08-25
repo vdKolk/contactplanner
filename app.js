@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.8.2"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.8.3"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -103,6 +103,13 @@ const VERSIE_NOTITIES = {
       "WhatsApp-knoppen openen WhatsApp Web voortaan steeds in hetzelfde tabblad, zodat je niet bij elke klik in het vorige tabblad wordt afgemeld",
       "Nieuwe instelling WhatsApp: kies tussen WhatsApp Web (browser) of de WhatsApp-app op deze computer — met de app opent het bericht direct, zonder tabbladen",
       "De browser of password manager biedt niet meer aan om de pin op te slaan — een pin hoort niet in een password manager (de API-sleutel bij Instellingen mag daar wél in en blijft een gewoon wachtwoordveld)",
+    ],
+  },
+  "1.8.3": {
+    nieuw: [
+      "De instelling \"WhatsApp-app op deze computer\" opent nu wél de chat van het juiste nummer: telefoonnummers met + of 0031 worden voortaan goed omgezet (de app viel daardoor stilletjes terug op de laatst geopende chat)",
+      "Nieuwe knop \"Kopieer link\" bij het uitnodigen, naast Mail en WhatsApp — plak de uitnodigingslink zelf in een bericht; ook handig als er geen e-mail of mobiel nummer bekend is",
+      "Per ongeluk het verkeerde gezin aan een planronde toegevoegd? Met het kruisje op de detailpagina haal je het er weer uit (zolang het nog geen tijdslot koos); de verstuurde link vervalt dan",
     ],
   },
 };
@@ -1933,8 +1940,11 @@ function handleidingModalHTML() {
         je er direct een nieuwe. Toevoegen kan ook per gezin op de detailpagina van een planronde.
         Elk toegevoegd gezin krijgt een eigen link die je met één klik als mail of WhatsApp-bericht
         verstuurt (met een eigen sjabloon, plekhouder <span class="mono">[link]</span> — zie
-        hierboven). Het gemeentelid kiest zelf een moment via die link; kiest iemand een tijdslot,
-        dan is dat voor de anderen niet meer beschikbaar.</p>
+        hierboven), of die je met <strong>"Kopieer link"</strong> kopieert om zelf ergens te
+        plakken. Het gemeentelid kiest zelf een moment via die link; kiest iemand een tijdslot,
+        dan is dat voor de anderen niet meer beschikbaar. Per ongeluk het verkeerde gezin
+        toegevoegd? Met het kruisje achter het gezin haal je het weer uit de planronde (zolang het
+        nog geen tijdslot koos); de verstuurde link vervalt dan.</p>
         <p><strong>Volgen en afronden:</strong> de pagina <strong>Planrondes</strong> toont per
         planronde de voortgang (hoeveel gezinnen al gekozen hebben en hoeveel tijdslots nog vrij
         zijn); klik op een planronde voor de details. Een gekozen afspraak zet je daar met
@@ -3280,7 +3290,7 @@ function detailHTML() {
 
       <div class="quick-actions">
         ${hoofd.email ? `<a class="btn" href="${mailUrl(hoofd.email, "Contact")}" target="_blank" rel="noopener">Mail sturen</a>` : ""}
-        ${hoofd.mobiel ? `<a class="btn" href="${whatsappUrl(String(hoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31"), "")}"${whatsappTargetAttr()}>WhatsApp</a>` : ""}
+        ${hoofd.mobiel ? `<a class="btn" href="${whatsappUrl(whatsappNummer(hoofd.mobiel), "")}"${whatsappTargetAttr()}>WhatsApp</a>` : ""}
         ${scipioUrl(hoofd.regnr) ? `<a class="btn" href="${scipioUrl(hoofd.regnr)}" target="_blank" rel="noopener">Scipio</a>` : ""}
       </div>
 
@@ -3760,6 +3770,16 @@ function attachEvents() {
   }));
   $$("[data-slot-intrek-aanvraag]").forEach((el) => el.addEventListener("click", (e) => {
     trekTijdslotIn(parseInt(e.currentTarget.dataset.slotIntrekAanvraag, 10), parseInt(e.currentTarget.dataset.slotIntrekId, 10));
+  }));
+  $$("[data-deelnemer-verwijder-regnr]").forEach((el) => el.addEventListener("click", (e) => {
+    verwijderGezinUitPlanronde(parseInt(e.currentTarget.dataset.deelnemerVerwijderAanvraag, 10), e.currentTarget.dataset.deelnemerVerwijderRegnr);
+  }));
+  $$("[data-kopieer-link]").forEach((el) => el.addEventListener("click", (e) => {
+    const knop = e.currentTarget;
+    navigator.clipboard.writeText(knop.dataset.kopieerLink).then(() => {
+      knop.textContent = "✓ Gekopieerd";
+      setTimeout(() => { knop.textContent = "Kopieer link"; }, 1500);
+    }).catch(() => alert("Kopiëren is niet gelukt. De link is:\n" + knop.dataset.kopieerLink));
   }));
   $$("[data-aanvraag-slotdraft]").forEach((el) => el.addEventListener("change", (e) => {
     const id = parseInt(e.currentTarget.dataset.aanvraagSlotdraft, 10);
@@ -4416,6 +4436,30 @@ async function voegTijdslotToeAanAanvraag(aanvraagId) {
   if (gelukt) { delete state.aanvraagSlotDraft[aanvraagId]; render(); }
 }
 
+// Haalt één gezin uit een planronde — alleen zolang het nog geen tijdslot koos (de
+// server weigert anders). De deelnemer wordt inclusief token verwijderd, dus de
+// eerder verstuurde link doet het daarna niet meer.
+async function verwijderGezinUitPlanronde(aanvraagId, regnr) {
+  const aanvraag = state.afspraakAanvragen.find((a) => a.id === aanvraagId);
+  if (!aanvraag) return;
+  if (!confirm(`${naamVoorRegnr(regnr)} uit deze planronde halen? De eerder verstuurde uitnodigingslink vervalt dan.`)) return;
+  state.aanvraagStatusBezigId = aanvraagId;
+  delete state.aanvraagFouten[aanvraagId];
+  render();
+  try {
+    await afspraakplannerFetch(`/aanvragen.php?id=${encodeURIComponent(aanvraagId)}&regnr=${encodeURIComponent(regnr)}`, { method: "DELETE" });
+    aanvraag.deelnemers = (aanvraag.deelnemers || []).filter((d) => d.regnr !== regnr);
+    await veiligOpslaan(bewaarGegevens, "gezin uit planronde halen");
+  } catch (e) {
+    state.aanvraagFouten[aanvraagId] = e.message;
+    state.aanvraagStatusBezigId = null;
+    render();
+    return;
+  }
+  state.aanvraagStatusBezigId = null;
+  await vernieuwAanvraagStatus(aanvraagId);
+}
+
 async function voegGezinToeAanAanvraag(aanvraagId) {
   const gezinsKey = state.aanvraagGezinDraft[aanvraagId];
   const gezin = gezinsKey ? findGezin(gezinsKey) : null;
@@ -4436,12 +4480,12 @@ function uitnodigingsKnoppenHTML(regnr, link) {
   const aanhef = p ? (p.roepnaam || p.naam || "") : "";
   const ingevuld = pasAfspraakSjabloonToe(sjabloon, aanhef);
   const tekst = vulSjabloonIn(ingevuld.tekst, "", "", link);
-  const mobielClean = p && p.mobiel ? String(p.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31") : "";
-  const knoppen = [
+  const mobielClean = p && p.mobiel ? whatsappNummer(p.mobiel) : "";
+  return [
     p && p.email ? `<a class="btn btn-sm" href="${mailUrl(p.email, ingevuld.onderwerp, tekst)}" target="_blank" rel="noopener">Mail</a>` : "",
     mobielClean ? `<a class="btn btn-sm" href="${whatsappUrl(mobielClean, tekst)}"${whatsappTargetAttr()}>WhatsApp</a>` : "",
+    `<button class="btn btn-sm" data-kopieer-link="${esc(link)}" title="Kopieer de uitnodigingslink — om zelf in een bericht te plakken">Kopieer link</button>`,
   ].filter(Boolean).join("");
-  return knoppen || `<span style="font-size:11.5px;color:var(--text-soft);">geen e-mail/mobiel bekend</span>`;
 }
 
 // Voor de badge op de gezinskaarten: doet dit gezin mee in een bewaarde aanvraag, en
@@ -4590,6 +4634,7 @@ function planrondeDetailHTML(a) {
         ` : `
           <span class="aanvraag-nog-niet">nog niet gekozen</span>
           <span style="display:flex;gap:4px;">${uitnodigingsKnoppenHTML(d.regnr, d.link)}</span>
+          <button class="btn-ghost btn-sm btn-danger" data-deelnemer-verwijder-aanvraag="${esc(a.id)}" data-deelnemer-verwijder-regnr="${esc(d.regnr)}" title="Dit gezin uit de planronde halen — de verstuurde link vervalt dan" ${bezig ? "disabled" : ""}>✕</button>
         `}
       </div>`;
   }).join("");
@@ -4663,6 +4708,19 @@ function planrondeDetailHTML(a) {
   </div>`;
 }
 
+// Normaliseert een mobiel nummer naar het formaat dat WhatsApp verwacht: alleen cijfers,
+// beginnend met de landcode ("06 12…" → "31612…", "+31 6…" → "316…", "0031…" → "31…").
+// Belangrijk voor de WhatsApp-app (whatsapp://): die matcht een nummer met "+" of "00"
+// niet en opent dan stilletjes de laatst geopende chat — het bericht zou bij de
+// verkeerde persoon terechtkomen.
+function whatsappNummer(mobiel) {
+  // "(0)" is de notatie voor de weglaatbare netnummer-nul ("+31 (0)6 …") — weg ermee.
+  let m = String(mobiel || "").replace(/\(0\)/g, "").replace(/\D/g, "");
+  if (m.startsWith("00")) m = m.slice(2);
+  else if (m.startsWith("0")) m = "31" + m.slice(1);
+  return m;
+}
+
 // Bouwt de WhatsApp-URL volgens de gekozen methode (Instellingen → WhatsApp): WhatsApp Web
 // via wa.me, of de WhatsApp-app op deze computer via het whatsapp://-protocol.
 function whatsappUrl(mobielClean, tekst) {
@@ -4716,7 +4774,7 @@ function openAfspraakWhatsapp(gezinsKey) {
   const datum = document.getElementById("afspraakDatum").value;
   const tijd = document.getElementById("afspraakTijd").value;
   const tekst = vulSjabloonIn(document.getElementById("afspraakTekst").value, datum, tijd);
-  const mobiel = String(gezin.gezinshoofd.mobiel).replace(/[^0-9+]/g, "").replace(/^0/, "31");
+  const mobiel = whatsappNummer(gezin.gezinshoofd.mobiel);
   const url = whatsappUrl(mobiel, tekst);
   // De desktop-app opent buiten de browser (de pagina blijft staan); WhatsApp Web
   // hergebruikt één benoemd tabblad, zie whatsappTargetAttr().
