@@ -110,6 +110,7 @@ const VERSIE_NOTITIES = {
       "De instelling \"WhatsApp-app op deze computer\" opent nu wél de chat van het juiste nummer: telefoonnummers met + of 0031 worden voortaan goed omgezet (de app viel daardoor stilletjes terug op de laatst geopende chat)",
       "Nieuwe knop \"Kopieer link\" bij het uitnodigen, naast Mail en WhatsApp — plak de uitnodigingslink zelf in een bericht; ook handig als er geen e-mail of mobiel nummer bekend is",
       "Per ongeluk het verkeerde gezin aan een planronde toegevoegd? Met het kruisje op de detailpagina haal je het er weer uit (zolang het nog geen tijdslot koos); de verstuurde link vervalt dan",
+      "Bij Instellingen → Online back-up zie je nu van beide serverversies (laatste en dagelijks herstelpunt) wanneer ze zijn opgeslagen; ook de terugzet-bevestiging toont dat tijdstip netjes",
     ],
   },
 };
@@ -866,6 +867,7 @@ const state = {
   onlineBackupActief: false, // instelling; alleen zinvol als de server de feature "online-backup" toekent
   onlineBackupStatus: "idle", // idle | bezig | ok | fout (in-memory)
   onlineBackupGesyncdTot: null, // laatsteWijzigingOp-waarde die al veilig online staat (instelling)
+  onlineBackupMeta: null, // { opgehaaldOp, laatste, vorige } — tijdstippen van de serverversies, alleen in-memory
   setupApiOpen: false, // op het startscherm: koppel-formulier open
   setupApiBezig: false,
   setupApiFout: "",
@@ -2201,6 +2203,12 @@ function instellingenPaginaHTML() {
                   : state.onlineBackupStatus === "fout" ? `<span style="color:var(--red);">Laatste synchronisatie is mislukt — kijk bij Debug voor details.</span>`
                   : state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0) ? "✓ Alle wijzigingen staan online."
                   : "Er zijn wijzigingen die nog niet online staan."}
+              </p>
+              <p class="instellingen-uitleg" style="margin-top:6px;">
+                ${state.onlineBackupMeta
+                  ? `Op de server — laatste versie: <strong>${state.onlineBackupMeta.laatste ? esc(fmtServerMoment(state.onlineBackupMeta.laatste.updated_at)) : "nog geen"}</strong>
+                     · dagelijks herstelpunt: <strong>${state.onlineBackupMeta.vorige ? esc(fmtServerMoment(state.onlineBackupMeta.vorige.updated_at)) : "nog geen"}</strong>`
+                  : "Versies op de server worden opgehaald…"}
               </p>
               <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 <button class="btn-sm" id="btnOnlineBackupNu" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""}>Nu synchroniseren</button>
@@ -3645,6 +3653,12 @@ function attachEvents() {
   if ($("#btnOnlineBackupNu")) $("#btnOnlineBackupNu").addEventListener("click", () => synchroniseerOnlineBackup());
   if ($("#btnHerstelLaatste")) $("#btnHerstelLaatste").addEventListener("click", () => herstelOnlineBackup("laatste"));
   if ($("#btnHerstelVorige")) $("#btnHerstelVorige").addEventListener("click", () => herstelOnlineBackup("vorige"));
+  // Tijdstippen van de serverversies tonen op de Instellingen-pagina; hooguit
+  // elke minuut opnieuw ophalen (elke render komt hierlangs).
+  if (state.stage === "instellingen" && state.onlineBackupActief && onlineBackupBeschikbaar() &&
+      (!state.onlineBackupMeta || Date.now() - state.onlineBackupMeta.opgehaaldOp > 60000)) {
+    haalOnlineBackupMetaOp();
+  }
   $$("[data-bijbelgedeelten]").forEach((el) => el.addEventListener("click", async (e) => {
     const aan = e.currentTarget.dataset.bijbelgedeelten === "aan";
     if (aan === state.bijbelgedeeltenActief) return;
@@ -4149,6 +4163,32 @@ function onlineBackupBeschikbaar() {
     !!state.afspraakplannerApiSleutel && versleutelingBeschikbaar();
 }
 
+// "2026-08-25 09:12:33" (servertijd) -> "25 aug 2026, 09:12 uur"
+function fmtServerMoment(s) {
+  if (!s) return "onbekend";
+  const [datum, tijd] = String(s).split(" ");
+  return `${fmtDatum(datum)}${tijd ? `, ${tijd.slice(0, 5)} uur` : ""}`;
+}
+
+// Haalt de tijdstippen van beide serverversies op voor de Instellingen-pagina.
+// Alleen metadata (geen blobs); een ontbrekend slot ("Geen back-up gevonden") is geen fout.
+let onlineBackupMetaBezig = false;
+async function haalOnlineBackupMetaOp() {
+  if (!onlineBackupBeschikbaar() || onlineBackupMetaBezig) return;
+  onlineBackupMetaBezig = true;
+  const meta = { opgehaaldOp: Date.now(), laatste: null, vorige: null };
+  for (const slot of ["laatste", "vorige"]) {
+    try {
+      meta[slot] = await afspraakplannerFetch(`/backup.php?slot=${slot}`, { method: "GET" });
+    } catch (e) {
+      if (!/geen back-up/i.test(e.message)) logDebug("fout", `Serverversie-info (${slot}) ophalen mislukt: ` + e.message);
+    }
+  }
+  state.onlineBackupMeta = meta;
+  onlineBackupMetaBezig = false;
+  render();
+}
+
 async function uploadOnlineBackup() {
   if (!onlineBackupBeschikbaar() || !state.personen.length) return;
   state.onlineBackupStatus = "bezig";
@@ -4166,6 +4206,7 @@ async function uploadOnlineBackup() {
     });
     state.onlineBackupStatus = "ok";
     state.onlineBackupGesyncdTot = state.laatsteWijzigingOp;
+    state.onlineBackupMeta = null; // tijdstippen zijn veranderd — opnieuw ophalen bij weergave
     await dbSetInstelling("onlineBackupGesyncdTot", state.onlineBackupGesyncdTot)
       .catch((e) => logDebug("fout", "Kon online-backupadministratie niet opslaan: " + e.message));
   } catch (e) {
@@ -4238,12 +4279,13 @@ async function herstelOnlineBackup(slot) {
   try {
     const vol = await afspraakplannerFetch(`/backup.php?slot=${encodeURIComponent(slot)}&volledig=1`, { method: "GET" });
     const omschrijving = slot === "vorige" ? "het dagelijkse herstelpunt" : "de laatste serverversie";
-    if (!confirm(`Dit vervangt de gegevens op dit apparaat door ${omschrijving} (opgeslagen op de server: ${vol.updated_at || "onbekend"}). Doorgaan?`)) return;
+    if (!confirm(`Dit vervangt de gegevens op dit apparaat door ${omschrijving} (opgeslagen op de server: ${fmtServerMoment(vol.updated_at)}). Doorgaan?`)) return;
     const sleutel = await onlineBackupSleutel(b64NaarBytes(vol.blob.zout));
     const data = await ontsleutelJSON(sleutel, { iv: vol.blob.iv, data: vol.blob.data });
     const gelukt = await pasBackupToe(data);
     if (gelukt) {
       state.stage = "dashboard";
+      state.onlineBackupMeta = null;
       toonInfoBanner(`Teruggezet: ${omschrijving}. Deze versie wordt bij de volgende wijziging weer als nieuwste geüpload.`);
     }
   } catch (e) {
