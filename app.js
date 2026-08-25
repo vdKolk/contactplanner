@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.8.3"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.8.4"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -111,6 +111,11 @@ const VERSIE_NOTITIES = {
       "Nieuwe knop \"Kopieer link\" bij het uitnodigen, naast Mail en WhatsApp — plak de uitnodigingslink zelf in een bericht; ook handig als er geen e-mail of mobiel nummer bekend is",
       "Per ongeluk het verkeerde gezin aan een planronde toegevoegd? Met het kruisje op de detailpagina haal je het er weer uit (zolang het nog geen tijdslot koos); de verstuurde link vervalt dan",
       "Bij Instellingen → Online back-up zie je nu van beide serverversies (laatste en dagelijks herstelpunt) wanneer ze zijn opgeslagen; ook de terugzet-bevestiging toont dat tijdstip netjes",
+    ],
+  },
+  "1.8.4": {
+    nieuw: [
+      "De kaartjes in de Planningweergave tonen nu ook de leeftijd van het gezinshoofd achter de naam, net als in de lijstweergave",
     ],
   },
 };
@@ -2946,6 +2951,7 @@ function kanbanKaartHTML(gezin) {
   const meta = STATUS_META[status];
   const next = berekenVolgendContact(gd, gezin);
   const overigeNamen = gezin.leden.filter((p) => p.regnr !== gezin.gezinshoofd.regnr).map((p) => p.roepnaam || p.naam).filter(Boolean);
+  const gezinshoofdLft = berekenLeeftijd(gezin.gezinshoofd.geboortedatum);
   const selectieModus = state.selectieModusPlanning;
   const geselecteerd = selectieModus && state.geselecteerdeGezinnen.includes(gezin.gezinsKey);
   const apInfo = afspraakplannerInfoVoorGezin(gezin);
@@ -2956,7 +2962,7 @@ function kanbanKaartHTML(gezin) {
       <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" style="top:4px;right:4px;font-size:16px;" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
       <div style="display:flex;align-items:center;gap:7px;">
         <div class="status-dot" style="color:${schemaKleur(effectiefSchema(gd, gezin))};" title="Interval: ${esc(schemaLabel(gd, gezin))}"></div>
-        <div class="kanban-naam" style="padding-right:16px;">${esc(gezin.gezinshoofd.naam || "Naamloos")}</div>
+        <div class="kanban-naam" style="padding-right:16px;">${esc(gezin.gezinshoofd.naam || "Naamloos")}${gezinshoofdLft !== null ? ` <span style="font-weight:400;color:var(--text-soft);">(${gezinshoofdLft} jr)</span>` : ""}</div>
       </div>
       <div class="kanban-meta">${gezin.leden.length} perso${gezin.leden.length === 1 ? "on" : "nen"}${overigeNamen.length ? ` \u00b7 ${esc(overigeNamen.slice(0, 2).join(", "))}${overigeNamen.length > 2 ? " e.a." : ""}` : ""}</div>
       <div class="kanban-onder">
