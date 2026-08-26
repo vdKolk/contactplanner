@@ -121,6 +121,8 @@ const VERSIE_NOTITIES = {
   "1.8.5": {
     nieuw: [
       "Snelle invoer van het laatste contact: in de tabelweergave kun je een lege \"Laatste contact\"-cel direct invullen met een datum — handig na een eerste import. De datum wordt als huisbezoek in het dossier gezet (notitie: \"Contactmoment gelogd via tabelweergave\"); sorteer op laatste contact om alle lege rijen bovenaan te krijgen",
+      "Zelf kiezen welke kolommen de tabelweergave toont, via de nieuwe knop \"Kolommen\": naast de vertrouwde kolommen zijn nu ook leeftijd, postcode, wijk/sectie, telefoon, mobiel en e-mail beschikbaar. Je keuze wordt onthouden",
+      "De standaard starttijd voor tijdslots in planrondes is nu 19:30 en is instelbaar via Instellingen → AfspraakPlanner (zichtbaar zodra de koppeling is ingesteld)",
     ],
   },
 };
@@ -860,7 +862,9 @@ const state = {
   sortBy: "status", // status | naam | adres | plaats | laatsteContact | volgendContact
   sortDir: "asc",
   weergave: "planning", // lijst | tabel | planning
-  tabelKolomBreedtes: { naam: 170, overigeLeden: 170, adres: 170, plaats: 110, laatsteContact: 120, volgendContact: 120, status: 150 },
+  tabelKolomBreedtes: { naam: 170, leeftijd: 70, overigeLeden: 170, adres: 170, postcode: 85, plaats: 110, wijk: 95, telefoon: 110, mobiel: 110, email: 180, laatsteContact: 120, volgendContact: 120, status: 150 },
+  tabelKolommen: ["overigeLeden", "adres", "plaats", "laatsteContact", "volgendContact", "status"], // zichtbare (aanpasbare) kolommen in de tabelweergave — instelling
+  tabelKolomKeuzeOpen: false, // het kolomkeuze-paneeltje bij de knop "Kolommen", alleen in-memory
   noteDraft: { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" },
   bewerkNotitieId: null,
   geplandDraft: { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" },
@@ -869,6 +873,7 @@ const state = {
   afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
   mailMethode: "outlook", // mailto | outlook — Outlook op het web is de standaard voor nieuwe gebruikers
   whatsappMethode: "web", // web | desktop — WhatsApp Web in één vast tabblad, of de WhatsApp-app op deze computer
+  planrondeStandaardTijd: "19:30", // standaard starttijd voor nieuwe tijdslots in planrondes — instelling
   backupOpslagMethode: "download", // download | opslaanAls
   afspraakplannerApiSleutel: "",
   afspraakplannerBasisUrl: "https://afspraak.hhgputten.nl",
@@ -1470,6 +1475,7 @@ function bouwBackupPayload() {
       afspraakSjabloonId: state.afspraakSjabloonId,
       mailMethode: state.mailMethode,
       whatsappMethode: state.whatsappMethode,
+      planrondeStandaardTijd: state.planrondeStandaardTijd,
       backupOpslagMethode: state.backupOpslagMethode,
     },
   };
@@ -1540,6 +1546,7 @@ async function pasBackupToe(data) {
     if (typeof inst.afspraakSjabloonId === "string") state.afspraakSjabloonId = inst.afspraakSjabloonId;
     if (inst.mailMethode === "mailto" || inst.mailMethode === "outlook") state.mailMethode = inst.mailMethode;
     if (inst.whatsappMethode === "web" || inst.whatsappMethode === "desktop") state.whatsappMethode = inst.whatsappMethode;
+    if (typeof inst.planrondeStandaardTijd === "string" && /^\d{2}:\d{2}$/.test(inst.planrondeStandaardTijd)) state.planrondeStandaardTijd = inst.planrondeStandaardTijd;
     if (inst.backupOpslagMethode === "download" || inst.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = inst.backupOpslagMethode;
   }
   const gelukt = await veiligOpslaan(async () => {
@@ -1555,6 +1562,7 @@ async function pasBackupToe(data) {
       await dbSetInstelling("afspraakSjabloonId", state.afspraakSjabloonId);
       await dbSetInstelling("mailMethode", state.mailMethode);
       await dbSetInstelling("whatsappMethode", state.whatsappMethode);
+      await dbSetInstelling("planrondeStandaardTijd", state.planrondeStandaardTijd);
       await dbSetInstelling("backupOpslagMethode", state.backupOpslagMethode);
       await Promise.all(Object.keys(state.mijlpalenGedaan).map((sleutel) =>
         dbSetInstelling("mijlpaal-gedaan:" + sleutel, state.mijlpalenGedaan[sleutel])));
@@ -1750,6 +1758,17 @@ function gefilterdeGezinnen() {
     }
     if (state.sortBy === "plaats") {
       return richting * ((a.plaats || "").localeCompare(b.plaats || "") || (a.gezinshoofd.naam || "").localeCompare(b.gezinshoofd.naam || ""));
+    }
+    if (state.sortBy === "leeftijd") {
+      const la = berekenLeeftijd(a.gezinshoofd.geboortedatum), lb = berekenLeeftijd(b.gezinshoofd.geboortedatum);
+      if ((la === null) !== (lb === null)) return la === null ? 1 : -1; // onbekende leeftijd altijd achteraan
+      return richting * (((la || 0) - (lb || 0)) || (a.gezinshoofd.naam || "").localeCompare(b.gezinshoofd.naam || ""));
+    }
+    if (state.sortBy === "postcode" || state.sortBy === "wijk") {
+      return richting * (((a[state.sortBy] || "").localeCompare(b[state.sortBy] || "")) || (a.gezinshoofd.naam || "").localeCompare(b.gezinshoofd.naam || ""));
+    }
+    if (state.sortBy === "email") {
+      return richting * (((a.gezinshoofd.email || "").localeCompare(b.gezinshoofd.email || "")) || (a.gezinshoofd.naam || "").localeCompare(b.gezinshoofd.naam || ""));
     }
     if (state.sortBy === "laatsteContact") {
       // nog nooit bezocht (leeg) staat vooraan \u2014 dat heeft de meeste aandacht nodig
@@ -2014,7 +2033,9 @@ function handleidingModalHTML() {
         <p>Boven het overzicht kies je een sortering (urgentie, naam, adres, plaats, laatste/volgend contact)
         en een weergave: Lijst (kaarten in twee kolommen; op een smal scherm één), Tabel (met sorteerbare,
         sleepbare kolommen) of Planning (een kanban-bord met kolommen Achterstallig / Komende maand /
-        Dit kwartaal / Komend halfjaar / Verder vooruit).</p>
+        Dit kwartaal / Komend halfjaar / Verder vooruit). In de tabelweergave kies je via de knop
+        <strong>"Kolommen"</strong> zelf welke gegevens je ziet — naast de standaardkolommen ook
+        leeftijd, postcode, wijk/sectie, telefoon, mobiel en e-mail; je keuze wordt onthouden.</p>
         <p>Met de tellers bovenaan filter je het overzicht — in elke weergave. Naast de statusfilters is er
         de teller "70+ jaar" (het getal volgt de leeftijdsgrens uit de instellingen): die toont alle gezinnen
         waarvan het gezinshoofd de leeftijdsgrens heeft bereikt.</p>
@@ -2181,6 +2202,11 @@ function instellingenPaginaHTML() {
           <label>Basis-URL</label>
           <input type="url" id="instAfspraakplannerUrl" placeholder="https://afspraak.hhgputten.nl" value="${esc(state.afspraakplannerBasisUrl)}" />
         </div>
+        ${state.afspraakplannerApiSleutel ? `
+        <div class="field-row">
+          <label>Standaard starttijd voor tijdslots in planrondes</label>
+          <input type="time" id="instPlanrondeTijd" value="${esc(state.planrondeStandaardTijd)}" style="max-width:120px;" />
+        </div>` : ""}
       </section>
 
       <section class="instellingen-kaart instellingen-kaart-breed">
@@ -3028,40 +3054,73 @@ function resultsAreaHTML() {
   return `<div class="fam-grid-2">${lijst.map((g) => famCardHTML(g)).join("")}</div>`;
 }
 
+// Alle beschikbare tabelkolommen, in vaste volgorde. "vast" = altijd zichtbaar;
+// de rest is aan/uit te zetten via de knop "Kolommen" (bewaard als instelling).
+// "standaard" bepaalt de beginstand voor wie nog nooit iets koos.
 const TABEL_KOLOMMEN = [
-  { key: "naam", label: "Gezinshoofd", sortKey: "naam" },
-  { key: "overigeLeden", label: "Overige leden", sortKey: null },
-  { key: "adres", label: "Adres", sortKey: "adres" },
-  { key: "plaats", label: "Plaats", sortKey: "plaats" },
-  { key: "laatsteContact", label: "Laatste contact", sortKey: "laatsteContact" },
-  { key: "volgendContact", label: "Volgend contact", sortKey: "volgendContact" },
-  { key: "status", label: "Status", sortKey: "status" },
+  { key: "naam", label: "Gezinshoofd", sortKey: "naam", vast: true, standaard: true },
+  { key: "leeftijd", label: "Leeftijd", sortKey: "leeftijd", standaard: false },
+  { key: "overigeLeden", label: "Overige leden", sortKey: null, standaard: true },
+  { key: "adres", label: "Adres", sortKey: "adres", standaard: true },
+  { key: "postcode", label: "Postcode", sortKey: "postcode", standaard: false },
+  { key: "plaats", label: "Plaats", sortKey: "plaats", standaard: true },
+  { key: "wijk", label: "Wijk/sectie", sortKey: "wijk", standaard: false },
+  { key: "telefoon", label: "Telefoon", sortKey: null, standaard: false },
+  { key: "mobiel", label: "Mobiel", sortKey: null, standaard: false },
+  { key: "email", label: "E-mail", sortKey: "email", standaard: false },
+  { key: "laatsteContact", label: "Laatste contact", sortKey: "laatsteContact", standaard: true },
+  { key: "volgendContact", label: "Volgend contact", sortKey: "volgendContact", standaard: true },
+  { key: "status", label: "Status", sortKey: "status", standaard: true },
 ];
+
+function zichtbareTabelKolommen() {
+  return TABEL_KOLOMMEN.filter((k) => k.vast || state.tabelKolommen.includes(k.key));
+}
+
+function tabelCelHTML(k, g, gd, meta, next) {
+  const clip = (waarde) => `<td class="td-clip" title="${esc(waarde || "")}">${esc(waarde || "")}</td>`;
+  switch (k.key) {
+    case "naam": return `<td class="td-clip">${esc(g.gezinshoofd.naam || "Naamloos")}</td>`;
+    case "leeftijd": {
+      const lft = berekenLeeftijd(g.gezinshoofd.geboortedatum);
+      return `<td class="mono">${lft !== null ? lft : "\u2014"}</td>`;
+    }
+    case "overigeLeden": {
+      const overigeNamen = g.leden.filter((p) => p.regnr !== g.gezinshoofd.regnr).map((p) => p.roepnaam || p.naam).filter(Boolean);
+      return clip(overigeNamen.join(", "));
+    }
+    case "adres": return clip(g.adres);
+    case "postcode": return clip(g.postcode);
+    case "plaats": return clip(g.plaats);
+    case "wijk": return clip(g.wijk);
+    case "telefoon": return clip(g.gezinshoofd.telefoon);
+    case "mobiel": return clip(g.gezinshoofd.mobiel);
+    case "email": return clip(g.gezinshoofd.email);
+    case "laatsteContact": return `<td class="mono">${gd.laatsteContact
+      ? fmtDatum(gd.laatsteContact)
+      : `<input type="date" class="tabel-datum-invoer" data-laatste-contact-invoer="${esc(g.gezinsKey)}" max="${todayISO()}" title="Nog geen contactmoment bekend \u2014 vul hier de datum van het laatste huisbezoek in; die wordt als contactmoment in het dossier gezet" />`}</td>`;
+    case "volgendContact": return `<td class="mono">${next ? fmtDatum(next) : "\u2014"}</td>`;
+    case "status": return `<td><span class="status-badge" style="color:${meta.color};background:${meta.bg};">${esc(meta.label)}</span></td>`;
+    default: return "<td></td>";
+  }
+}
 
 function gezinTabelHTML(lijst) {
   const b = state.tabelKolomBreedtes;
+  const zichtbaar = zichtbareTabelKolommen();
   const rijen = lijst.map((g) => {
     const gd = getGezinsdata(g.gezinsKey);
     const status = berekenStatus(gd, g);
     const meta = STATUS_META[status];
     const next = berekenVolgendContact(gd, g);
-    const overigeNamen = g.leden.filter((p) => p.regnr !== g.gezinshoofd.regnr).map((p) => p.roepnaam || p.naam).filter(Boolean);
     return `<tr data-open="${esc(g.gezinsKey)}">
       <td style="background:${meta.color};width:4px;padding:0;" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></td>
       <td><div class="status-dot" style="color:${schemaKleur(effectiefSchema(gd, g))};" title="Interval: ${esc(schemaLabel(gd, g))}"></div></td>
-      <td class="td-clip">${esc(g.gezinshoofd.naam || "Naamloos")}</td>
-      <td class="td-clip" title="${esc(overigeNamen.join(", "))}">${esc(overigeNamen.join(", "))}</td>
-      <td class="td-clip" title="${esc(g.adres)}">${esc(g.adres)}</td>
-      <td class="td-clip" title="${esc(g.plaats)}">${esc(g.plaats)}</td>
-      <td class="mono">${gd.laatsteContact
-        ? fmtDatum(gd.laatsteContact)
-        : `<input type="date" class="tabel-datum-invoer" data-laatste-contact-invoer="${esc(g.gezinsKey)}" max="${todayISO()}" title="Nog geen contactmoment bekend \u2014 vul hier de datum van het laatste huisbezoek in; die wordt als contactmoment in het dossier gezet" />`}</td>
-      <td class="mono">${next ? fmtDatum(next) : "\u2014"}</td>
-      <td><span class="status-badge" style="color:${meta.color};background:${meta.bg};">${esc(meta.label)}</span></td>
+      ${zichtbaar.map((k) => tabelCelHTML(k, g, gd, meta, next)).join("")}
     </tr>`;
   }).join("");
 
-  const koppen = TABEL_KOLOMMEN.map((k) => {
+  const koppen = zichtbaar.map((k) => {
     const isActief = k.sortKey && state.sortBy === k.sortKey;
     const pijl = isActief ? (state.sortDir === "desc" ? " \u2193" : " \u2191") : "";
     return `<th>
@@ -3075,7 +3134,7 @@ function gezinTabelHTML(lijst) {
       <table class="gezin-table">
         <colgroup>
           <col style="width:4px" /><col style="width:24px" />
-          ${TABEL_KOLOMMEN.map((k) => `<col data-col-key="${k.key}" style="width:${b[k.key]}px" />`).join("")}
+          ${zichtbaar.map((k) => `<col data-col-key="${k.key}" style="width:${b[k.key] || 120}px" />`).join("")}
         </colgroup>
         <thead><tr><th></th><th></th>${koppen}</tr></thead>
         <tbody>${rijen}</tbody>
@@ -3106,6 +3165,16 @@ function dashboardHTML() {
         <button class="btn-sm ${state.weergave === "tabel" ? "active" : ""}" data-weergave="tabel">Tabel</button>
         <button class="btn-sm ${state.weergave === "planning" ? "active" : ""}" data-weergave="planning">Planning</button>
       </div>
+      ${state.weergave === "tabel" ? `
+      <div class="view-toggle" style="position:relative;">
+        <button class="btn-sm ${state.tabelKolomKeuzeOpen ? "active" : ""}" id="btnTabelKolommen" title="Kies welke kolommen de tabel toont">Kolommen</button>
+        ${state.tabelKolomKeuzeOpen ? `
+        <div class="kolom-keuze-paneel">
+          ${TABEL_KOLOMMEN.filter((k) => !k.vast).map((k) => `
+            <label class="kolom-keuze-optie"><input type="checkbox" data-tabel-kolom="${k.key}" ${state.tabelKolommen.includes(k.key) ? "checked" : ""} /> ${esc(k.label)}</label>`).join("")}
+          <button class="btn-sm" id="btnTabelKolommenKlaar" style="margin-top:6px;">Klaar</button>
+        </div>` : ""}
+      </div>` : ""}
       ${state.weergave === "planning" ? `
       <div class="view-toggle">
         <button class="btn-sm ${state.selectieModusPlanning ? "active" : ""}" id="btnToggleSelectie">Selecteren</button>
@@ -3190,6 +3259,17 @@ function attachSortenWeergaveEvents() {
   const sortSel = document.getElementById("sortSelect");
   if (sortSel) sortSel.addEventListener("change", (e) => { state.sortBy = e.target.value; state.sortDir = "asc"; render(); });
   $$("[data-weergave]").forEach((el) => el.addEventListener("click", (e) => { state.weergave = e.currentTarget.dataset.weergave; render(); }));
+  if ($("#btnTabelKolommen")) $("#btnTabelKolommen").addEventListener("click", () => { state.tabelKolomKeuzeOpen = !state.tabelKolomKeuzeOpen; render(); });
+  if ($("#btnTabelKolommenKlaar")) $("#btnTabelKolommenKlaar").addEventListener("click", () => { state.tabelKolomKeuzeOpen = false; render(); });
+  $$("[data-tabel-kolom]").forEach((el) => el.addEventListener("change", async (e) => {
+    const key = e.currentTarget.dataset.tabelKolom;
+    const set = new Set(state.tabelKolommen);
+    if (e.target.checked) set.add(key); else set.delete(key);
+    // Volgorde altijd volgens TABEL_KOLOMMEN, wat er ook aangevinkt wordt.
+    state.tabelKolommen = TABEL_KOLOMMEN.filter((k) => !k.vast && set.has(k.key)).map((k) => k.key);
+    await veiligOpslaan(() => dbSetInstelling("tabelKolommen", state.tabelKolommen), "instelling opslaan");
+    render();
+  }));
   if ($("#btnToggleSelectie")) $("#btnToggleSelectie").addEventListener("click", () => {
     state.selectieModusPlanning = !state.selectieModusPlanning;
     if (!state.selectieModusPlanning) state.geselecteerdeGezinnen = [];
@@ -3710,6 +3790,11 @@ function attachEvents() {
     state.afspraakplannerBasisUrl = e.target.value.trim() || "https://afspraak.hhgputten.nl";
     await veiligOpslaan(() => dbSetInstelling("afspraakplannerBasisUrl", state.afspraakplannerBasisUrl), "instelling opslaan");
   });
+  if ($("#instPlanrondeTijd")) $("#instPlanrondeTijd").addEventListener("change", async (e) => {
+    if (!/^\d{2}:\d{2}$/.test(e.target.value)) return; // leeg of ongeldig: standaard laten staan
+    state.planrondeStandaardTijd = e.target.value;
+    await veiligOpslaan(() => dbSetInstelling("planrondeStandaardTijd", state.planrondeStandaardTijd), "instelling opslaan");
+  });
   $$("[data-sjabloon-veld]").forEach((el) => el.addEventListener("change", async (e) => {
     const sjabloon = state.afspraakSjablonen.find((s) => s.id === e.target.dataset.sjabloonId);
     if (!sjabloon) return;
@@ -3766,7 +3851,7 @@ function attachEvents() {
   }));
   if ($("#btnTijdslotToevoegen")) $("#btnTijdslotToevoegen").addEventListener("click", () => {
     const laatste = state.afspraakplannerTijdslots[state.afspraakplannerTijdslots.length - 1];
-    state.afspraakplannerTijdslots.push({ datum: laatste ? laatste.datum : "", start: "19:00", eind: "" });
+    state.afspraakplannerTijdslots.push({ datum: laatste ? laatste.datum : "", start: state.planrondeStandaardTijd, eind: "" });
     render();
   });
   if ($("#tijdslotHerhaalWeken")) $("#tijdslotHerhaalWeken").addEventListener("change", (e) => {
@@ -3837,7 +3922,7 @@ function attachEvents() {
   }));
   $$("[data-aanvraag-slotdraft]").forEach((el) => el.addEventListener("change", (e) => {
     const id = parseInt(e.currentTarget.dataset.aanvraagSlotdraft, 10);
-    const draft = state.aanvraagSlotDraft[id] || { datum: "", start: "19:00", eind: "" };
+    const draft = state.aanvraagSlotDraft[id] || { datum: "", start: state.planrondeStandaardTijd, eind: "" };
     draft[e.currentTarget.dataset.slotdraftVeld] = e.target.value;
     state.aanvraagSlotDraft[id] = draft;
   }));
@@ -4040,7 +4125,7 @@ function startPlanrondeToevoegen() {
   state.aanvraagUitzettenTerug = state.stage === "planrondes" ? "planrondes" : "dashboard";
   state.stage = "aanvraagUitzetten";
   state.afspraakplannerOmschrijving = "";
-  state.afspraakplannerTijdslots = [{ datum: "", start: "19:00", eind: "" }];
+  state.afspraakplannerTijdslots = [{ datum: "", start: state.planrondeStandaardTijd, eind: "" }];
   state.afspraakplannerFout = "";
   state.planrondeDoelId = "nieuw";
   render();
@@ -4731,7 +4816,7 @@ function planrondeDetailHTML(a) {
       </div>`;
   }).join("") : "";
 
-  const slotDraft = state.aanvraagSlotDraft[a.id] || { datum: "", start: "19:00", eind: "" };
+  const slotDraft = state.aanvraagSlotDraft[a.id] || { datum: "", start: state.planrondeStandaardTijd, eind: "" };
   const gezinnenInAanvraag = new Set(deelnemers.map((d) => d.regnr));
   const kandidaten = computeGezinnen()
     .filter((g) => !gezinnenInAanvraag.has(g.gezinshoofd.regnr))
@@ -5070,6 +5155,10 @@ function vergrendelNu() {
     if (typeof instellingenMap.afspraakSjabloonId === "string") state.afspraakSjabloonId = instellingenMap.afspraakSjabloonId;
     if (instellingenMap.mailMethode === "mailto" || instellingenMap.mailMethode === "outlook") state.mailMethode = instellingenMap.mailMethode;
     if (instellingenMap.whatsappMethode === "web" || instellingenMap.whatsappMethode === "desktop") state.whatsappMethode = instellingenMap.whatsappMethode;
+    if (Array.isArray(instellingenMap.tabelKolommen)) {
+      state.tabelKolommen = TABEL_KOLOMMEN.filter((k) => !k.vast && instellingenMap.tabelKolommen.includes(k.key)).map((k) => k.key);
+    }
+    if (typeof instellingenMap.planrondeStandaardTijd === "string" && /^\d{2}:\d{2}$/.test(instellingenMap.planrondeStandaardTijd)) state.planrondeStandaardTijd = instellingenMap.planrondeStandaardTijd;
     if (instellingenMap.backupOpslagMethode === "download" || instellingenMap.backupOpslagMethode === "opslaanAls") state.backupOpslagMethode = instellingenMap.backupOpslagMethode;
     if (typeof instellingenMap.afspraakplannerApiSleutel === "string") state.afspraakplannerApiSleutel = instellingenMap.afspraakplannerApiSleutel;
     if (typeof instellingenMap.afspraakplannerBasisUrl === "string" && instellingenMap.afspraakplannerBasisUrl) state.afspraakplannerBasisUrl = instellingenMap.afspraakplannerBasisUrl;

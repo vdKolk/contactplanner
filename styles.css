@@ -374,6 +374,17 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .pagina-sluit:hover { color: var(--text); }
 .pagina-smal { max-width: 560px; }
 
+/* Kolomkeuze-paneeltje bij de knop "Kolommen" in de tabelweergave */
+.kolom-keuze-paneel {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 180px;
+  display: flex; flex-direction: column; gap: 5px; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(16,24,40,0.12);
+}
+.kolom-keuze-optie {
+  display: flex; align-items: center; gap: 7px; font-size: 12.5px; white-space: nowrap; cursor: pointer;
+}
+
 /* Snelle datum-invoer in een lege "Laatste contact"-cel van de tabelweergave */
 .tabel-datum-invoer {
   width: 100%; max-width: 112px; padding: 2px 4px; border: 1px dashed var(--border);
