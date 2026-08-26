@@ -120,7 +120,7 @@ const VERSIE_NOTITIES = {
   },
   "1.8.5": {
     nieuw: [
-      "Snelle invoer van het laatste contact: in de tabelweergave kun je een lege \"Laatste contact\"-cel direct invullen met een datum — handig na een eerste import. De datum wordt als huisbezoek in het dossier gezet (notitie: \"Datum achteraf ingevoerd\"); sorteer op laatste contact om alle lege rijen bovenaan te krijgen",
+      "Snelle invoer van het laatste contact: in de tabelweergave kun je een lege \"Laatste contact\"-cel direct invullen met een datum — handig na een eerste import. De datum wordt als huisbezoek in het dossier gezet (notitie: \"Contactmoment gelogd via tabelweergave\"); sorteer op laatste contact om alle lege rijen bovenaan te krijgen",
     ],
   },
 };
@@ -1645,7 +1645,7 @@ function laatsteHistorieItem(gd) {
 async function vulLaatsteContactIn(gezinsKey, datum) {
   const gd = getGezinsdata(gezinsKey);
   if (gd.laatsteContact) return; // alleen voor lege cellen; bestaande momenten bewerk je in het dossier
-  const entry = { id: uid(), datum, tijd: "", soort: "Huisbezoek", notitie: "Datum achteraf ingevoerd via de tabelweergave", gelezen: "" };
+  const entry = { id: uid(), datum, tijd: "", soort: "Huisbezoek", notitie: "Contactmoment gelogd via tabelweergave", gelezen: "" };
   const historie = [entry, ...(gd.historie || [])];
   await updateGezinsdata(gezinsKey, { historie, laatsteContact: berekenLaatsteRegulierContact(historie) });
   render();
@@ -1913,7 +1913,7 @@ function handleidingModalHTML() {
         <p><strong>Snel invullen na een eerste import:</strong> is er nog geen contactmoment bekend, dan
         toont de <strong>tabelweergave</strong> in de kolom "Laatste contact" een leeg datumveld. Vul daar
         de datum van het laatste huisbezoek in — die wordt als huisbezoek in het dossier gezet (met de
-        notitie "Datum achteraf ingevoerd") en telt direct mee voor status en volgend contact. Sorteer op
+        notitie "Contactmoment gelogd via tabelweergave") en telt direct mee voor status en volgend contact. Sorteer op
         laatste contact om alle lege rijen bovenaan te krijgen. Een al gevulde datum pas je aan via het
         dossier, niet in de tabel.</p>
 
