@@ -121,8 +121,10 @@ const VERSIE_NOTITIES = {
   "1.8.5": {
     nieuw: [
       "Snelle invoer van het laatste contact: in de tabelweergave kun je een lege \"Laatste contact\"-cel direct invullen met een datum — handig na een eerste import. De datum wordt als huisbezoek in het dossier gezet (notitie: \"Contactmoment gelogd via tabelweergave\"); sorteer op laatste contact om alle lege rijen bovenaan te krijgen",
-      "Zelf kiezen welke kolommen de tabelweergave toont, via de nieuwe knop \"Kolommen\": naast de vertrouwde kolommen zijn nu ook leeftijd, postcode, wijk/sectie, telefoon, mobiel en e-mail beschikbaar. Je keuze wordt onthouden",
+      "Zelf kiezen welke kolommen de tabelweergave toont, via de nieuwe kolommenknop (▥) naast de weergaveknoppen: naast de vertrouwde kolommen zijn nu ook leeftijd, postcode, wijk/sectie, telefoon, mobiel en e-mail beschikbaar. Je keuze wordt onthouden",
       "De standaard starttijd voor tijdslots in planrondes is nu 19:30 en is instelbaar via Instellingen → AfspraakPlanner (zichtbaar zodra de koppeling is ingesteld)",
+      "Klik op het logo linksboven om vanuit elk scherm terug te gaan naar het hoofdscherm",
+      "De lijstweergave gebruikt nu dezelfde volle breedte als de tabel- en planningweergave, zodat het scherm niet meer versmalt bij het wisselen",
     ],
   },
 };
@@ -1813,7 +1815,8 @@ function render() {
     attachLockEvents();
     return;
   }
-  const breed = state.stage === "dashboard" && (state.weergave === "tabel" || state.weergave === "planning");
+  // Het overzicht is in alle weergaves even breed (lijst, tabel én planning).
+  const breed = state.stage === "dashboard";
   root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
   attachEvents();
   if (state.menuOpen) {
@@ -2033,8 +2036,9 @@ function handleidingModalHTML() {
         <p>Boven het overzicht kies je een sortering (urgentie, naam, adres, plaats, laatste/volgend contact)
         en een weergave: Lijst (kaarten in twee kolommen; op een smal scherm één), Tabel (met sorteerbare,
         sleepbare kolommen) of Planning (een kanban-bord met kolommen Achterstallig / Komende maand /
-        Dit kwartaal / Komend halfjaar / Verder vooruit). In de tabelweergave kies je via de knop
-        <strong>"Kolommen"</strong> zelf welke gegevens je ziet — naast de standaardkolommen ook
+        Dit kwartaal / Komend halfjaar / Verder vooruit). In de tabelweergave kies je via de
+        kolommenknop (<strong>▥</strong>, naast de weergaveknoppen) zelf welke gegevens je ziet —
+        naast de standaardkolommen ook
         leeftijd, postcode, wijk/sectie, telefoon, mobiel en e-mail; je keuze wordt onthouden.</p>
         <p>Met de tellers bovenaan filter je het overzicht — in elke weergave. Naast de statusfilters is er
         de teller "70+ jaar" (het getal volgt de leeftijdsgrens uit de instellingen): die toont alle gezinnen
@@ -2350,7 +2354,7 @@ function topbarHTML() {
   <div class="topbar">
     <div class="topbar-links">
       <button class="hamburger-tile" id="btnHamburger" title="Menu">\u2630</button>
-      <div class="brand">
+      <div class="brand" id="brandHome" title="Naar het hoofdscherm">
         <img class="brand-logo" src="icons/icon-192.png" alt="ContactPlanner" />
         <div>
           <div class="brand-title">ContactPlanner</div>
@@ -3167,7 +3171,7 @@ function dashboardHTML() {
       </div>
       ${state.weergave === "tabel" ? `
       <div class="view-toggle" style="position:relative;">
-        <button class="btn-sm ${state.tabelKolomKeuzeOpen ? "active" : ""}" id="btnTabelKolommen" title="Kies welke kolommen de tabel toont">Kolommen</button>
+        <button class="btn-sm ${state.tabelKolomKeuzeOpen ? "active" : ""}" id="btnTabelKolommen" title="Kies welke kolommen de tabel toont" aria-label="Kolommen kiezen">▥</button>
         ${state.tabelKolomKeuzeOpen ? `
         <div class="kolom-keuze-paneel">
           ${TABEL_KOLOMMEN.filter((k) => !k.vast).map((k) => `
@@ -3634,6 +3638,13 @@ function attachEvents() {
 
   if ($("#btnPinWijzigen")) $("#btnPinWijzigen").addEventListener("click", pinWijzigen);
   if ($("#btnVergrendelNu")) $("#btnVergrendelNu").addEventListener("click", vergrendelNu);
+  if ($("#brandHome")) $("#brandHome").addEventListener("click", () => {
+    // Terug naar het hoofdscherm: het overzicht als er gegevens zijn, anders het startscherm.
+    state.stage = state.personen.length ? "dashboard" : "upload";
+    state.planrondeDetailId = null;
+    state.menuOpen = false;
+    render();
+  });
   if ($("#btnBackupNu")) $("#btnBackupNu").addEventListener("click", exporteerBackup);
   if ($("#btnOnlineBackupRetry")) $("#btnOnlineBackupRetry").addEventListener("click", () => synchroniseerOnlineBackup());
 

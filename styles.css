@@ -42,7 +42,7 @@ html, body {
   border-radius: 0; transition: background .12s;
 }
 .hamburger-tile:hover { background: var(--accent-hover); }
-.brand { display: flex; align-items: center; gap: 11px; padding: 6px 0; }
+.brand { display: flex; align-items: center; gap: 11px; padding: 6px 0; cursor: pointer; }
 .hamburger-btn {
   font-size: 17px; padding: 0; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
   border-radius: 8px; color: var(--text-soft);
