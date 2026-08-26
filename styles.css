@@ -374,6 +374,14 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .pagina-sluit:hover { color: var(--text); }
 .pagina-smal { max-width: 560px; }
 
+/* Snelle datum-invoer in een lege "Laatste contact"-cel van de tabelweergave */
+.tabel-datum-invoer {
+  width: 100%; max-width: 112px; padding: 2px 4px; border: 1px dashed var(--border);
+  border-radius: 6px; background: transparent; font-family: Consolas, monospace;
+  font-size: 12px; color: var(--text-soft); cursor: pointer;
+}
+.tabel-datum-invoer:hover, .tabel-datum-invoer:focus { border-color: var(--accent); color: var(--text); }
+
 /* Pinvelden: gemaskeerd tekstveld i.p.v. echt wachtwoordveld, zodat password managers
    nooit aanbieden de pin op te slaan (dat hoort niet bij een pin). */
 .invoer-geheim { -webkit-text-security: disc; }

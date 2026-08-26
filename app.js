@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.8.4"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.8.5"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -116,6 +116,11 @@ const VERSIE_NOTITIES = {
   "1.8.4": {
     nieuw: [
       "De kaartjes in de Planningweergave tonen nu ook de leeftijd van het gezinshoofd achter de naam, net als in de lijstweergave",
+    ],
+  },
+  "1.8.5": {
+    nieuw: [
+      "Snelle invoer van het laatste contact: in de tabelweergave kun je een lege \"Laatste contact\"-cel direct invullen met een datum — handig na een eerste import. De datum wordt als huisbezoek in het dossier gezet (notitie: \"Datum achteraf ingevoerd\"); sorteer op laatste contact om alle lege rijen bovenaan te krijgen",
     ],
   },
 };
@@ -1633,6 +1638,19 @@ function laatsteHistorieItem(gd) {
   return historie.reduce((m, h) => ((h.datum || "") > (m.datum || "") ? h : m), historie[0]);
 }
 
+// Snelle invoer vanuit de tabelweergave: een lege "Laatste contact"-cel vullen. Omdat
+// laatsteContact een afgeleide is van de historie (zie herstelLaatsteContactAlleGezinnen)
+// kan de datum niet los bestaan: er wordt een minimaal huisbezoek-item aangemaakt, met
+// een herkenbare notitie zodat je het later kunt onderscheiden van een echte registratie.
+async function vulLaatsteContactIn(gezinsKey, datum) {
+  const gd = getGezinsdata(gezinsKey);
+  if (gd.laatsteContact) return; // alleen voor lege cellen; bestaande momenten bewerk je in het dossier
+  const entry = { id: uid(), datum, tijd: "", soort: "Huisbezoek", notitie: "Datum achteraf ingevoerd via de tabelweergave", gelezen: "" };
+  const historie = [entry, ...(gd.historie || [])];
+  await updateGezinsdata(gezinsKey, { historie, laatsteContact: berekenLaatsteRegulierContact(historie) });
+  render();
+}
+
 function berekenLaatsteRegulierContact(historie) {
   // Alleen "Huisbezoek" telt mee voor het reguliere schema. Oudere contactmomenten van v\u00f3\u00f3r
   // de "soort bezoek"-functie (dus zonder soort-veld) worden als regulier huisbezoek behandeld.
@@ -1892,6 +1910,12 @@ function handleidingModalHTML() {
         <p>In een gezinsdossier log je een contactmoment met datum, tijd (standaard 19:30), soort bezoek
         (Huisbezoek, Doopbezoek, Huwelijksbezoek, Ziekenhuisbezoek, Anders), een notitie en het gelezen
         gedeelte. Eerdere momenten kun je aanpassen via "Bewerken" (bijv. bij een typefout) of verwijderen.</p>
+        <p><strong>Snel invullen na een eerste import:</strong> is er nog geen contactmoment bekend, dan
+        toont de <strong>tabelweergave</strong> in de kolom "Laatste contact" een leeg datumveld. Vul daar
+        de datum van het laatste huisbezoek in — die wordt als huisbezoek in het dossier gezet (met de
+        notitie "Datum achteraf ingevoerd") en telt direct mee voor status en volgend contact. Sorteer op
+        laatste contact om alle lege rijen bovenaan te krijgen. Een al gevulde datum pas je aan via het
+        dossier, niet in de tabel.</p>
 
         <h4 id="hl-schema">Terugkeerschema en de kleurbalk/het bolletje</h4>
         <p>Nieuwe gezinnen staan standaard op <strong>"Automatisch"</strong>: het bezoekinterval wordt dan
@@ -3029,7 +3053,9 @@ function gezinTabelHTML(lijst) {
       <td class="td-clip" title="${esc(overigeNamen.join(", "))}">${esc(overigeNamen.join(", "))}</td>
       <td class="td-clip" title="${esc(g.adres)}">${esc(g.adres)}</td>
       <td class="td-clip" title="${esc(g.plaats)}">${esc(g.plaats)}</td>
-      <td class="mono">${gd.laatsteContact ? fmtDatum(gd.laatsteContact) : "\u2014"}</td>
+      <td class="mono">${gd.laatsteContact
+        ? fmtDatum(gd.laatsteContact)
+        : `<input type="date" class="tabel-datum-invoer" data-laatste-contact-invoer="${esc(g.gezinsKey)}" max="${todayISO()}" title="Nog geen contactmoment bekend \u2014 vul hier de datum van het laatste huisbezoek in; die wordt als contactmoment in het dossier gezet" />`}</td>
       <td class="mono">${next ? fmtDatum(next) : "\u2014"}</td>
       <td><span class="status-badge" style="color:${meta.color};background:${meta.bg};">${esc(meta.label)}</span></td>
     </tr>`;
@@ -3101,6 +3127,14 @@ function attachDashboardResultEvents() {
     state.filterStatus = e.currentTarget.dataset.filter; render();
   }));
   $$("[data-open]").forEach((el) => el.addEventListener("click", (e) => openGezinDetail(e.currentTarget.dataset.open)));
+  $$("[data-laatste-contact-invoer]").forEach((el) => {
+    // In de rij zit een data-open-klik; het datumveld mag het dossier niet openen.
+    el.addEventListener("click", (e) => e.stopPropagation());
+    el.addEventListener("change", (e) => {
+      e.stopPropagation();
+      if (e.target.value) vulLaatsteContactIn(e.currentTarget.dataset.laatsteContactInvoer, e.target.value);
+    });
+  });
   $$("[data-select-gezin]").forEach((el) => el.addEventListener("click", (e) => {
     const key = e.currentTarget.dataset.selectGezin;
     const idx = state.geselecteerdeGezinnen.indexOf(key);
