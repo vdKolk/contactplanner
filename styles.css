@@ -42,7 +42,7 @@ html, body {
   border-radius: 0; transition: background .12s;
 }
 .hamburger-tile:hover { background: var(--accent-hover); }
-.brand { display: flex; align-items: center; gap: 11px; padding: 6px 0; }
+.brand { display: flex; align-items: center; gap: 11px; padding: 6px 0; cursor: pointer; }
 .hamburger-btn {
   font-size: 17px; padding: 0; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
   border-radius: 8px; color: var(--text-soft);
@@ -373,6 +373,25 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .pagina-sluit { font-size: 16px; padding: 6px 12px; color: var(--text-soft); }
 .pagina-sluit:hover { color: var(--text); }
 .pagina-smal { max-width: 560px; }
+
+/* Kolomkeuze-paneeltje bij de knop "Kolommen" in de tabelweergave */
+.kolom-keuze-paneel {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 180px;
+  display: flex; flex-direction: column; gap: 5px; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(16,24,40,0.12);
+}
+.kolom-keuze-optie {
+  display: flex; align-items: center; gap: 7px; font-size: 12.5px; white-space: nowrap; cursor: pointer;
+}
+
+/* Snelle datum-invoer in een lege "Laatste contact"-cel van de tabelweergave */
+.tabel-datum-invoer {
+  width: 100%; max-width: 112px; padding: 2px 4px; border: 1px dashed var(--border);
+  border-radius: 6px; background: transparent; font-family: Consolas, monospace;
+  font-size: 12px; color: var(--text-soft); cursor: pointer;
+}
+.tabel-datum-invoer:hover, .tabel-datum-invoer:focus { border-color: var(--accent); color: var(--text); }
 
 /* Pinvelden: gemaskeerd tekstveld i.p.v. echt wachtwoordveld, zodat password managers
    nooit aanbieden de pin op te slaan (dat hoort niet bij een pin). */
