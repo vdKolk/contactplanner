@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.8.5"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.8.6"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -125,6 +125,14 @@ const VERSIE_NOTITIES = {
       "De standaard starttijd voor tijdslots in planrondes is nu 19:30 en is instelbaar via Instellingen → AfspraakPlanner (zichtbaar zodra de koppeling is ingesteld)",
       "Klik op het logo linksboven om vanuit elk scherm terug te gaan naar het hoofdscherm",
       "De lijstweergave gebruikt nu dezelfde volle breedte als de tabel- en planningweergave, zodat het scherm niet meer versmalt bij het wisselen",
+    ],
+  },
+  "1.8.6": {
+    nieuw: [
+      "Kaartknopje achter het adres in het gezinsdossier: \u00e9\u00e9n klik opent dat adres in Google Maps in een nieuw tabblad",
+      "Overdrachtskaart: onder tab Gezin maak je een nette, afdrukbare samenvatting van \u00e9\u00e9n gezin \u2014 samenstelling, status, opmerking en alle contactmomenten met datum, soort en gelezen gedeelte. Handig om bij een wisseling van ouderling als pdf over te dragen; de inhoud van je notities blijft er bewust buiten",
+      "Verhuizingen worden bij een import herkend aan het regnr van het gezinshoofd: het gezin komt in het importrapport onder \"Verhuisd\" te staan, met een knop om het dossier (contactmomenten, notitie, schema) mee te verhuizen naar het nieuwe adres \u2014 voorheen bleef dat onbereikbaar op het oude adres achter",
+      "Gezinnen waarvan niemand meer in de laatste import voorkomt worden in lijst-, tabel- en planningweergave lichter getoond, zodat duidelijk is dat ze niet meer in de wijk zitten. Ze blijven gewoon zichtbaar en bij hover weer volledig leesbaar",
     ],
   },
 };
@@ -713,6 +721,18 @@ function scipioUrl(regnr) {
   return `https://scipio-online.nl/ledenadministratie/search.aspx?regnr=${tekst.padStart(8, "0")}&target=persoonskaart`;
 }
 
+// Kaartspeld als inline SVG (geen emoji): erft via currentColor de tekstkleur, zodat het
+// icoon meekleurt met de adresregel en bij hover met de accentkleur.
+const KAART_ICOON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+
+// Zoeklink naar Google Maps voor het adres van een gezin. Er gaat pas iets naar
+// Google op het moment dat de gebruiker zelf op het wereldbolletje klikt.
+function kaartUrl(gezin) {
+  if (!String(gezin.adres || "").trim()) return null;
+  const delen = [gezin.adres, gezin.postcode, gezin.plaats].map((d) => String(d || "").trim()).filter(Boolean);
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delen.join(", "))}`;
+}
+
 async function toggleFavoriet(gezinsKey) {
   const gd = getGezinsdata(gezinsKey);
   await updateGezinsdata(gezinsKey, { favoriet: !gd.favoriet });
@@ -724,9 +744,9 @@ function famKeyOf(p) {
   return basis;
 }
 
-function computeGezinnen() {
+function computeGezinnen(personen) {
   const groepen = {};
-  state.personen.forEach((p) => {
+  (personen || state.personen).forEach((p) => {
     const key = famKeyOf(p);
     if (!groepen[key]) groepen[key] = [];
     groepen[key].push(p);
@@ -749,6 +769,98 @@ function computeGezinnen() {
       gezinshoofd,
     };
   });
+}
+
+// Staat geen enkel gezinslid meer in de laatste import? Dan zit het gezin waarschijnlijk niet
+// meer in de wijk. Het blijft gewoon zichtbaar (je raakt niets kwijt), maar wordt in alle
+// overzichten lichter getoond, zodat het niet meer om aandacht vraagt bij je planning.
+function isVervallenGezin(gezin) {
+  return gezin.leden.length > 0 && gezin.leden.every((p) => p._nietInLaatsteImport);
+}
+
+// Heeft dit dossier iets wat je niet wilt kwijtraken? Een leeg dossier hoeft niet mee te
+// verhuizen en zou de melding alleen maar ruis geven.
+function heeftDossierInhoud(gd) {
+  if (!gd) return false;
+  return !!(gd.laatsteContact || gd.algemeneNotitie || gd.volgendContactOverride
+    || (gd.historie || []).length || (gd.gepland || []).length
+    || gd.favoriet || (gd.schema && gd.schema !== "auto"));
+}
+
+// Verhuisde gezinnen herkennen. Een gezin wordt geïdentificeerd op adres + postcode, maar
+// het regnr van het gezinshoofd verandert niet als het gezin verhuist. Zelfde gezinshoofd op
+// een andere sleutel = verhuisd, en dan moet het dossier mee. Zonder deze stap blijft het
+// dossier onbereikbaar onder het oude adres achter en duikt het gezin op als "Nog geen contact".
+//
+// Een kind dat op zichzelf gaat wonen valt hier terecht buiten: dat is geen gezinshoofd van
+// het oude gezin, dus dat wordt gewoon een nieuw gezin op een nieuw adres — precies goed.
+function detecteerVerhuizingen(oudePersonen, nieuwePersonen) {
+  const nieuweByRegnr = {};
+  nieuwePersonen.forEach((p) => { nieuweByRegnr[p.regnr] = p; });
+  const nieuweKeys = new Set(computeGezinnen(nieuwePersonen).map((g) => g.gezinsKey));
+
+  const verhuisd = [];
+  computeGezinnen(oudePersonen).forEach((oudGezin) => {
+    const oudeKey = oudGezin.gezinsKey;
+    if (!heeftDossierInhoud(state.gezinsdata[oudeKey])) return;
+
+    const hoofdNu = nieuweByRegnr[oudGezin.gezinshoofd.regnr];
+    // Gezinshoofd staat niet meer in de import: dat is "vertrokken", niet "verhuisd".
+    if (!hoofdNu) return;
+    const nieuweKey = famKeyOf(hoofdNu);
+    if (nieuweKey === oudeKey || !nieuweKeys.has(nieuweKey)) return;
+
+    verhuisd.push({
+      regnr: hoofdNu.regnr,
+      naam: hoofdNu.naam,
+      oudeKey,
+      nieuweKey,
+      oudAdres: [oudGezin.adres, [oudGezin.postcode, oudGezin.plaats].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+      nieuwAdres: [hoofdNu.adres, [hoofdNu.postcode, hoofdNu.plaats].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+      oudeWijk: oudGezin.wijk || "",
+      nieuweWijk: hoofdNu.wijk || "",
+      doelBezet: heeftDossierInhoud(state.gezinsdata[nieuweKey]),
+    });
+  });
+  return verhuisd;
+}
+
+// "Kaartje gestuurd"-markeringen en geplande momenten hangen via hun sleutel aan het gezin
+// (huwelijk:<gezinsKey>:<jaar> en gepland:<gezinsKey>:<id>), dus die moeten mee.
+async function verplaatsMijlpaalMarkeringen(oudeKey, nieuweKey) {
+  const teVerplaatsen = Object.keys(state.mijlpalenGedaan).filter((sl) => sl.includes(":" + oudeKey + ":"));
+  for (const oud of teVerplaatsen) {
+    const nieuw = oud.replace(":" + oudeKey + ":", ":" + nieuweKey + ":");
+    const waarde = state.mijlpalenGedaan[oud];
+    state.mijlpalenGedaan[nieuw] = waarde;
+    delete state.mijlpalenGedaan[oud];
+    await dbSetInstelling("mijlpaal-gedaan:" + nieuw, waarde);
+    await dbDeleteInstelling("mijlpaal-gedaan:" + oud);
+  }
+}
+
+// Het dossier van het oude naar het nieuwe adres verplaatsen. Ligt er op het nieuwe adres al
+// een gevuld dossier (bijvoorbeeld omdat het gezin naar een adres verhuist waar eerder iemand
+// anders woonde), dan wordt er niets overschreven zonder dat de gebruiker het bevestigt.
+async function verhuisDossier(oudeKey, nieuweKey) {
+  const dossier = state.gezinsdata[oudeKey];
+  if (!dossier) return;
+  if (heeftDossierInhoud(state.gezinsdata[nieuweKey])
+    && !confirm("Op het nieuwe adres staat al een dossier met gegevens. Dat wordt vervangen door het dossier van het oude adres. Doorgaan?")) return;
+
+  state.gezinsdata[nieuweKey] = { ...dossier, gezinsKey: nieuweKey };
+  delete state.gezinsdata[oudeKey];
+  await verplaatsMijlpaalMarkeringen(oudeKey, nieuweKey);
+
+  if (state.importDiff) {
+    state.importDiff = {
+      ...state.importDiff,
+      verhuisd: (state.importDiff.verhuisd || []).map((v) => (v.oudeKey === oudeKey ? { ...v, gedaan: true } : v)),
+    };
+  }
+  logDebug("info", "Dossier meeverhuisd", { van: oudeKey, naar: nieuweKey });
+  await veiligOpslaan(bewaarGegevens, "dossier meeverhuizen");
+  render();
 }
 
 function defaultGezinsdata() {
@@ -921,6 +1033,7 @@ const state = {
   afspraakplannerHerhaalWeken: 4, // aantal weken voor "wekelijks herhalen" in het aanvraagformulier
   editingContact: false,
   detailTab: "gezin", // gezin | loggen | plannen
+  overdrachtGezinsKey: null, // gezin waarvan de overdrachtskaart openstaat (alleen in-memory)
   saveState: "idle", // idle | saving | saved | fout
   laatsteWijzigingOp: null, // epoch ms van de laatste geslaagde gegevenswijziging
   laatsteBackupOp: null, // epoch ms van de laatst gemaakte of teruggezette back-up
@@ -1371,11 +1484,14 @@ async function bevestigMapping() {
       .map((p) => ({ ...p, _nietInLaatsteImport: true }));
 
     const alles = [...merged, ...gemarkeerdVertrokken];
-    logDebug("info", "Import verwerkt", { aantalRijen: state.rawRows.length, nieuw: nieuweRegnrs.length, vertrokken: vertrokkenRegnrs.length, totaalNaMerge: alles.length });
+    // Nog vóór persist(): hier is state.personen de oude situatie, en die hebben we nodig om
+    // verhuizingen te kunnen herkennen (zelfde gezinshoofd, ander adres).
+    const verhuisd = detecteerVerhuizingen(state.personen, alles);
+    logDebug("info", "Import verwerkt", { aantalRijen: state.rawRows.length, nieuw: nieuweRegnrs.length, vertrokken: vertrokkenRegnrs.length, verhuisd: verhuisd.length, totaalNaMerge: alles.length });
     await persist(alles);
 
-    state.importDiff = { nieuw: nieuweRegnrs, vertrokken: vertrokkenRegnrs };
-    state.stage = state.importDiff.nieuw.length || state.importDiff.vertrokken.length ? "importReport" : "dashboard";
+    state.importDiff = { nieuw: nieuweRegnrs, vertrokken: vertrokkenRegnrs, verhuisd };
+    state.stage = state.importDiff.nieuw.length || state.importDiff.vertrokken.length || verhuisd.length ? "importReport" : "dashboard";
     render();
   } catch (err) {
     logDebug("fout", "Fout bij bevestigen kolomkoppeling: " + err.message, { stack: err.stack });
@@ -1817,7 +1933,7 @@ function render() {
   }
   // Het overzicht is in alle weergaves even breed (lijst, tabel én planning).
   const breed = state.stage === "dashboard";
-  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
+  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + overdrachtskaartHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
   attachEvents();
   if (state.menuOpen) {
     requestAnimationFrame(() => {
@@ -1921,12 +2037,22 @@ function handleidingModalHTML() {
         koppel je kolommen aan velden (Regnr. en Naam zijn verplicht). <strong>Regnr.</strong> is het kenmerk
         waarmee personen bij een volgende import worden herkend. Na de import zie je een rapport met wie
         nieuw is en wie niet meer voorkwam \u2014 die laatste groep verdwijnt niet automatisch, je kiest zelf
-        per persoon of je 'm laat staan of verwijdert.</p>
+        per persoon of je 'm laat staan of verwijdert. Laat je ze staan, dan worden gezinnen waarvan
+        <em>niemand</em> meer in de import voorkomt in alle overzichten <strong>lichter</strong> getoond: ze blijven
+        vindbaar en je raakt niets kwijt, maar ze vragen niet meer om aandacht bij je planning. Wijs je er met de
+        muis naartoe, dan komen ze weer op volle sterkte.</p>
 
         <h4 id="hl-gezinshoofd">Gezinnen en gezinshoofd</h4>
         <p>Personen worden gegroepeerd tot gezinnen op basis van <strong>adres + postcode</strong>. Degene met
         Gezinsrelatie "gezinshoofd" bepaalt de naam en contactgegevens die je overal ziet. Alle contactmomenten,
         schema's en notities gelden voor het hele gezin, niet per los persoon.</p>
+        <p><strong>Verhuizingen:</strong> omdat een gezin op adres wordt herkend, zou het dossier bij een verhuizing
+        achterblijven op het oude adres. Daarom kijkt de app bij een import ook naar het <strong>regnr van het
+        gezinshoofd</strong> \u2014 dat verandert niet als een gezin verhuist. Herkent hij zo'n verhuizing, dan komt
+        het gezin in het importrapport onder "Verhuisd" te staan met de knop <strong>Dossier meeverhuizen</strong>,
+        zodat de contactgeschiedenis bij het gezin blijft. Het gebeurt niet vanzelf: verhuist een gezin naar een
+        adres waar al een dossier ligt, dan bepaal jij wat er moet gebeuren. Gaat een kind op zichzelf wonen, dan is
+        dat gewoon een nieuw gezin op een nieuw adres \u2014 dat wordt niet als verhuizing gezien.</p>
 
         <h4 id="hl-loggen">Contactmoment loggen, bewerken en verwijderen</h4>
         <p>In een gezinsdossier log je een contactmoment met datum, tijd (standaard 19:30), soort bezoek
@@ -2925,7 +3051,19 @@ function mappingHTML() {
 }
 
 function importReportHTML() {
-  const d = state.importDiff || { nieuw: [], vertrokken: [] };
+  const d = state.importDiff || { nieuw: [], vertrokken: [], verhuisd: [] };
+  const verhuisdList = (d.verhuisd || []).map((v) => `
+    <div class="report-row report-row-verhuisd">
+      <span>
+        <strong>${esc(v.naam)}</strong> <span class="mono" style="color:var(--text-soft);">(${esc(v.regnr)})</span>
+        <span class="verhuis-adressen">${esc(v.oudAdres)} \u2192 ${esc(v.nieuwAdres)}</span>
+        ${v.oudeWijk || v.nieuweWijk ? `<span class="verhuis-wijk">${esc(v.oudeWijk || "?")} \u2192 ${esc(v.nieuweWijk || "?")}</span>` : ""}
+        ${v.doelBezet && !v.gedaan ? `<span class="verhuis-waarschuwing">Let op: op het nieuwe adres staat al een dossier</span>` : ""}
+      </span>
+      ${v.gedaan
+        ? `<span class="tag-grey" style="color:var(--green);background:var(--green-bg);">\u2713 meeverhuisd</span>`
+        : `<button class="btn-sm btn-primary" data-verhuis-oud="${esc(v.oudeKey)}" data-verhuis-nieuw="${esc(v.nieuweKey)}">Dossier meeverhuizen</button>`}
+    </div>`).join("");
   const nieuwList = d.nieuw.map((regnr) => {
     const p = findPersoon(regnr);
     return `<div class="report-row"><span>${esc(p ? p.naam : regnr)} <span class="mono" style="color:var(--text-soft);">(${esc(regnr)})</span></span><span class="tag-grey">nieuw</span></div>`;
@@ -2945,6 +3083,16 @@ function importReportHTML() {
 
   return `
     <h2 style="font-size:23px;margin:4px 0 14px;">Importrapport</h2>
+    ${(d.verhuisd || []).length ? `
+      <div class="report-section report-section-let-op">
+        <div class="report-title">Verhuisd (${d.verhuisd.length})</div>
+        <p style="font-size:12.5px;color:var(--text-soft);margin:-4px 0 8px;">
+          Zelfde gezinshoofd, nieuw adres. Omdat een gezin op adres wordt herkend, hoort het dossier
+          (contactmomenten, notitie, schema) nog bij het oude adres. Verhuis het mee, dan blijft de
+          geschiedenis bij het gezin.
+        </p>
+        <div class="report-list">${verhuisdList}</div>
+      </div>` : ""}
     <div class="report-section">
       <div class="report-title">Nieuw t.o.v. de vorige lijst (${d.nieuw.length})</div>
       <div class="report-list">${nieuwList}</div>
@@ -3010,7 +3158,7 @@ function kanbanKaartHTML(gezin) {
   const geselecteerd = selectieModus && state.geselecteerdeGezinnen.includes(gezin.gezinsKey);
   const apInfo = afspraakplannerInfoVoorGezin(gezin);
   return `
-    <div class="kanban-kaart${afspraakKaartKlasse(apInfo)} ${selectieModus ? "kanban-kaart-selectiemodus" : ""} ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
+    <div class="kanban-kaart${afspraakKaartKlasse(apInfo)}${isVervallenGezin(gezin) ? " gezin-vervallen" : ""} ${selectieModus ? "kanban-kaart-selectiemodus" : ""} ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
       ${selectieModus ? `<div class="kanban-select-vinkje">${geselecteerd ? "\u2713" : ""}</div>` : ""}
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
       <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" style="top:4px;right:4px;font-size:16px;" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
@@ -3117,7 +3265,7 @@ function gezinTabelHTML(lijst) {
     const status = berekenStatus(gd, g);
     const meta = STATUS_META[status];
     const next = berekenVolgendContact(gd, g);
-    return `<tr data-open="${esc(g.gezinsKey)}">
+    return `<tr class="${isVervallenGezin(g) ? "gezin-vervallen" : ""}" data-open="${esc(g.gezinsKey)}">
       <td style="background:${meta.color};width:4px;padding:0;" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></td>
       <td><div class="status-dot" style="color:${schemaKleur(effectiefSchema(gd, g))};" title="Interval: ${esc(schemaLabel(gd, g))}"></div></td>
       ${zichtbaar.map((k) => tabelCelHTML(k, g, gd, meta, next)).join("")}
@@ -3325,7 +3473,7 @@ function famCardHTML(gezin) {
   const deelsGewijzigd = !alleWeg && gezin.leden.some((p) => p._nietInLaatsteImport);
   const apInfo = afspraakplannerInfoVoorGezin(gezin);
   return `
-    <div class="fam-card${afspraakKaartKlasse(apInfo)}" data-open="${esc(gezin.gezinsKey)}">
+    <div class="fam-card${afspraakKaartKlasse(apInfo)}${alleWeg ? " gezin-vervallen" : ""}" data-open="${esc(gezin.gezinsKey)}">
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
       <div class="status-dot" style="color:${schemaKleur(effectiefSchema(gd, gezin))};" title="Interval: ${esc(schemaLabel(gd, gezin))}"></div>
       <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
@@ -3373,6 +3521,106 @@ function ledenlijstHTML(gezin) {
   }).join("");
 }
 
+// ---------------- overdrachtskaart ----------------
+
+// Afdrukbare samenvatting van één gezin, bedoeld voor een wisseling van ouderling: wie het
+// gezin is, hoe het ervoor staat, en welke contactmomenten er zijn geweest. Bewust zónder de
+// inhoud van de notities — alleen datum, soort en gelezen gedeelte — zodat vertrouwelijke
+// gespreksinhoud niet ongemerkt meeverhuist. Opslaan gaat via het printvenster ("Bewaar als
+// pdf"), zodat er geen pdf-bibliotheek bij de app hoeft.
+function overdrachtskaartHTML() {
+  if (!state.overdrachtGezinsKey) return "";
+  const gezin = findGezin(state.overdrachtGezinsKey);
+  if (!gezin) return "";
+  const gd = getGezinsdata(gezin.gezinsKey);
+  const hoofd = gezin.gezinshoofd;
+  const meta = STATUS_META[berekenStatus(gd, gezin)];
+  const next = berekenVolgendContact(gd, gezin);
+  // Historie staat op invoervolgorde; op de kaart wil je nieuwste bovenaan.
+  const momenten = (gd.historie || []).slice().sort((a, b) => (b.datum || "").localeCompare(a.datum || ""));
+  const adresRegel = [gezin.adres, [gezin.postcode, gezin.plaats].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const kpi = (label, waarde) => `<div class="ok-kpi"><div class="ok-kpi-label">${esc(label)}</div><div class="ok-kpi-waarde">${waarde}</div></div>`;
+
+  return `
+  <div class="modal-overlay ok-overlay" id="overdrachtOverlay">
+    <div class="ok-blad">
+      <div class="ok-kaart">
+        <div class="ok-band"></div>
+        <div class="ok-body">
+          <div class="ok-kop">
+            <div class="ok-merk">
+              <img class="ok-logo" src="icons/icon-192.png" alt="" />
+              <div>
+                <div class="ok-merk-naam">ContactPlanner</div>
+                <div class="ok-merk-sub">Overdrachtskaart</div>
+              </div>
+            </div>
+            <div class="ok-datum">Opgemaakt op<br /><strong class="mono">${fmtDatum(todayISO())}</strong></div>
+          </div>
+
+          <h1 class="ok-naam">${esc(hoofd.naam || "Naamloos gezin")}</h1>
+          <div class="ok-adres">
+            ${adresRegel ? `<span>${esc(adresRegel)}</span>` : ""}
+            ${hoofd.telefoon ? `<span>${esc(hoofd.telefoon)}</span>` : ""}
+            ${hoofd.mobiel ? `<span>${esc(hoofd.mobiel)}</span>` : ""}
+          </div>
+
+          <div class="ok-status">
+            <div class="ok-badge" style="color:${meta.color};background:${meta.bg};">${esc(meta.label)}</div>
+            ${kpi("Terugkeerschema", esc(basisSchemaLabel(effectiefSchema(gd, gezin), gd)))}
+            ${kpi("Laatste contact", gd.laatsteContact ? `<span class="mono">${fmtDatum(gd.laatsteContact)}</span>` : "—")}
+            ${kpi("Volgend contact", next ? `<span class="mono">${fmtDatum(next)}</span>` : "—")}
+          </div>
+
+          <h2 class="ok-sectie">Gezinssamenstelling <span class="ok-telling">${gezin.leden.length}</span></h2>
+          <div class="ok-leden">
+            ${gezin.leden.map((p) => {
+              const lft = berekenLeeftijd(p.geboortedatum);
+              const isHoofd = p.regnr === hoofd.regnr;
+              return `
+              <div class="ok-lid">
+                <div class="ok-lid-naam">${esc(p.naam)}${p.roepnaam ? ` <span class="ok-lid-roep">(${esc(p.roepnaam)})</span>` : ""}${isHoofd ? ` <span class="ok-lid-tag">gezinshoofd</span>` : ""}</div>
+                <div class="ok-lid-meta">${esc(p.gezinsrelatie || "—")}${lft !== null ? ` · ${lft} jaar` : ""}</div>
+              </div>`;
+            }).join("")}
+          </div>
+
+          ${gd.algemeneNotitie ? `
+            <h2 class="ok-sectie">Opmerking</h2>
+            <div class="ok-opmerking">${esc(gd.algemeneNotitie)}</div>` : ""}
+
+          <h2 class="ok-sectie">Contactmomenten <span class="ok-telling">${momenten.length}</span></h2>
+          ${momenten.length ? `
+            <table class="ok-tabel">
+              <thead><tr><th>Datum</th><th>Soort</th><th>Gelezen gedeelte</th></tr></thead>
+              <tbody>
+                ${momenten.map((n) => `
+                  <tr>
+                    <td class="mono">${fmtDatum(n.datum)}</td>
+                    <td>${esc(n.soort || "Huisbezoek")}</td>
+                    <td>${n.gelezen ? esc(n.gelezen) : '<span class="ok-leeg">—</span>'}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>
+            <p class="ok-voetnoot">De notities bij deze contactmomenten staan bewust niet op deze kaart.</p>
+          ` : `<p class="ok-leeg-blok">Er zijn nog geen contactmomenten gelogd voor dit gezin.</p>`}
+
+          <div class="ok-voet">
+            <span><strong>ContactPlanner</strong> — planner voor huisbezoek. Alle gegevens blijven versleuteld op het apparaat van de ouderling zelf.</span>
+            <span class="ok-voet-url">${esc(location.origin + location.pathname)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ok-acties">
+        <button class="btn-primary" id="btnOverdrachtPrint">Opslaan als PDF</button>
+        <button class="btn-ghost" id="btnOverdrachtSluiten">Sluiten</button>
+        <span class="ok-hint">Kies in het printvenster <strong>"Bewaar als pdf"</strong> als bestemming.</span>
+      </div>
+    </div>
+  </div>`;
+}
+
 function detailHTML() {
   const gezin = state.selectedGezinsKey ? findGezin(state.selectedGezinsKey) : null;
   if (!gezin) return "";
@@ -3411,7 +3659,10 @@ function detailHTML() {
           <div style="color:var(--text-soft);font-size:12.5px;margin-top:3px;">
             ${gezin.leden.length} perso${gezin.leden.length === 1 ? "on" : "nen"} op dit adres${lft !== null ? ` \u00b7 gezinshoofd ${lft} jr` : ""}
           </div>
-          <div style="color:var(--text-soft);font-size:12.5px;margin-top:1px;">${esc(gezin.adres)}${gezin.postcode ? `, ${esc(gezin.postcode)}` : ""}${gezin.plaats ? ` ${esc(gezin.plaats)}` : ""}</div>
+          <div class="detail-adres">
+            <span>${esc(gezin.adres)}${gezin.postcode ? `, ${esc(gezin.postcode)}` : ""}${gezin.plaats ? ` ${esc(gezin.plaats)}` : ""}</span>
+            ${kaartUrl(gezin) ? `<a class="kaart-link" href="${kaartUrl(gezin)}" target="_blank" rel="noopener" title="Bekijk dit adres op Google Maps" aria-label="Bekijk dit adres op Google Maps">${KAART_ICOON}</a>` : ""}
+          </div>
           ${hoofd.telefoon ? `<div style="color:var(--text-soft);font-size:12.5px;margin-top:1px;">${esc(hoofd.telefoon)}</div>` : ""}
         </div>
         <div style="display:flex;gap:6px;">
@@ -3475,6 +3726,14 @@ function detailHTML() {
         Laatste contact: <strong class="mono">${gd.laatsteContact ? fmtDatum(gd.laatsteContact) : "nog geen"}</strong>
         \u00b7 Berekend volgend contact: <strong class="mono">${next ? fmtDatum(next) : "\u2014"}</strong>
       </div>
+
+      <hr class="divider" />
+      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Overdracht</label>
+      <p style="font-size:12px;color:var(--text-soft);margin-top:2px;margin-bottom:8px;">
+        Een nette samenvatting om bij een wisseling van ouderling over te dragen: gezinssamenstelling, status en alle
+        contactmomenten met datum, soort en gelezen gedeelte. De inhoud van je notities blijft er bewust buiten.
+      </p>
+      <button id="btnOverdrachtskaart">Overdrachtskaart maken</button>
       ` : ""}
 
       ${state.detailTab === "loggen" ? `
@@ -4017,6 +4276,7 @@ function attachEvents() {
   if ($("#btnImportReportKlaar")) $("#btnImportReportKlaar").addEventListener("click", () => { state.stage = "dashboard"; render(); });
   $$("[data-verwijder-vertrokken]").forEach((el) => el.addEventListener("click", (e) => verwijderVertrokkenPersoon(e.target.dataset.verwijderVertrokken)));
   $$("[data-behoud-vertrokken]").forEach((el) => el.addEventListener("click", (e) => behoudVertrokkenPersoon(e.target.dataset.behoudVertrokken)));
+  $$("[data-verhuis-oud]").forEach((el) => el.addEventListener("click", (e) => verhuisDossier(e.currentTarget.dataset.verhuisOud, e.currentTarget.dataset.verhuisNieuw)));
 
   if (state.stage === "dashboard") {
     attachDashboardResultEvents();
@@ -4039,6 +4299,12 @@ function attachEvents() {
   if ($("#btnToggleFavorietDetail")) $("#btnToggleFavorietDetail").addEventListener("click", () => toggleFavoriet(state.selectedGezinsKey));
   if ($("#btnVerwijderGezin")) $("#btnVerwijderGezin").addEventListener("click", () => verwijderGezin(state.selectedGezinsKey));
   $$("[data-detail-tab]").forEach((el) => el.addEventListener("click", () => { state.detailTab = el.dataset.detailTab; render(); }));
+
+  // overdrachtskaart: openen vanuit de tab Gezin, opslaan gaat via het printvenster
+  if ($("#btnOverdrachtskaart")) $("#btnOverdrachtskaart").addEventListener("click", () => { state.overdrachtGezinsKey = state.selectedGezinsKey; render(); });
+  if ($("#btnOverdrachtSluiten")) $("#btnOverdrachtSluiten").addEventListener("click", () => { state.overdrachtGezinsKey = null; render(); });
+  if ($("#btnOverdrachtPrint")) $("#btnOverdrachtPrint").addEventListener("click", () => window.print());
+  if ($("#overdrachtOverlay")) $("#overdrachtOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "overdrachtOverlay") { state.overdrachtGezinsKey = null; render(); } });
 
   // velden van het gezinshoofd (naam, adres, contactgegevens)
   $$("[data-field]").forEach((el) => el.addEventListener("change", (e) => {
