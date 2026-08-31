@@ -182,6 +182,20 @@ button:disabled { opacity: .5; cursor: default; }
 }
 .favoriet-ster-detail:hover { color: var(--amber); }
 .favoriet-ster-detail.actief { color: var(--amber); }
+/* Adresregel in het detailpaneel als flex-rij, zodat de kaartknop altijd netjes
+   op de tekst uitlijnt in plaats van mee te drijven met de lettertypemetriek. */
+.detail-adres { color: var(--text-soft); font-size: 12.5px; margin-top: 1px; display: flex; align-items: center; gap: 5px; }
+.detail-adres > span { min-width: 0; }
+/* Kaartspeld achter het adres: opent het adres in Google Maps */
+.kaart-link {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 20px; height: 20px; border-radius: 5px;
+  color: var(--text-soft); text-decoration: none;
+  transition: background .12s, color .12s;
+}
+.kaart-link svg { display: block; }
+.kaart-link:hover { background: var(--grey-bg); color: var(--accent); }
+
 .fam-name { font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; }
 .fam-meta { font-size: 12.5px; color: var(--text-soft); margin-top: 2px; }
 .status-badge {
@@ -471,3 +485,113 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: #D0D5DD; border-radius: 6px; }
+
+/* ---------------- Overdrachtskaart ---------------- */
+/* Afdrukbare samenvatting van één gezin (detailpaneel → Gezin → Overdrachtskaart).
+   Op het scherm een voorbeeld in een modal; bij afdrukken blijft alleen de kaart over.
+   print-color-adjust houdt de kleurvlakken heel in de pdf — zonder dat vlakt de
+   browser de statusbadge en de accenten af tot wit. */
+.ok-overlay { align-items: flex-start; overflow-y: auto; }
+.ok-blad { width: 100%; max-width: 780px; margin: auto; display: flex; flex-direction: column; gap: 12px; }
+.ok-kaart {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+  box-shadow: 0 8px 24px rgba(16,24,40,.16);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.ok-band { height: 6px; background: var(--accent); }
+.ok-body { padding: 26px 30px 22px; }
+
+.ok-kop { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.ok-merk { display: flex; align-items: center; gap: 10px; }
+.ok-logo { width: 30px; height: 30px; border-radius: 7px; }
+.ok-merk-naam { font-size: 14px; font-weight: 800; letter-spacing: -.01em; }
+.ok-merk-sub { font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); margin-top: 1px; }
+.ok-datum { font-size: 11.5px; color: var(--text-soft); text-align: right; line-height: 1.6; }
+
+.ok-naam { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 20px 0 5px; }
+.ok-adres { display: flex; flex-wrap: wrap; gap: 3px 16px; font-size: 13px; color: var(--text-soft); }
+
+.ok-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 18px 0 0; padding: 14px 16px; background: var(--bg); border-radius: 10px; }
+.ok-badge { font-size: 12.5px; font-weight: 800; padding: 6px 13px; border-radius: 999px; }
+.ok-kpi { padding-left: 16px; border-left: 1px solid var(--border); }
+.ok-kpi-label { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-soft); }
+.ok-kpi-waarde { font-size: 13.5px; font-weight: 700; margin-top: 3px; }
+
+.ok-sectie {
+  display: flex; align-items: center; gap: 8px; margin: 26px 0 11px; padding-bottom: 6px;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-soft); border-bottom: 1px solid var(--border);
+}
+.ok-telling { font-size: 10.5px; font-weight: 800; letter-spacing: 0; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+
+.ok-leden { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.ok-lid { padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; }
+.ok-lid-naam { font-size: 13.5px; font-weight: 700; }
+.ok-lid-roep { font-weight: 400; color: var(--text-soft); }
+.ok-lid-tag { font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 2px 6px; border-radius: 999px; vertical-align: 1px; }
+.ok-lid-meta { font-size: 11.5px; color: var(--text-soft); margin-top: 3px; }
+
+.ok-opmerking {
+  font-size: 13px; line-height: 1.55; padding: 12px 14px; border-radius: 9px; white-space: pre-wrap;
+  background: var(--amber-bg); color: var(--amber); border-left: 3px solid var(--amber);
+}
+
+.ok-tabel { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ok-tabel th {
+  text-align: left; padding: 0 10px 7px 0; border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-soft);
+}
+.ok-tabel td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ok-tabel tbody tr:last-child td { border-bottom: none; }
+.ok-tabel th:first-child, .ok-tabel td:first-child { width: 110px; }
+.ok-tabel th:nth-child(2), .ok-tabel td:nth-child(2) { width: 155px; }
+.ok-leeg { color: var(--border); }
+.ok-leeg-blok { font-size: 13px; color: var(--text-soft); margin: 0; }
+.ok-voetnoot { font-size: 11px; color: var(--text-soft); margin: 11px 0 0; }
+
+.ok-voet {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  margin-top: 26px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: 10.5px; color: var(--text-soft);
+}
+.ok-voet-url { white-space: nowrap; }
+
+.ok-acties {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;
+  padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+}
+.ok-hint { font-size: 11.5px; color: var(--text-soft); }
+@media (max-width: 620px) { .ok-leden { grid-template-columns: 1fr; } .ok-body { padding: 20px 18px; } }
+
+@media print {
+  @page { size: A4; margin: 13mm; }
+  html, body { background: #fff; }
+  .topbar, .main, .detail-overlay, .sidebar-overlay, .modal-overlay:not(.ok-overlay), .ok-acties { display: none !important; }
+  .ok-overlay { position: static; inset: auto; display: block; padding: 0; background: none; overflow: visible; }
+  .ok-blad { max-width: none; gap: 0; }
+  .ok-kaart { border: none; border-radius: 0; box-shadow: none; }
+  .ok-band { margin-bottom: 20px; }
+  .ok-body { padding: 0; }
+  /* Rijen en kopjes niet over een paginagrens laten breken */
+  .ok-tabel tr, .ok-lid, .ok-opmerking { page-break-inside: avoid; }
+  .ok-sectie { page-break-after: avoid; }
+}
+
+/* ---------------- Vervallen gezinnen & verhuizingen ---------------- */
+/* Een gezin dat in geen enkele import meer voorkomt blijft gewoon staan — je raakt niets
+   kwijt — maar wordt teruggedrukt zodat het niet meeconcurreert met de gezinnen die wél in
+   de wijk zitten. Bij hover weer op volle sterkte, zodat het leesbaar blijft als je er toch
+   bij moet. Werkt op de lijstkaart, de planbordkaart én de tabelrij. */
+.gezin-vervallen { opacity: .45; filter: saturate(.5); transition: opacity .12s, filter .12s; }
+.gezin-vervallen:hover { opacity: 1; filter: none; }
+
+.report-section-let-op { border-left: 3px solid var(--accent); padding-left: 14px; }
+.report-row-verhuisd { align-items: flex-start; }
+.verhuis-adressen { display: block; font-size: 12px; color: var(--text-soft); margin-top: 3px; }
+.verhuis-wijk {
+  display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; background: var(--accent-soft); color: var(--accent);
+}
+.verhuis-waarschuwing {
+  display: block; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: var(--amber);
+}
