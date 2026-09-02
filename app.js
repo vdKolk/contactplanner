@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.8.6"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.9.1"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -135,6 +135,18 @@ const VERSIE_NOTITIES = {
       "Gezinnen waarvan niemand meer in de laatste import voorkomt worden in lijst-, tabel- en planningweergave lichter getoond, zodat duidelijk is dat ze niet meer in de wijk zitten. Ze blijven gewoon zichtbaar en bij hover weer volledig leesbaar",
     ],
   },
+  "1.9.1": {
+    nieuw: [
+      "De knop \"Zet in planning\" is vervallen: kiest een gezin een tijdslot in een planronde, dan komt die afspraak bij het vernieuwen van de status automatisch als gepland bijzonder contactmoment in het gezinsdossier — en dus ook in Bijzondere momenten, waar je hem met \"Gedaan (log contact)\" afhandelt",
+      "In de planronde zie je per gezin alleen nog de stand: \"✓ in planning\" zodra de afspraak is overgenomen",
+      "Een afspraak die je zelf hebt afgehandeld of verwijderd komt bij een volgende verversing niet meer terug",
+      "Een zelf ingepland bijzonder contactmoment is nu op de gezinskaarten net zo zichtbaar als een afspraak uit AfspraakPlanner: een label met datum, tijd en soort, en dezelfde kaartkleur \u2014 lichtgroen zolang het moment nog komt, lichtgeel zodra de datum verstreken is en je het nog moet loggen",
+      "Staan er meerdere momenten gepland, dan zie je ze nu allemaal op de kaart in plaats van alleen de eerste \u2014 ook in de planbordweergave, waar ze eerder helemaal ontbraken",
+      "Bij Inplannen \u2014 (Bijzonder) contactmoment kun je naast de datum ook een tijd invullen; die komt mee op de kaart, in Bijzondere momenten en in het gelogde contactmoment",
+      "\"Inplannen \u2014 Bijzonder contactmoment\" hernoemd naar \"Inplannen \u2014 (Bijzonder) contactmoment\"",
+      "\"Afspraak inplannen \u2014 Handmatig\" in het gezinsdossier heet nu \"Datum afspraak voorstellen\" \u2014 die plek genereert alleen een bericht, er wordt niets vastgezet",
+    ],
+  },
 };
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
 const STORE_GEZINSDATA = "gezinsdata"; // idem
@@ -167,7 +179,7 @@ const BASIS_VELDEN = [
 const SOORTEN_BEZOEK = ["Huisbezoek", "Doopbezoek", "Huwelijksbezoek", "Ziekenhuisbezoek", "Anders"];
 const SOORTEN_GEPLAND = ["Huisbezoek", "Belafspraak", "Doopbezoek", "Huwelijksbezoek", "Ziekenhuisbezoek", "Anders"];
 
-// Standaard berichtsjabloon voor "Afspraak inplannen" (mail/WhatsApp). [naam], [datum] en [tijd]
+// Standaard berichtsjabloon voor "Datum afspraak voorstellen" (mail/WhatsApp). [naam], [datum] en [tijd]
 // zijn plekhouders: [naam] wordt ingevuld zodra je een sjabloon kiest/een gezin opent, [datum] en
 // [tijd] pas bij het versturen. Gebruikers beheren hun eigen sjablonen via Instellingen; dit is
 // alleen de eenmalige standaardwaarde bij een schone installatie.
@@ -314,7 +326,7 @@ function berekenMijlpalen() {
         geplandId: g.id,
         naam: hoofd.naam,
         roepnaam: hoofd.roepnaam,
-        omschrijving: `${g.soort}${g.betreft ? " \u2014 " + g.betreft : ""}${g.notitie ? ": " + g.notitie : ""}`,
+        omschrijving: `${g.soort}${g.tijd ? " " + g.tijd + " uur" : ""}${g.betreft ? " \u2014 " + g.betreft : ""}${g.notitie ? ": " + g.notitie : ""}`,
         datum: g.datum,
         sleutel: `gepland:${gezin.gezinsKey}:${g.id}`,
       });
@@ -981,7 +993,7 @@ const state = {
   tabelKolomKeuzeOpen: false, // het kolomkeuze-paneeltje bij de knop "Kolommen", alleen in-memory
   noteDraft: { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" },
   bewerkNotitieId: null,
-  geplandDraft: { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" },
+  geplandDraft: { datum: "", tijd: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" },
   afspraakDraft: { onderwerp: "Huisbezoek inplannen", tekst: "", datum: "", tijd: "19:30" },
   afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }, { ...STANDAARD_TIJDSLOT_SJABLOON }],
   afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
@@ -1550,7 +1562,7 @@ function exporteerExcel() {
       "Gelezen gedeelte (gezin)": gd.gelezenGedeelte,
       "Notitie (gezin)": gd.notitie,
       "Algemene notitie (gezin)": gd.algemeneNotitie,
-      "Gepland bijzonder moment": gd.gepland && gd.gepland[0] ? `${fmtDatum(gd.gepland[0].datum)} \u2014 ${gd.gepland[0].soort}${gd.gepland[0].betreft ? " (" + gd.gepland[0].betreft + ")" : ""}` : "",
+      "Gepland bijzonder moment": gd.gepland && gd.gepland[0] ? `${fmtDatum(gd.gepland[0].datum)}${gd.gepland[0].tijd ? " " + gd.gepland[0].tijd : ""} \u2014 ${gd.gepland[0].soort}${gd.gepland[0].betreft ? " (" + gd.gepland[0].betreft + ")" : ""}` : "",
       "Contactstatus (gezin)": status,
       "Niet in laatste import": p._nietInLaatsteImport ? "Ja" : "",
     };
@@ -1725,13 +1737,14 @@ async function plandGepland(gezinsKey) {
   const entry = {
     id: uid(),
     datum: state.geplandDraft.datum,
+    tijd: state.geplandDraft.tijd,
     soort: state.geplandDraft.soort,
     betreft: state.geplandDraft.betreft,
     notitie: state.geplandDraft.notitie,
   };
   const gepland = [...(gd.gepland || []), entry].sort((a, b) => a.datum.localeCompare(b.datum));
   await updateGezinsdata(gezinsKey, { gepland });
-  state.geplandDraft = { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
+  state.geplandDraft = { datum: "", tijd: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
   render();
 }
 
@@ -1746,7 +1759,10 @@ async function markeerGeplandGedaan(gezinsKey, id) {
   const item = (gd.gepland || []).find((g) => g.id === id);
   if (!item) return;
   const notitieMetBetreft = item.notitie + (item.betreft ? `${item.notitie ? " \u2014 " : ""}Betreft: ${item.betreft}` : "");
-  const nieuweHistorieEntry = { id: uid(), datum: item.datum, tijd: "", soort: item.soort, notitie: notitieMetBetreft, gelezen: "" };
+  // Een tijd van "19:00–19:30" (uit AfspraakPlanner) past niet in het tijdveld van een
+  // contactmoment; alleen een enkele starttijd gaat mee.
+  const tijd = /^\d{2}:\d{2}$/.test(item.tijd || "") ? item.tijd : "";
+  const nieuweHistorieEntry = { id: uid(), datum: item.datum, tijd, soort: item.soort, notitie: notitieMetBetreft, gelezen: "" };
   const historie = [nieuweHistorieEntry, ...(gd.historie || [])];
   const gepland = (gd.gepland || []).filter((g) => g.id !== id);
   await updateGezinsdata(gezinsKey, {
@@ -2017,8 +2033,8 @@ function handleidingModalHTML() {
           <li><a href="#hl-gezinshoofd">Gezinnen en gezinshoofd</a></li>
           <li><a href="#hl-loggen">Contactmoment loggen, bewerken en verwijderen</a></li>
           <li><a href="#hl-schema">Terugkeerschema en de kleurbalk/het bolletje</a></li>
-          <li><a href="#hl-bijzonder">Inplannen — Bijzonder contactmoment</a></li>
-          <li><a href="#hl-afspraak">Afspraak inplannen en berichtsjablonen</a></li>
+          <li><a href="#hl-bijzonder">Inplannen — (Bijzonder) contactmoment</a></li>
+          <li><a href="#hl-afspraak">Datum afspraak voorstellen en berichtsjablonen</a></li>
           <li><a href="#hl-afspraakplanner">AfspraakPlanner: planrondes — zelf een tijdslot laten kiezen</a></li>
           <li><a href="#hl-momenten">Bijzondere momenten</a></li>
           <li><a href="#hl-weergaves">Sorteren en weergaves</a></li>
@@ -2080,13 +2096,17 @@ function handleidingModalHTML() {
         hover voor uitleg) en een gekleurd bolletje (interval: rood = 2x/jaar, oranje = 1x/jaar, groen = om het
         jaar, blauw = aangepast).</p>
 
-        <h4 id="hl-bijzonder">Inplannen — Bijzonder contactmoment</h4>
-        <p>Voor iets buiten het gewone ritme, zoals een ziekenhuisopname: plan een datum, soort en notitie in
-        bij het gezin. Dit staat los van het reguliere schema. Zodra je het afhandelt met "Gedaan (log contact)"
-        komt het als een gewoon contactmoment in de geschiedenis; "Verwijderen" gebruik je als het niet doorgaat.</p>
+        <h4 id="hl-bijzonder">Inplannen — (Bijzonder) contactmoment</h4>
+        <p>Voor iets buiten het gewone ritme, zoals een ziekenhuisopname: plan een datum, eventueel een tijd,
+        een soort en een notitie in bij het gezin. Dit staat los van het reguliere schema. Het moment komt
+        daarna in <strong>Bijzondere momenten</strong> te staan en als label (📅 datum, tijd en soort) op de
+        gezinskaart in de lijst- en planbordweergave; die kaart kleurt lichtgroen zolang het moment nog komt
+        en lichtgeel zodra de datum verstreken is en je het nog moet loggen. Zodra je het afhandelt met
+        "Gedaan (log contact)" komt het als een gewoon contactmoment in de geschiedenis; "Verwijderen"
+        gebruik je als het niet doorgaat.</p>
 
-        <h4 id="hl-afspraak">Afspraak inplannen en berichtsjablonen</h4>
-        <p>Bij "Afspraak inplannen" open je met één klik een mail of WhatsApp-bericht om iemand te
+        <h4 id="hl-afspraak">Datum afspraak voorstellen en berichtsjablonen</h4>
+        <p>Bij "Datum afspraak voorstellen" open je met één klik een mail of WhatsApp-bericht om iemand te
         polsen voor een datum. De tekst komt uit een sjabloon met de plekhouders
         <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>:
         <span class="mono">[naam]</span> wordt ingevuld zodra je een sjabloon kiest of een gezin opent,
@@ -2126,11 +2146,14 @@ function handleidingModalHTML() {
         nog geen tijdslot koos); de verstuurde link vervalt dan.</p>
         <p><strong>Volgen en afronden:</strong> de pagina <strong>Planrondes</strong> toont per
         planronde de voortgang (hoeveel gezinnen al gekozen hebben en hoeveel tijdslots nog vrij
-        zijn); klik op een planronde voor de details. Een gekozen afspraak zet je daar met
-        <strong>"Zet in planning"</strong> direct als gepland bijzonder contactmoment in het
-        gezinsdossier, zodat hij ook in Bijzondere momenten verschijnt. Op de gezinskaarten in de
-        lijst- en planbordweergave zie je bovendien een label zodra een gezin in een planronde zit
-        (⏳) en de gekozen datum zodra het een tijdslot heeft gekozen (✓).</p>
+        zijn); klik op een planronde voor de details. Zodra een gezin een tijdslot kiest, komt die
+        afspraak bij het vernieuwen van de status <strong>automatisch</strong> als gepland bijzonder
+        contactmoment in het gezinsdossier te staan, zodat hij ook in Bijzondere momenten verschijnt
+        — je hoeft daar dus niets voor te doen. Handel je hem daar af of verwijder je hem, dan komt
+        hij niet terug. Op de gezinskaarten in de
+        lijst- en planbordweergave zie je een label zodra een gezin in een planronde zit (⏳); zodra
+        het een tijdslot gekozen heeft, staat de afspraak er als gepland moment (📅) — hetzelfde
+        label dat een zelf ingepland moment krijgt.</p>
         <p>Op de detailpagina kun je een planronde ook <strong>uitbreiden</strong> met extra
         tijdslots (direct kiesbaar via de al verstuurde links). Nog vrije tijdslots kun je
         <strong>intrekken</strong> als je toch niet meer kunt; een al gekozen tijdslot intrekken kan
@@ -2340,9 +2363,9 @@ function instellingenPaginaHTML() {
       </section>
 
       <section class="instellingen-kaart instellingen-kaart-breed">
-        <h4>Berichtsjablonen (afspraak inplannen)</h4>
+        <h4>Berichtsjablonen (datum afspraak voorstellen)</h4>
         <p class="instellingen-uitleg">
-          Voor de mail/WhatsApp-tekst bij "Afspraak inplannen" en bij een AfspraakPlanner-uitnodiging.
+          Voor de mail/WhatsApp-tekst bij "Datum afspraak voorstellen" en bij een AfspraakPlanner-uitnodiging.
           Gebruik <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en
           <span class="mono">[tijd]</span> als plekhouders — die vult de app automatisch in. Voor een
           AfspraakPlanner-uitnodiging (waarbij de ontvanger zelf een moment kiest) gebruik je in plaats
@@ -3157,8 +3180,9 @@ function kanbanKaartHTML(gezin) {
   const selectieModus = state.selectieModusPlanning;
   const geselecteerd = selectieModus && state.geselecteerdeGezinnen.includes(gezin.gezinsKey);
   const apInfo = afspraakplannerInfoVoorGezin(gezin);
+  const geplandeMomenten = geplandeMomentenVoorKaart(gd);
   return `
-    <div class="kanban-kaart${afspraakKaartKlasse(apInfo)}${isVervallenGezin(gezin) ? " gezin-vervallen" : ""} ${selectieModus ? "kanban-kaart-selectiemodus" : ""} ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
+    <div class="kanban-kaart${afspraakKaartKlasse(geplandeMomenten, apInfo)}${isVervallenGezin(gezin) ? " gezin-vervallen" : ""} ${selectieModus ? "kanban-kaart-selectiemodus" : ""} ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
       ${selectieModus ? `<div class="kanban-select-vinkje">${geselecteerd ? "\u2713" : ""}</div>` : ""}
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
       <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" style="top:4px;right:4px;font-size:16px;" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
@@ -3171,7 +3195,7 @@ function kanbanKaartHTML(gezin) {
         <div class="kanban-datum mono">${next ? fmtDatum(next) : "n.v.t."}</div>
         ${gd.algemeneNotitie ? `<span class="tag-opmerking">opmerking</span>` : ""}
       </div>
-      ${afspraakBadgeHTML(apInfo)}
+      ${geplandBadgesHTML(geplandeMomenten)}${afspraakBadgeHTML(apInfo, geplandeMomenten)}
     </div>`;
 }
 
@@ -3442,7 +3466,7 @@ function openGezinDetail(gezinsKey) {
   state.detailTab = "gezin";
   state.noteDraft = { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" };
   state.bewerkNotitieId = null;
-  state.geplandDraft = { datum: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
+  state.geplandDraft = { datum: "", tijd: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
   const aanhef = aanhefVoorGezin(gezinsKey);
   const ingevuld = pasAfspraakSjabloonToe(haalAfspraakSjabloon(state.afspraakSjabloonId), aanhef);
   state.afspraakDraft = {
@@ -3472,8 +3496,9 @@ function famCardHTML(gezin) {
   const alleWeg = gezin.leden.every((p) => p._nietInLaatsteImport);
   const deelsGewijzigd = !alleWeg && gezin.leden.some((p) => p._nietInLaatsteImport);
   const apInfo = afspraakplannerInfoVoorGezin(gezin);
+  const geplandeMomenten = geplandeMomentenVoorKaart(gd);
   return `
-    <div class="fam-card${afspraakKaartKlasse(apInfo)}${alleWeg ? " gezin-vervallen" : ""}" data-open="${esc(gezin.gezinsKey)}">
+    <div class="fam-card${afspraakKaartKlasse(geplandeMomenten, apInfo)}${alleWeg ? " gezin-vervallen" : ""}" data-open="${esc(gezin.gezinsKey)}">
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
       <div class="status-dot" style="color:${schemaKleur(effectiefSchema(gd, gezin))};" title="Interval: ${esc(schemaLabel(gd, gezin))}"></div>
       <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
@@ -3486,8 +3511,7 @@ function famCardHTML(gezin) {
         <span class="status-badge" style="color:${meta.color};background:${meta.bg};">${esc(meta.label)}</span>
         ${laatste && laatste.soort ? `<span class="tag-grey">laatst: ${esc(laatste.soort)}</span>` : ""}
         ${gd.algemeneNotitie ? `<span class="tag-opmerking">opmerking</span>` : ""}
-        ${gd.gepland && gd.gepland.length ? `<span class="tag-opmerking" style="background:var(--red-bg);color:var(--red);">gepland: ${esc(gd.gepland[0].soort)} (${fmtDatum(gd.gepland[0].datum)})</span>` : ""}
-        ${afspraakBadgeHTML(apInfo)}
+        ${geplandBadgesHTML(geplandeMomenten)}${afspraakBadgeHTML(apInfo, geplandeMomenten)}
         ${alleWeg ? `<span class="tag-grey">gezin niet meer in laatste import</span>` : ""}
         ${deelsGewijzigd ? `<span class="tag-grey">samenstelling gewijzigd</span>` : ""}
       </div>
@@ -3775,17 +3799,18 @@ function detailHTML() {
       ` : ""}
 
       ${state.detailTab === "plannen" ? `
-      <h3 style="font-size:16px;margin-bottom:4px;">Inplannen \u2014 Bijzonder contactmoment</h3>
+      <h3 style="font-size:16px;margin-bottom:4px;">Inplannen \u2014 (Bijzonder) contactmoment</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Voor iets buiten het gewone ritme \u2014 bijvoorbeeld een ziekenhuisopname. Staat los van het reguliere schema hierboven.
       </p>
       <div class="field-grid2">
         <div class="field-row"><label>Datum</label><input type="date" id="geplandDatum" value="${esc(state.geplandDraft.datum)}" /></div>
-        <div class="field-row"><label>Soort</label>
-          <select id="geplandSoort">
-            ${SOORTEN_GEPLAND.map((s) => `<option value="${esc(s)}" ${state.geplandDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
-          </select>
-        </div>
+        <div class="field-row"><label>Tijd (optioneel)</label><input type="time" id="geplandTijd" value="${esc(state.geplandDraft.tijd)}" /></div>
+      </div>
+      <div class="field-row"><label>Soort</label>
+        <select id="geplandSoort">
+          ${SOORTEN_GEPLAND.map((s) => `<option value="${esc(s)}" ${state.geplandDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+        </select>
       </div>
       <div class="field-row"><label>Betreft (optioneel)</label><input id="geplandBetreft" placeholder="Bijv. Piet" value="${esc(state.geplandDraft.betreft)}" /></div>
       <div class="field-row"><label>Notitie</label><textarea id="geplandNotitie" placeholder="Bijv. wordt geopereerd, graag even langsgaan\u2026">${esc(state.geplandDraft.notitie)}</textarea></div>
@@ -3796,7 +3821,7 @@ function detailHTML() {
           ${gd.gepland.map((g) => `
             <div class="note-card">
               <div style="display:flex;justify-content:space-between;">
-                <span class="note-date">${fmtDatum(g.datum)} <span class="tag-grey">${esc(g.soort)}</span></span>
+                <span class="note-date">${fmtDatum(g.datum)}${g.tijd ? ` ${esc(g.tijd)}` : ""} <span class="tag-grey">${esc(g.soort)}</span></span>
                 <span style="display:flex;gap:4px;">
                   <button class="btn-sm btn-primary" data-gepland-gedaan="${esc(g.id)}">Gedaan (log contact)</button>
                   <button class="btn-ghost btn-sm btn-danger" data-gepland-verwijder="${esc(g.id)}">Verwijderen</button>
@@ -3808,7 +3833,7 @@ function detailHTML() {
         </div>` : ""}
 
       <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:4px;">Afspraak inplannen — Handmatig</h3>
+      <h3 style="font-size:16px;margin-bottom:4px;">Datum afspraak voorstellen</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Vul een datum/tijd in en pas de tekst zo nodig aan. <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>
         worden bij het openen automatisch vervangen. Sjablonen beheer je via menu → Instellingen.
@@ -4169,9 +4194,6 @@ function attachEvents() {
   $$("[data-aanvraag-verwijder]").forEach((el) => el.addEventListener("click", (e) => {
     verwijderAanvraagLokaal(parseInt(e.currentTarget.dataset.aanvraagVerwijder, 10));
   }));
-  $$("[data-overneem-aanvraag]").forEach((el) => el.addEventListener("click", (e) => {
-    zetGekozenSlotInPlanning(parseInt(e.currentTarget.dataset.overneemAanvraag, 10), e.currentTarget.dataset.overneemRegnr);
-  }));
   $$("[data-open-regnr]").forEach((el) => el.addEventListener("click", (e) => {
     const gezin = computeGezinnen().find((g) => g.gezinshoofd.regnr === e.currentTarget.dataset.openRegnr);
     if (!gezin) return;
@@ -4326,6 +4348,7 @@ function attachEvents() {
   if ($("#noteNotitie")) $("#noteNotitie").addEventListener("input", (e) => { state.noteDraft.notitie = e.target.value; });
   if ($("#noteGelezen")) $("#noteGelezen").addEventListener("input", (e) => { state.noteDraft.gelezen = e.target.value; });
   if ($("#geplandDatum")) $("#geplandDatum").addEventListener("change", (e) => { state.geplandDraft.datum = e.target.value; });
+  if ($("#geplandTijd")) $("#geplandTijd").addEventListener("change", (e) => { state.geplandDraft.tijd = e.target.value; });
   if ($("#geplandSoort")) $("#geplandSoort").addEventListener("change", (e) => { state.geplandDraft.soort = e.target.value; });
   if ($("#geplandBetreft")) $("#geplandBetreft").addEventListener("input", (e) => { state.geplandDraft.betreft = e.target.value; });
   if ($("#geplandNotitie")) $("#geplandNotitie").addEventListener("input", (e) => { state.geplandDraft.notitie = e.target.value; });
@@ -4469,7 +4492,7 @@ async function verstuurAfspraakplannerAanvraag() {
       deelnemers: (data.deelnemers || []).map((d) => ({ regnr: d.regnr, link: d.link })),
       status: null, // laatste GET-resultaat van /aanvragen.php?id=…
       laatstVernieuwdOp: null,
-      overgenomen: {}, // regnr -> true zodra de gekozen afspraak in de planning is gezet
+      overgenomen: {}, // regnr -> true zodra de gekozen afspraak automatisch in de planning is gezet
     });
     await veiligOpslaan(bewaarGegevens, "planronde bewaren");
     state.afspraakplannerBezig = false;
@@ -4494,7 +4517,10 @@ async function vernieuwAanvraagStatus(id) {
     const data = await afspraakplannerFetch(`/aanvragen.php?id=${encodeURIComponent(id)}`, { method: "GET" });
     aanvraag.status = data;
     aanvraag.laatstVernieuwdOp = Date.now();
-    await veiligOpslaan(bewaarGegevens, "aanvraagstatus bijwerken");
+    // Gekozen tijdslots meteen in de planning zetten. Levert dat iets op, dan is het een
+    // echte gegevenswijziging (en dus back-upwaardig) in plaats van alleen serverstatus.
+    const inPlanning = neemGekozenSlotsOver(aanvraag);
+    await veiligOpslaan(bewaarGegevens, inPlanning ? "afspraak in planning zetten" : "aanvraagstatus bijwerken");
   } catch (e) {
     state.aanvraagFouten[id] = e.message;
   }
@@ -4510,17 +4536,19 @@ async function verversAlleAanvraagStatussen() {
   state.aanvragenVerversenBezig = true;
   render();
   let gewijzigd = false;
+  let inPlanning = false;
   await Promise.all(state.afspraakAanvragen.map(async (aanvraag) => {
     try {
       const data = await afspraakplannerFetch(`/aanvragen.php?id=${encodeURIComponent(aanvraag.id)}`, { method: "GET" });
       aanvraag.status = data;
       aanvraag.laatstVernieuwdOp = Date.now();
+      if (neemGekozenSlotsOver(aanvraag)) inPlanning = true;
       gewijzigd = true;
     } catch (e) {
       logDebug("fout", `Status van aanvraag #${aanvraag.id} vernieuwen mislukt: ` + e.message);
     }
   }));
-  if (gewijzigd) await veiligOpslaan(bewaarGegevens, "aanvraagstatussen bijwerken");
+  if (gewijzigd) await veiligOpslaan(bewaarGegevens, inPlanning ? "afspraak in planning zetten" : "aanvraagstatussen bijwerken");
   state.aanvragenVerversenBezig = false;
   render();
 }
@@ -4779,31 +4807,60 @@ async function verwijderAanvraagLokaal(id) {
   render();
 }
 
-// Zet het door een gemeentelid gekozen tijdslot als gepland bijzonder contactmoment in het
-// gezinsdossier, zodat het meedraait in de Planningweergave en Bijzondere momenten.
-async function zetGekozenSlotInPlanning(aanvraagId, regnr) {
-  const aanvraag = state.afspraakAanvragen.find((a) => a.id === aanvraagId);
-  if (!aanvraag || !aanvraag.status) return;
-  const deelnemer = (aanvraag.status.deelnemers || []).find((d) => d.regnr === regnr);
-  const slot = deelnemer && (aanvraag.status.tijdslots || []).find((t) => t.id === deelnemer.gekozen_slot_id);
-  if (!slot) return;
-  const gezin = computeGezinnen().find((g) => g.gezinshoofd.regnr === regnr);
-  if (!gezin) { alert("Dit regnr is niet (meer) terug te vinden in de huidige lijst."); return; }
-  const [datumISO, startTijd] = slot.start_tijd.split(" ");
-  const eindTijd = slot.eind_tijd ? slot.eind_tijd.split(" ")[1] : "";
-  const gd = getGezinsdata(gezin.gezinsKey);
-  const entry = {
-    id: uid(),
-    datum: datumISO,
-    soort: "Huisbezoek",
-    betreft: "",
-    notitie: `${startTijd.slice(0, 5)}${eindTijd ? "–" + eindTijd.slice(0, 5) : ""} uur — via AfspraakPlanner${aanvraag.omschrijving ? ` (${aanvraag.omschrijving})` : ""}`,
+// Zet de door gemeenteleden gekozen tijdslots als gepland bijzonder contactmoment in het
+// gezinsdossier, zodat ze meedraaien in de Planningweergave en Bijzondere momenten. Dit gaat
+// automatisch bij elke verversing van de planrondestatus — er is geen handmatige stap voor
+// nodig. De overgenomen-vlag per regnr voorkomt dat een moment dat je zelf al hebt afgehandeld
+// of verwijderd bij de volgende verversing terugkomt. Schrijft alleen in state; de aanroeper
+// bewaart (één keer, na alle planrondes) en geeft daarbij aan of er iets is overgenomen.
+const SLOT_OVERNAME_TERUGBLIK_DAGEN = 14;
+
+function neemGekozenSlotsOver(aanvraag) {
+  if (!aanvraag.status) return false;
+  const nieuw = (aanvraag.status.deelnemers || []).filter((d) => d.gekozen_slot_id && !(aanvraag.overgenomen || {})[d.regnr]);
+  if (!nieuw.length) return false;
+  const gezinnen = computeGezinnen();
+  const grensDatum = addDays(todayISO(), -SLOT_OVERNAME_TERUGBLIK_DAGEN);
+  let gewijzigd = false;
+  const vinkAf = (regnr) => {
+    aanvraag.overgenomen = { ...(aanvraag.overgenomen || {}), [regnr]: true };
+    gewijzigd = true;
   };
-  const gepland = [...(gd.gepland || []), entry].sort((a, b) => a.datum.localeCompare(b.datum));
-  state.gezinsdata[gezin.gezinsKey] = { ...gd, gepland, gezinsKey: gezin.gezinsKey };
-  aanvraag.overgenomen = { ...(aanvraag.overgenomen || {}), [regnr]: true };
-  await veiligOpslaan(bewaarGegevens, "afspraak in planning zetten");
-  render();
+  nieuw.forEach((d) => {
+    const slot = (aanvraag.status.tijdslots || []).find((t) => t.id === d.gekozen_slot_id);
+    if (!slot) return;
+    const [datumISO, startRuw] = String(slot.start_tijd).split(" ");
+    if (!datumISO) return;
+    // Een keuze van langer terug (bijvoorbeeld een planronde van maanden geleden die nooit is
+    // overgenomen) niet alsnog inplannen — wel afvinken, anders komt hij bij elke verversing
+    // opnieuw langs. Dezelfde terugblik als de kaartbadge aanhoudt.
+    if (datumISO < grensDatum) { vinkAf(d.regnr); return; }
+    const gezin = gezinnen.find((g) => g.gezinshoofd.regnr === d.regnr);
+    if (!gezin) {
+      // Gezinshoofd is sinds de planronde gewijzigd of weggevallen: niet afvinken, zodat een
+      // volgende import het alsnog oplost. De planronde toont dan "nog niet in de planning".
+      logDebug("fout", `Gekozen tijdslot van regnr ${d.regnr} (planronde #${aanvraag.id}) kon niet in de planning: gezinshoofd niet gevonden in de huidige lijst.`);
+      return;
+    }
+    const startTijd = (startRuw || "").slice(0, 5);
+    const eindTijd = (String(slot.eind_tijd || "").split(" ")[1] || "").slice(0, 5);
+    const gd = getGezinsdata(gezin.gezinsKey);
+    const entry = {
+      id: uid(),
+      datum: datumISO,
+      // Tijd als eigen veld (niet in de notitie), zodat de gezinskaarten en Bijzondere
+      // momenten hem los kunnen tonen — net als bij een zelf ingepland moment.
+      tijd: startTijd ? `${startTijd}${eindTijd ? "–" + eindTijd : ""}` : "",
+      soort: "Huisbezoek",
+      betreft: "",
+      bron: "afspraakplanner",
+      notitie: `Via AfspraakPlanner${aanvraag.omschrijving ? ` (${aanvraag.omschrijving})` : ""}`,
+    };
+    const gepland = [...(gd.gepland || []), entry].sort((a, b) => a.datum.localeCompare(b.datum));
+    state.gezinsdata[gezin.gezinsKey] = { ...gd, gepland, gezinsKey: gezin.gezinsKey };
+    vinkAf(d.regnr);
+  });
+  return gewijzigd;
 }
 
 // "2026-09-10 19:00:00" (+ optionele eindtijd) -> "10 sep 2026, 19:00–19:30 uur"
@@ -4964,21 +5021,53 @@ function afspraakplannerInfoVoorGezin(gezin) {
   return null;
 }
 
-// Achtergrondtint van een gezinskaart op basis van de AfspraakPlanner-stand:
-// licht blauw = aanvraag uitgezet, licht groen = tijdslot gekozen,
-// licht geel = het gekozen moment is voorbij (vanaf de dag erna).
-function afspraakKaartKlasse(info) {
-  if (!info) return "";
-  if (!info.gekozen) return " kaart-afspraak-uitgezet";
-  return info.datum && info.datum < todayISO() ? " kaart-afspraak-geweest" : " kaart-afspraak-gekozen";
+// De geplande bijzondere contactmomenten van een gezin, zoals ze op de gezinskaarten
+// verschijnen: op datum, met tijd en herkomst. Omdat een gekozen AfspraakPlanner-tijdslot
+// automatisch als gepland moment in het dossier landt, is dit één bron voor beide soorten —
+// zelf ingeplande momenten krijgen op de kaart dus hetzelfde beeld.
+function geplandeMomentenVoorKaart(gd) {
+  const vandaag = todayISO();
+  return (gd.gepland || []).slice()
+    .sort((a, b) => (a.datum || "").localeCompare(b.datum || ""))
+    .map((g) => ({
+      datum: g.datum,
+      soort: g.soort,
+      tijd: g.tijd || "",
+      // Momenten van vóór het tijd- en bron-veld hebben hun herkomst alleen in de notitie staan.
+      viaAfspraakplanner: g.bron === "afspraakplanner" || /via AfspraakPlanner/.test(g.notitie || ""),
+      verstreken: !!g.datum && g.datum < vandaag,
+    }));
 }
 
-function afspraakBadgeHTML(info) {
+// Achtergrondtint van een gezinskaart: licht groen als er een bijzonder contactmoment
+// gepland staat, licht geel als de datum daarvan verstreken is (nog te loggen), en licht
+// blauw als er alleen nog een planronde uitstaat waarin het gezin nog niet gekozen heeft.
+function afspraakKaartKlasse(momenten, info) {
+  if (momenten.length) return momenten.some((m) => m.verstreken) ? " kaart-afspraak-geweest" : " kaart-afspraak-gekozen";
+  if (info && !info.gekozen) return " kaart-afspraak-uitgezet";
+  return "";
+}
+
+function geplandBadgesHTML(momenten) {
+  return momenten.map((m) => {
+    const herkomst = m.viaAfspraakplanner
+      ? "Het gezin koos dit tijdslot zelf via AfspraakPlanner"
+      : "Zelf ingepland in het gezinsdossier";
+    const titel = `Gepland bijzonder contactmoment — ${herkomst}${m.verstreken ? ". De datum is verstreken; log het moment of verwijder het." : ""}`;
+    return `<span class="tag-afspraak tag-afspraak-gekozen" title="${esc(titel)}">📅 ${esc(fmtDatum(m.datum))}${m.tijd ? ` ${esc(m.tijd)}` : ""} · ${esc(m.soort)}</span>`;
+  }).join("");
+}
+
+// Alleen de stand "planronde loopt nog": een gekozen tijdslot verschijnt als gepland moment
+// via geplandBadgesHTML. Staat dat er (nog) niet — een status van vóór het automatisch
+// overnemen, of nog niet ververst — dan blijft dit label als vangnet staan.
+function afspraakBadgeHTML(info, momenten) {
   if (!info) return "";
-  if (info.gekozen) {
-    return `<span class="tag-afspraak tag-afspraak-gekozen" title="Dit gezin heeft via AfspraakPlanner een tijdslot gekozen">✓ gekozen: ${esc(info.tekst)}</span>`;
+  if (!info.gekozen) {
+    return `<span class="tag-afspraak" title="Dit gezin zit in een planronde en kan nog een tijdslot kiezen; vernieuw de status via de Planrondes-pagina">⏳ in planronde</span>`;
   }
-  return `<span class="tag-afspraak" title="Dit gezin zit in een planronde en kan nog een tijdslot kiezen; vernieuw de status via de Planrondes-pagina">⏳ in planronde</span>`;
+  if (momenten.some((m) => m.viaAfspraakplanner && m.datum === info.datum)) return "";
+  return `<span class="tag-afspraak tag-afspraak-gekozen" title="Dit gezin heeft via AfspraakPlanner een tijdslot gekozen">✓ gekozen: ${esc(info.tekst)}</span>`;
 }
 
 const SLOT_STATUS_META = {
@@ -5054,8 +5143,8 @@ function planrondesPaginaHTML() {
   </div>`;
 }
 
-// Detailpagina van één planronde: links de gezinnen (met uitnodigen en "zet in planning"),
-// rechts de tijdslots (met intrekken en toevoegen).
+// Detailpagina van één planronde: links de gezinnen (met uitnodigen en de stand van de
+// overname in de planning), rechts de tijdslots (met intrekken en toevoegen).
 function planrondeDetailHTML(a) {
   const bezig = state.aanvraagStatusBezigId === a.id;
   const fout = state.aanvraagFouten[a.id];
@@ -5074,7 +5163,7 @@ function planrondeDetailHTML(a) {
           <span class="aanvraag-slot mono">✓ ${esc(fmtSlotTijd(slot.start_tijd, slot.eind_tijd))}</span>
           ${overgenomen
             ? `<span class="tag-grey" title="Deze afspraak staat als gepland bijzonder contactmoment in het gezinsdossier">✓ in planning</span>`
-            : `<button class="btn-sm btn-primary" data-overneem-aanvraag="${esc(a.id)}" data-overneem-regnr="${esc(d.regnr)}">Zet in planning</button>`}
+            : `<span class="tag-grey" title="Deze afspraak wordt automatisch als gepland bijzonder contactmoment in het gezinsdossier gezet bij het vernieuwen van de status. Blijft dit staan, dan is het gezinshoofd niet terug te vinden in de huidige lijst — plan het dan handmatig in via het gezinsdossier.">nog niet in de planning</span>`}
         ` : `
           <span class="aanvraag-nog-niet">nog niet gekozen</span>
           <span style="display:flex;gap:4px;">${uitnodigingsKnoppenHTML(d.regnr, d.link)}</span>

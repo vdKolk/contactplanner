@@ -67,7 +67,7 @@ Daar horen twee verantwoordelijkheden bij:
 - **Bijzondere momenten** — verjaardagen vanaf een instelbare leeftijd, huwelijksjubilea in
   instelbare jaren en zelf ingeplande bijzondere bezoeken, met een attentiestip zodra er
   binnen 14 dagen iets aankomt.
-- **Afspraak inplannen** — e-mail- of WhatsApp-bericht met invulbaar sjabloon, en een
+- **Datum afspraak voorstellen** — e-mail- of WhatsApp-bericht met invulbaar sjabloon, en een
   Scipio-link per persoon.
 - **AfspraakPlanner-koppeling** — zet vanuit het planbord een aanvraag uit waarbij gezinnen
   zelf een tijdslot kiezen (via de losse AfspraakPlanner-app); volg via "Lopende aanvragen"
