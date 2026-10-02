@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.9.1"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.10.1"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -145,6 +145,16 @@ const VERSIE_NOTITIES = {
       "Bij Inplannen \u2014 (Bijzonder) contactmoment kun je naast de datum ook een tijd invullen; die komt mee op de kaart, in Bijzondere momenten en in het gelogde contactmoment",
       "\"Inplannen \u2014 Bijzonder contactmoment\" hernoemd naar \"Inplannen \u2014 (Bijzonder) contactmoment\"",
       "\"Afspraak inplannen \u2014 Handmatig\" in het gezinsdossier heet nu \"Datum afspraak voorstellen\" \u2014 die plek genereert alleen een bericht, er wordt niets vastgezet",
+    ],
+  },
+  "1.10.1": {
+    nieuw: [
+      "Bovenin staat naast het aantal gezinnen en personen nu ook hoeveel huisbezoeken je per jaar nodig hebt om iedereen volgens schema te bezoeken (2x per jaar telt 2, 1x per jaar telt 1, om het jaar telt \u00bd). Zo weet je direct hoeveel bezoekavonden je minimaal vrij moet houden; gezinnen die niet meer in de wijk zitten tellen niet mee",
+      "Donkere modus: kies bij \u2699 \u2192 Instellingen \u2192 Weergave voor Automatisch (volgt je computer of telefoon), Licht of Donker. De keuze geldt per apparaat; de overdrachtskaart blijft altijd licht",
+      "Het menu staat nu rechtsboven: \u2630 voor de onderdelen van de app (Bijzondere momenten, Planrondes en \u2014 als die aanstaat \u2014 Bijbelgedeelten) en \u2699 voor beheer (Instellingen, import/export, back-ups en hulp)",
+      "Bijzondere momenten open je met het kalendericoon rechtsboven; het rode stipje laat zien dat er binnen 14 dagen iets aankomt",
+      "Vergrendelen is een compact slot-icoon geworden",
+      "PIN wijzigen staat niet meer in het menu, maar bij \u2699 \u2192 Instellingen \u2192 Beveiliging",
     ],
   },
 };
@@ -685,6 +695,15 @@ function intervalMaanden(gd, gezin) {
   return 12;
 }
 
+// Benodigde huisbezoeken per jaar om de hele ronde rond te krijgen: een tweejaarlijks gezin
+// telt 2, een jaarlijks 1 en een gezin dat om het jaar aan de beurt is ½ — oftewel het totaal
+// over twee jaar gedeeld door twee. Gezinnen die niet meer in de wijk zitten tellen niet mee.
+function bezoekenPerJaar(gezinnen) {
+  return gezinnen
+    .filter((g) => !isVervallenGezin(g))
+    .reduce((som, g) => som + 12 / intervalMaanden(getGezinsdata(g.gezinsKey), g), 0);
+}
+
 function berekenVolgendContact(gd, gezin) {
   if (gd.volgendContactOverride) return gd.volgendContactOverride;
   const regulier = gd.laatsteContact ? addMonths(gd.laatsteContact, intervalMaanden(gd, gezin)) : "";
@@ -879,6 +898,25 @@ function defaultGezinsdata() {
   return { schema: "auto", customMaanden: "", laatsteContact: "", volgendContactOverride: "", gelezenGedeelte: "", notitie: "", historie: [], algemeneNotitie: "", gepland: [], favoriet: false };
 }
 
+const SVG_ICOON = (inhoud) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inhoud}</svg>`;
+const ICOON_BIJZONDERE_MOMENTEN = SVG_ICOON('<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M12 11.6l1.06 2.15 2.37.34-1.72 1.67.41 2.36L12 17l-2.12 1.12.41-2.36-1.72-1.67 2.37-.34z" fill="currentColor" stroke-width="1"/>');
+const ICOON_TANDWIEL = SVG_ICOON('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>');
+const KLEUR_MODI = [
+  { key: "auto", label: "Automatisch (volgt het systeem)", icoon: SVG_ICOON('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>') },
+  { key: "licht", label: "Licht", icoon: SVG_ICOON('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>') },
+  { key: "donker", label: "Donker", icoon: SVG_ICOON('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>') },
+];
+
+// Dag/nacht-modus: zonder data-theme volgt styles.css het systeem (prefers-color-scheme).
+// De keuze staat ook in localStorage, zodat index.html hem al vóór het laden van IndexedDB
+// toepast en een donkere gebruiker niet eerst een lichte flits ziet.
+function pasKleurModusToe() {
+  const thema = state.kleurModus === "licht" ? "light" : state.kleurModus === "donker" ? "dark" : null;
+  if (thema) document.documentElement.setAttribute("data-theme", thema);
+  else document.documentElement.removeAttribute("data-theme");
+  try { localStorage.setItem("contactplanner-kleurmodus", state.kleurModus); } catch (e) { /* bv. privévenster */ }
+}
+
 function getGezinsdata(gezinsKey) {
   return state.gezinsdata[gezinsKey] || defaultGezinsdata();
 }
@@ -997,6 +1035,7 @@ const state = {
   afspraakDraft: { onderwerp: "Huisbezoek inplannen", tekst: "", datum: "", tijd: "19:30" },
   afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }, { ...STANDAARD_TIJDSLOT_SJABLOON }],
   afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
+  kleurModus: "auto", // auto | licht | donker — dag/nacht-modus; "auto" volgt het systeem. Apparaat-instelling, gaat niet mee in de back-up
   mailMethode: "outlook", // mailto | outlook — Outlook op het web is de standaard voor nieuwe gebruikers
   whatsappMethode: "web", // web | desktop — WhatsApp Web in één vast tabblad, of de WhatsApp-app op deze computer
   planrondeStandaardTijd: "19:30", // standaard starttijd voor nieuwe tijdslots in planrondes — instelling
@@ -1949,14 +1988,8 @@ function render() {
   }
   // Het overzicht is in alle weergaves even breed (lijst, tabel én planning).
   const breed = state.stage === "dashboard";
-  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + overdrachtskaartHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + sidebarMenuHTML() + versieMeldingModalHTML();
+  root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + overdrachtskaartHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + versieMeldingModalHTML();
   attachEvents();
-  if (state.menuOpen) {
-    requestAnimationFrame(() => {
-      const ov = document.getElementById("sidebarOverlay");
-      if (ov) ov.classList.add("sidebar-open");
-    });
-  }
 }
 
 function opslagIndicatorHTML() {
@@ -2042,7 +2075,7 @@ function handleidingModalHTML() {
           <li><a href="#hl-notitie">Algemene notitie</a></li>
           <li><a href="#hl-scipio">Scipio-koppeling</a></li>
           <li><a href="#hl-beveiliging">Pin-beveiliging en versleuteling</a></li>
-          <li><a href="#hl-systeem">Gegevens en systeem (dit menu)</a></li>
+          <li><a href="#hl-systeem">Menu's, gegevens en instellingen</a></li>
         </ul>
 
         <h4 id="hl-import">Excel importeren</h4>
@@ -2085,7 +2118,7 @@ function handleidingModalHTML() {
         <p>Nieuwe gezinnen staan standaard op <strong>"Automatisch"</strong>: het bezoekinterval wordt dan
         berekend uit de leeftijd van het gezinshoofd en de gezinssamenstelling. Standaard: tot 70 jaar om
         het jaar, vanaf 70 als stel 1x per jaar, en vanaf 70 alleenwonend 2x per jaar. De leeftijdsgrens
-        en de drie intervallen stel je zelf in via menu → Instellingen; daar kun je ook in één keer
+        en de drie intervallen stel je zelf in via ⚙ → Instellingen; daar kun je ook in één keer
         alle gezinnen op Automatisch zetten. Wil je voor een gezin afwijken, dan kies je in het
         gezinsdossier een handmatig schema: 2x per jaar, 1x per jaar, om het jaar, of een aangepast aantal
         maanden. <strong>Belangrijk:</strong> alleen een contactmoment van het soort "Huisbezoek" telt mee als
@@ -2095,6 +2128,11 @@ function handleidingModalHTML() {
         aangaf (dan geldt die latere datum). Op elke kaart zie je een gekleurde balk (status: rood/oranje/groen,
         hover voor uitleg) en een gekleurd bolletje (interval: rood = 2x/jaar, oranje = 1x/jaar, groen = om het
         jaar, blauw = aangepast).</p>
+        <p><strong>Bezoeken per jaar:</strong> bovenin, naast het aantal gezinnen en personen, staat hoeveel
+        huisbezoeken je per jaar nodig hebt om alle gezinnen volgens hun schema te bezoeken. Een gezin op
+        2x per jaar telt 2, op 1x per jaar telt 1 en om het jaar telt \u00bd \u2014 het totaal over twee jaar
+        gedeeld door twee, naar boven afgerond. Zo weet je hoeveel bezoekavonden je minimaal vrij moet
+        houden. Gezinnen die niet meer in de laatste import voorkomen tellen niet mee.</p>
 
         <h4 id="hl-bijzonder">Inplannen — (Bijzonder) contactmoment</h4>
         <p>Voor iets buiten het gewone ritme, zoals een ziekenhuisopname: plan een datum, eventueel een tijd,
@@ -2111,12 +2149,12 @@ function handleidingModalHTML() {
         <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>:
         <span class="mono">[naam]</span> wordt ingevuld zodra je een sjabloon kiest of een gezin opent,
         <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> pas bij het versturen. Je beheert
-        je eigen sjablonen via menu → Instellingen — handig als je verschillende contacten anders aanspreekt,
+        je eigen sjablonen via ⚙ → Instellingen — handig als je verschillende contacten anders aanspreekt,
         want je kunt er zoveel maken als je wilt en per afspraak kiezen welke je gebruikt. Ook "Mail sturen"
         bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
         standaard mailprogramma van je apparaat (mailto), of direct een nieuw bericht in Outlook op het
-        web (Microsoft 365) — instelbaar via menu → Instellingen → E-mail.
-        Voor de WhatsApp-knoppen is er een vergelijkbare instelling (menu → Instellingen → WhatsApp):
+        web (Microsoft 365) — instelbaar via ⚙ → Instellingen → E-mail.
+        Voor de WhatsApp-knoppen is er een vergelijkbare instelling (⚙ → Instellingen → WhatsApp):
         <strong>WhatsApp Web</strong> opent steeds hetzelfde tabblad (zodat WhatsApp je niet bij elke
         klik in het vorige tabblad afmeldt), of kies <strong>de WhatsApp-app op deze computer</strong> —
         dan opent het bericht direct in de app, helemaal zonder tabbladen.</p>
@@ -2178,8 +2216,9 @@ function handleidingModalHTML() {
           alleen als er een partner in het gezin zit en de burgerlijke staat niet op weduwschap/scheiding wijst.</li>
           <li><strong>Gepland</strong> \u2014 de bijzondere contactmomenten die je zelf hebt ingepland.</li>
         </ul>
-        <p>Je filtert op "komende 90 dagen" of "alles", en er verschijnt een rood bolletje bij de knop zodra
-        er binnen 14 dagen iets aankomt.</p>
+        <p>Je opent het overzicht met het kalendericoon rechtsboven (of via \u2630 \u2192 Bijzondere momenten).
+        Je filtert op "komende 90 dagen" of "alles", en er verschijnt een rood bolletje op het kalendericoon
+        zodra er binnen 14 dagen iets aankomt.</p>
 
         <h4 id="hl-weergaves">Sorteren en weergaves</h4>
         <p>Boven het overzicht kies je een sortering (urgentie, naam, adres, plaats, laatste/volgend contact)
@@ -2208,7 +2247,7 @@ function handleidingModalHTML() {
 
         <h4 id="hl-beveiliging">Pin-beveiliging en versleuteling</h4>
         <p>De hele app is met een pin beveiligd; na het invoeren heb je een uur toegang, daarna moet je 'm
-        opnieuw invoeren. De gegevens staan bovendien <strong>versleuteld</strong> in de browseropslag
+        opnieuw invoeren. Met het slot-icoon rechtsboven vergrendel je eerder. De gegevens staan bovendien <strong>versleuteld</strong> in de browseropslag
         (AES-256; de sleutel wordt van de pin afgeleid en de pin zelf wordt nergens bewaard). Vanaf het
         slotscherm kun je zonder pin wel de verjaardagen en huwelijksjubilea uit "Bijzondere momenten"
         bekijken \u2014 die namen en datums staan daarvoor bewust onversleuteld in een klein hulplijstje;
@@ -2220,7 +2259,12 @@ function handleidingModalHTML() {
         dat zelf goed beveiligd is (eigen account, schermvergrendeling, versleutelde schijf), of kies een
         langere pin \u2014 alle tekens zijn toegestaan.</p>
 
-        <h4 id="hl-systeem">Gegevens en systeem (dit menu)</h4>
+        <h4 id="hl-systeem">Menu's, gegevens en instellingen</h4>
+        <p>Rechtsboven staan naast de back-upstatus vier iconen: het <strong>kalendericoon</strong> opent
+        Bijzondere momenten, <strong>\u2630</strong> bevat de onderdelen van de app (Bijzondere momenten,
+        Planrondes en \u2014 als die functie aanstaat \u2014 Bijbelgedeelten), <strong>\u2699</strong> bevat het
+        beheer (Instellingen, gegevens en hulp) en het <strong>slotje</strong> vergrendelt de app direct.
+        Met het logo linksboven ga je terug naar het hoofdscherm.</p>
         <p><strong>Nieuwe Excel-import</strong> ververst de basisgegevens. <strong>Exporteer naar Excel</strong> maakt
         een volledig exportbestand inclusief contactstatus. <strong>Back-up maken/terugzetten</strong> (.json) is je
         vangnet, want alle gegevens staan alleen lokaal in deze browser op deze computer; sinds versie 3
@@ -2235,9 +2279,11 @@ function handleidingModalHTML() {
         in plaats daarvan zelf een locatie kiezen (Chrome/Edge). Bewaar je back-up bij voorkeur niet
         alléén op dit apparaat: gaat je laptop stuk, kwijt of gestolen, dan is een back-up op diezelfde
         schijf net zo kwetsbaar — kies daarom bijvoorbeeld een map die met OneDrive synchroniseert, een
-        externe schijf of USB-stick. <strong>Instellingen</strong> bevat verder de
-        regels voor het automatische terugkeerschema. <strong>Debug</strong> toont technische logs als er iets
-        misgaat. <strong>PIN wijzigen</strong> past je toegangscode aan.</p>
+        externe schijf of USB-stick. <strong>Instellingen</strong> bevat verder onder meer de
+        regels voor het automatische terugkeerschema, de <strong>Weergave</strong> (Automatisch, Licht of
+        Donker \u2014 Automatisch volgt je computer of telefoon; de keuze geldt per apparaat) en
+        <strong>Beveiliging</strong>, waar je je pin wijzigt. <strong>Debug</strong> toont technische logs als er iets
+        misgaat.</p>
 
       </div>
     </div>
@@ -2297,6 +2343,17 @@ function instellingenPaginaHTML() {
 
       <div class="instellingen-kolom">
         <section class="instellingen-kaart">
+          <h4>Weergave</h4>
+          <p class="instellingen-uitleg">
+            Automatisch volgt je computer of telefoon. Geldt alleen voor dit apparaat; de
+            overdrachtskaart blijft altijd licht.
+          </p>
+          <div class="schema-grid schema-grid-iconen">
+            ${KLEUR_MODI.map((m) => `<div class="schema-opt ${state.kleurModus === m.key ? "active" : ""}" data-kleurmodus="${m.key}" title="${m.label}" aria-label="${m.label}">${m.icoon}</div>`).join("")}
+          </div>
+        </section>
+
+        <section class="instellingen-kaart">
           <h4>E-mail</h4>
           <p class="instellingen-uitleg">
             Waar de knoppen "Mail sturen" en "Open in e-mail" naartoe moeten linken.
@@ -2334,33 +2391,45 @@ function instellingenPaginaHTML() {
         </section>
       </div>
 
-      <section class="instellingen-kaart">
-        <h4>AfspraakPlanner</h4>
-        <p class="instellingen-uitleg">
-          Voor de planrondes in de Planningweergave: gemeenteleden kiezen daar zelf een
-          tijdslot. Alleen regnr en tijdslot gaan naar deze server, nooit namen of adressen.
-          Je persoonlijke API-sleutel vraag je op bij Ruben van der Kolk —
-          <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>. Vul hem hier in en deel hem
-          verder met niemand (net zoals je pin).
-        </p>
-        <div class="field-row">
-          <label>API-sleutel</label>
-          <input type="password" id="instAfspraakplannerSleutel" autocomplete="off" value="${esc(state.afspraakplannerApiSleutel)}" />
-        </div>
-        <p class="instellingen-waarschuwing">
-          ⚠ Deze API-sleutel gaat <strong>niet</strong> mee in de back-up — die is bewust
-          onversleuteld. Vul de sleutel op een nieuw apparaat opnieuw in.
-        </p>
-        <div class="field-row">
-          <label>Basis-URL</label>
-          <input type="url" id="instAfspraakplannerUrl" placeholder="https://afspraak.hhgputten.nl" value="${esc(state.afspraakplannerBasisUrl)}" />
-        </div>
-        ${state.afspraakplannerApiSleutel ? `
-        <div class="field-row">
-          <label>Standaard starttijd voor tijdslots in planrondes</label>
-          <input type="time" id="instPlanrondeTijd" value="${esc(state.planrondeStandaardTijd)}" style="max-width:120px;" />
-        </div>` : ""}
-      </section>
+      <div class="instellingen-kolom">
+        <section class="instellingen-kaart">
+          <h4>Beveiliging</h4>
+          <p class="instellingen-uitleg">
+            De pin beveiligt de app en versleutelt je gegevens. Na het invoeren heb je een uur toegang;
+            met het slotje rechtsboven vergrendel je eerder. Bij het wijzigen worden alle gegevens direct
+            opnieuw versleuteld met de nieuwe pin.
+          </p>
+          <button class="btn-sm" id="btnPinWijzigen">PIN wijzigen</button>
+        </section>
+
+        <section class="instellingen-kaart">
+          <h4>AfspraakPlanner</h4>
+          <p class="instellingen-uitleg">
+            Voor de planrondes in de Planningweergave: gemeenteleden kiezen daar zelf een
+            tijdslot. Alleen regnr en tijdslot gaan naar deze server, nooit namen of adressen.
+            Je persoonlijke API-sleutel vraag je op bij Ruben van der Kolk —
+            <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>. Vul hem hier in en deel hem
+            verder met niemand (net zoals je pin).
+          </p>
+          <div class="field-row">
+            <label>API-sleutel</label>
+            <input type="password" id="instAfspraakplannerSleutel" autocomplete="off" value="${esc(state.afspraakplannerApiSleutel)}" />
+          </div>
+          <p class="instellingen-waarschuwing">
+            ⚠ Deze API-sleutel gaat <strong>niet</strong> mee in de back-up — die is bewust
+            onversleuteld. Vul de sleutel op een nieuw apparaat opnieuw in.
+          </p>
+          <div class="field-row">
+            <label>Basis-URL</label>
+            <input type="url" id="instAfspraakplannerUrl" placeholder="https://afspraak.hhgputten.nl" value="${esc(state.afspraakplannerBasisUrl)}" />
+          </div>
+          ${state.afspraakplannerApiSleutel ? `
+          <div class="field-row">
+            <label>Standaard starttijd voor tijdslots in planrondes</label>
+            <input type="time" id="instPlanrondeTijd" value="${esc(state.planrondeStandaardTijd)}" style="max-width:120px;" />
+          </div>` : ""}
+        </section>
+      </div>
 
       <section class="instellingen-kaart instellingen-kaart-breed">
         <h4>Berichtsjablonen (datum afspraak voorstellen)</h4>
@@ -2399,7 +2468,7 @@ function instellingenPaginaHTML() {
               haalt bij het opstarten de nieuwste versie op als een ander apparaat recenter was.
               De back-up wordt op dit apparaat versleuteld met een sleutel afgeleid van je
               API-sleutel — de server (en de beheerder) kan de inhoud niet lezen. Handmatige
-              lokale back-ups blijven daarnaast gewoon mogelijk via menu → Back-up maken.
+              lokale back-ups blijven daarnaast gewoon mogelijk via ⚙ → Back-up maken.
             </p>
             <div class="schema-grid">
               <div class="schema-opt ${state.onlineBackupActief ? "active" : ""}" data-onlinebackup="aan">Aan</div>
@@ -2430,7 +2499,7 @@ function instellingenPaginaHTML() {
             <h4>Bijbelgedeelten</h4>
             <p class="instellingen-uitleg">
               Je eigen naslag van besproken bijbelgedeelten, doorzoekbaar op alle velden.
-              Staat de functie aan, dan vind je het overzicht in het menu, onder "Pastoraal".
+              Staat de functie aan, dan vind je het overzicht in het menu ☰ rechtsboven.
             </p>
             <div class="schema-grid">
               <div class="schema-opt ${state.bijbelgedeeltenActief ? "active" : ""}" data-bijbelgedeelten="aan">Aan</div>
@@ -2455,67 +2524,81 @@ async function zetAlleGezinnenOpAuto() {
   render();
 }
 
-function sidebarMenuHTML() {
-  if (!state.menuOpen) return "";
+// Rechtsboven twee uitklapmenu's: ☰ voor de onderdelen van de app (waar wil ik heen) en
+// ⚙ voor beheer (hoe regel ik het). state.menuOpen is "navigatie", "instellingen" of false.
+function navigatieMenuItemsHTML() {
+  if (!state.personen.length) return "";
   return `
-  <div class="sidebar-overlay" id="sidebarOverlay">
-    <div class="sidebar-panel" id="sidebarPanel">
-      <div class="sidebar-header">
-        <div style="display:flex;align-items:center;gap:9px;">
-          <img class="brand-logo" style="width:28px;height:28px;border-radius:8px;" src="icons/icon-192.png" alt="" />
-          <span class="brand-title" style="font-size:15px;">Menu</span>
-        </div>
-        <button class="btn-ghost btn-sm" id="btnSluitMenu">\u2715</button>
-      </div>
-      ${state.stage === "dashboard" ? `
-        <div class="sidebar-groep-label">Gegevens</div>
-        <input id="fileImportExcel" type="file" accept=".xlsx,.xls" style="display:none" />
-        ${menuItemHTML("btnImportExcel", "\u2191", "var(--green)", "var(--green-bg)", "Nieuwe Excel-import")}
-        ${menuItemHTML("btnExportExcel", "\u2193", "var(--blue)", "var(--blue-bg)", "Exporteer naar Excel")}
-        <input id="fileImportBackup" type="file" accept=".json" style="display:none" />
-        ${menuItemHTML("btnImportBackup", "\u21ba", "var(--amber)", "var(--amber-bg)", "Back-up terugzetten")}
-        ${menuItemHTML("btnExportBackup", "\u2913", "var(--accent)", "var(--accent-soft)", "Back-up maken")}
-        <div class="sidebar-divider"></div>
-      ` : ""}
-      ${heeftServerFeature("bijbelgedeelten") && state.bijbelgedeeltenActief ? `
-        <div class="sidebar-groep-label">Pastoraal</div>
-        ${menuItemHTML("btnBijbelgedeelten", "\ud83d\udcd6", "var(--accent)", "var(--accent-soft)", "Bijbelgedeelten")}
-        <div class="sidebar-divider"></div>
-      ` : ""}
-      <div class="sidebar-groep-label">Systeem</div>
-      ${menuItemHTML("btnInstellingen", "\u2699", "var(--text-soft)", "var(--grey-bg)", "Instellingen")}
-      ${menuItemHTML("btnToonDebug", "\u25c6", "var(--text-soft)", "var(--grey-bg)", "Debug")}
-      ${menuItemHTML("btnPinWijzigen", "\u2022\u2022\u2022", "var(--text-soft)", "var(--grey-bg)", "PIN wijzigen")}
-      ${menuItemHTML("btnReleaseHistorie", "\u2261", "var(--text-soft)", "var(--grey-bg)", "Release historie")}
-      ${menuItemHTML("btnHandleiding", "?", "var(--accent)", "var(--accent-soft)", "Handleiding")}
-      <div class="sidebar-footer">
-        <div class="sidebar-divider"></div>
-        <div class="sidebar-versie">ContactPlanner v${esc(APP_VERSIE)} \u00b7 \u00a9 R.J.J. van der Kolk</div>
-      </div>
-    </div>
-  </div>`;
+    ${menuItemHTML("btnMenuMijlpalen", ICOON_BIJZONDERE_MOMENTEN, "var(--red)", "var(--red-bg)", "Bijzondere momenten")}
+    ${menuItemHTML("btnMenuPlanrondes", SVG_ICOON('<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 14h3M8 17h6"/>'), "var(--blue)", "var(--blue-bg)", `Planrondes${state.afspraakAanvragen.length ? ` (${state.afspraakAanvragen.length})` : ""}`)}
+    ${heeftServerFeature("bijbelgedeelten") && state.bijbelgedeeltenActief ? menuItemHTML("btnBijbelgedeelten", "\ud83d\udcd6", "var(--accent)", "var(--accent-soft)", "Bijbelgedeelten") : ""}`;
+}
+
+function instellingenMenuItemsHTML() {
+  // "Instellingen" staat los bovenaan: het belangrijkste item, zonder dubbele groepskop.
+  return `
+    <div class="menu-hoofditem">${menuItemHTML("btnInstellingen", ICOON_TANDWIEL, "var(--accent)", "var(--accent-soft)", "Instellingen")}</div>
+    <div class="sidebar-divider"></div>
+    ${state.stage === "dashboard" ? `
+      <div class="sidebar-groep-label">Gegevens</div>
+      <input id="fileImportExcel" type="file" accept=".xlsx,.xls" style="display:none" />
+      ${menuItemHTML("btnImportExcel", "\u2191", "var(--green)", "var(--green-bg)", "Nieuwe Excel-import")}
+      ${menuItemHTML("btnExportExcel", "\u2193", "var(--blue)", "var(--blue-bg)", "Exporteer naar Excel")}
+      <input id="fileImportBackup" type="file" accept=".json" style="display:none" />
+      ${menuItemHTML("btnImportBackup", "\u21ba", "var(--amber)", "var(--amber-bg)", "Back-up terugzetten")}
+      ${menuItemHTML("btnExportBackup", "\u2913", "var(--accent)", "var(--accent-soft)", "Back-up maken")}
+      <div class="sidebar-divider"></div>
+    ` : ""}
+    <div class="sidebar-groep-label">Hulp</div>
+    ${menuItemHTML("btnHandleiding", "?", "var(--accent)", "var(--accent-soft)", "Handleiding")}
+    ${menuItemHTML("btnReleaseHistorie", "\u2261", "var(--text-soft)", "var(--grey-bg)", "Release historie")}
+    ${menuItemHTML("btnToonDebug", "\u25c6", "var(--text-soft)", "var(--grey-bg)", "Debug")}
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-versie">ContactPlanner v${esc(APP_VERSIE)} \u00b7 \u00a9 R.J.J. van der Kolk</div>`;
+}
+
+// Klik buiten de menu's of Escape sluit een open menu. Eén keer geregistreerd (niet per
+// render); een klik op het andere menu-icoon valt binnen .topbar-menu en wisselt dus direct.
+document.addEventListener("mousedown", (e) => {
+  if (state.menuOpen && !e.target.closest(".topbar-menu")) { state.menuOpen = false; render(); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.menuOpen) { state.menuOpen = false; render(); }
+});
+
+function topbarMenuHTML(soort, icoon, titel, itemsHTML) {
+  const open = state.menuOpen === soort;
+  return `
+    <div class="topbar-menu">
+      <button class="btn-ghost btn-sm btn-icoon${open ? " active" : ""}" data-topbar-menu="${soort}" title="${titel}" aria-label="${titel}" aria-expanded="${open}">${icoon}</button>
+      ${open ? `<div class="topbar-menu-paneel">${itemsHTML}</div>` : ""}
+    </div>`;
 }
 
 function topbarHTML() {
-  const aantalGezinnen = computeGezinnen().length;
+  const gezinnen = computeGezinnen();
+  const aantalGezinnen = gezinnen.length;
   const aantalPersonen = state.personen.length;
+  // Naar boven afgerond: het is het minimum aantal bezoekdagen dat je per jaar vrij moet houden.
+  const perJaar = Math.ceil(bezoekenPerJaar(gezinnen) - 1e-9);
   return `
   <div class="topbar">
     <div class="topbar-links">
-      <button class="hamburger-tile" id="btnHamburger" title="Menu">\u2630</button>
       <div class="brand" id="brandHome" title="Naar het hoofdscherm">
         <img class="brand-logo" src="icons/icon-192.png" alt="ContactPlanner" />
         <div>
           <div class="brand-title">ContactPlanner</div>
-          <div class="brand-sub">${aantalGezinnen} gezin${aantalGezinnen === 1 ? "" : "nen"} \u00b7 ${aantalPersonen} perso${aantalPersonen === 1 ? "on" : "nen"} \u00b7 ${cryptoRuntime.sleutel ? "lokaal versleuteld opgeslagen" : "lokaal opgeslagen"}</div>
+          <div class="brand-sub">${aantalGezinnen} gezin${aantalGezinnen === 1 ? "" : "nen"} \u00b7 ${aantalPersonen} perso${aantalPersonen === 1 ? "on" : "nen"} \u00b7 <span title="Benodigde huisbezoeken per jaar om alle gezinnen volgens hun schema te bezoeken: 2x per jaar telt 2, 1x per jaar telt 1, om het jaar telt \u00bd (het totaal over twee jaar gedeeld door twee). Gezinnen die niet meer in de wijk zitten tellen niet mee.">${perJaar} bezoek${perJaar === 1 ? "" : "en"} per jaar</span> \u00b7 ${cryptoRuntime.sleutel ? "lokaal versleuteld opgeslagen" : "lokaal opgeslagen"}</div>
         </div>
       </div>
     </div>
     <div class="topbar-actions">
       ${opslagIndicatorHTML()}
       ${backupIndicatorHTML()}
-      ${state.stage === "dashboard" ? `<button id="btnMijlpalenOpen">Bijzondere momenten${heeftDringendeMijlpaal() ? ` <span class="dringend-dot" title="Er is binnen 14 dagen een bijzonder moment"></span>` : ""}</button>` : ""}
-      <button class="btn-ghost btn-sm" id="btnVergrendelNu" title="Nu vergrendelen">Vergrendelen</button>
+      ${state.personen.length ? `<button class="btn-ghost btn-sm btn-icoon" id="btnMijlpalenOpen" title="Bijzondere momenten${heeftDringendeMijlpaal() ? " \u2014 er is binnen 14 dagen een bijzonder moment" : ""}" aria-label="Bijzondere momenten">${ICOON_BIJZONDERE_MOMENTEN}${heeftDringendeMijlpaal() ? `<span class="dringend-dot icoon-badge"></span>` : ""}</button>` : ""}
+      ${navigatieMenuItemsHTML() ? topbarMenuHTML("navigatie", SVG_ICOON('<path d="M4 6h16M4 12h16M4 18h16"/>'), "Menu", navigatieMenuItemsHTML()) : ""}
+      ${topbarMenuHTML("instellingen", ICOON_TANDWIEL, "Instellingen en beheer", instellingenMenuItemsHTML())}
+      <button class="btn-ghost btn-sm btn-icoon" id="btnVergrendelNu" title="Nu vergrendelen" aria-label="Nu vergrendelen">${SVG_ICOON('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')}</button>
     </div>
   </div>
   <div id="foutBanner" class="fout-banner${foutBannerType === "info" ? " info-banner" : ""}" style="display:${foutBannerTekst ? "flex" : "none"};">
@@ -3733,7 +3816,7 @@ function detailHTML() {
       ${gd.schema === "auto" ? `
         <div style="font-size:12px;color:var(--text-soft);margin-top:6px;">
           Voor dit gezin betekent dat nu: <strong>${esc(basisSchemaLabel(bepaalAutoSchema(gezin)))}</strong>
-          (leeftijdsgrens en intervallen aanpassen kan via menu → Instellingen).
+          (leeftijdsgrens en intervallen aanpassen kan via ⚙ → Instellingen).
         </div>` : ""}
       ${gd.schema === "aangepast" ? `
         <div class="field-row" style="margin-top:8px;">
@@ -3836,7 +3919,7 @@ function detailHTML() {
       <h3 style="font-size:16px;margin-bottom:4px;">Datum afspraak voorstellen</h3>
       <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
         Vul een datum/tijd in en pas de tekst zo nodig aan. <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>
-        worden bij het openen automatisch vervangen. Sjablonen beheer je via menu → Instellingen.
+        worden bij het openen automatisch vervangen. Sjablonen beheer je via ⚙ → Instellingen.
       </p>
       <div class="field-row">
         <label>Sjabloon</label>
@@ -3932,12 +4015,19 @@ function attachEvents() {
   if ($("#btnBackupNu")) $("#btnBackupNu").addEventListener("click", exporteerBackup);
   if ($("#btnOnlineBackupRetry")) $("#btnOnlineBackupRetry").addEventListener("click", () => synchroniseerOnlineBackup());
 
-  if ($("#btnHamburger")) $("#btnHamburger").addEventListener("click", () => { state.menuOpen = !state.menuOpen; render(); });
-  if ($("#btnSluitMenu")) $("#btnSluitMenu").addEventListener("click", () => { state.menuOpen = false; render(); });
-  if ($("#sidebarOverlay")) $("#sidebarOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "sidebarOverlay") { state.menuOpen = false; render(); } });
+  $$("[data-topbar-menu]").forEach((el) => el.addEventListener("click", (e) => {
+    const soort = e.currentTarget.dataset.topbarMenu;
+    state.menuOpen = state.menuOpen === soort ? false : soort;
+    render();
+  }));
   $$(".sidebar-item").forEach((el) => el.addEventListener("click", () => { state.menuOpen = false; }, { capture: false }));
 
-  if ($("#btnMijlpalenOpen")) $("#btnMijlpalenOpen").addEventListener("click", () => { state.stage = "mijlpalen"; render(); });
+  const openMijlpalen = () => { state.stage = "mijlpalen"; state.menuOpen = false; render(); };
+  if ($("#btnMijlpalenOpen")) $("#btnMijlpalenOpen").addEventListener("click", openMijlpalen);
+  if ($("#btnMenuMijlpalen")) $("#btnMenuMijlpalen").addEventListener("click", openMijlpalen);
+  if ($("#btnMenuPlanrondes")) $("#btnMenuPlanrondes").addEventListener("click", () => {
+    state.stage = "planrondes"; state.planrondeDetailId = null; state.menuOpen = false; render();
+  });
   if ($("#btnMijlpalenTerug")) $("#btnMijlpalenTerug").addEventListener("click", () => { state.stage = "dashboard"; render(); });
   attachMijlpalenEvents();
 
@@ -4035,6 +4125,12 @@ function attachEvents() {
     });
   });
   if ($("#btnAllesOpAuto")) $("#btnAllesOpAuto").addEventListener("click", zetAlleGezinnenOpAuto);
+  $$("[data-kleurmodus]").forEach((el) => el.addEventListener("click", async (e) => {
+    state.kleurModus = e.currentTarget.dataset.kleurmodus;
+    pasKleurModusToe();
+    await veiligOpslaan(() => dbSetInstelling("kleurModus", state.kleurModus), "instelling opslaan");
+    render();
+  }));
   $$("[data-mailmethode]").forEach((el) => el.addEventListener("click", async (e) => {
     state.mailMethode = e.currentTarget.dataset.mailmethode;
     await veiligOpslaan(() => dbSetInstelling("mailMethode", state.mailMethode), "instelling opslaan");
@@ -5519,6 +5615,8 @@ function vergrendelNu() {
     });
     if (Array.isArray(instellingenMap.afspraakSjablonen) && instellingenMap.afspraakSjablonen.length) state.afspraakSjablonen = instellingenMap.afspraakSjablonen;
     if (typeof instellingenMap.afspraakSjabloonId === "string") state.afspraakSjabloonId = instellingenMap.afspraakSjabloonId;
+    if (["auto", "licht", "donker"].includes(instellingenMap.kleurModus)) state.kleurModus = instellingenMap.kleurModus;
+    pasKleurModusToe();
     if (instellingenMap.mailMethode === "mailto" || instellingenMap.mailMethode === "outlook") state.mailMethode = instellingenMap.mailMethode;
     if (instellingenMap.whatsappMethode === "web" || instellingenMap.whatsappMethode === "desktop") state.whatsappMethode = instellingenMap.whatsappMethode;
     if (Array.isArray(instellingenMap.tabelKolommen)) {

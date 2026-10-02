@@ -14,8 +14,8 @@ gaat.
       Met de gekoppelde AfspraakPlanner maak je het plannen van een bezoek ook voor
       gemeenteleden eenvoudig. Deel de uitnodiging gemakkelijk via WhatsApp of e-mail;
       vervolgens kiest iemand zelf een geschikt moment uit de aangeboden tijdsloten.
-      Daarna zie je direct wie al heeft gekozen en kun je de afspraak met één klik in de
-      planning opnemen.
+      Daarna zie je direct wie al heeft gekozen, en komt de gekozen afspraak vanzelf in de
+      planning te staan.
     </td>
     <td width="320">
       <img src="img/AfspraakPlanner.png" alt="Een bezoekmoment kiezen in AfspraakPlanner" width="300">
@@ -61,24 +61,49 @@ Daar horen twee verantwoordelijkheden bij:
 - **Automatisch terugkeerschema** — het bezoekinterval wordt berekend uit de leeftijd van het
   gezinshoofd en de gezinssamenstelling (standaard: tot 70 jaar om het jaar, vanaf 70 als
   stel 1× per jaar, alleenwonend 2× per jaar). Leeftijdsgrens en intervallen zijn instelbaar
-  via menu → Instellingen; per gezin kun je ook een handmatig schema kiezen.
+  via ⚙ → Instellingen; per gezin kun je ook een handmatig schema kiezen.
+- **Bezoeken per jaar** — bovenin staat naast het aantal gezinnen en personen hoeveel
+  huisbezoeken er per jaar nodig zijn om iedereen volgens schema te bezoeken: 2× per jaar
+  telt 2, 1× per jaar telt 1, om het jaar telt ½ (het totaal over twee jaar gedeeld door
+  twee, naar boven afgerond). Zo weet je hoeveel bezoekavonden je minimaal vrij moet houden.
+  Gezinnen die niet meer in de laatste import voorkomen tellen niet mee.
 - **Weergaven** — lijst, twee kolommen, sorteerbare tabel en een planbord (achterstallig /
   komende maand / dit kwartaal / komend halfjaar / verder vooruit).
 - **Bijzondere momenten** — verjaardagen vanaf een instelbare leeftijd, huwelijksjubilea in
-  instelbare jaren en zelf ingeplande bijzondere bezoeken, met een attentiestip zodra er
-  binnen 14 dagen iets aankomt.
+  instelbare jaren en zelf ingeplande bijzondere bezoeken. Te openen via het kalendericoon
+  rechtsboven, dat een rood attentiestipje krijgt zodra er binnen 14 dagen iets aankomt.
 - **Datum afspraak voorstellen** — e-mail- of WhatsApp-bericht met invulbaar sjabloon, en een
   Scipio-link per persoon.
 - **AfspraakPlanner-koppeling** — zet vanuit het planbord een aanvraag uit waarbij gezinnen
-  zelf een tijdslot kiezen (via de losse AfspraakPlanner-app); volg via "Lopende aanvragen"
-  wie al gekozen heeft en neem een gekozen afspraak met één klik over in de planning.
+  zelf een tijdslot kiezen (via de losse AfspraakPlanner-app). Op de pagina Planrondes
+  (☰ → Planrondes, of de knop in de planningweergave) volg je wie al gekozen heeft; een gekozen
+  tijdslot komt automatisch als gepland contactmoment in het gezinsdossier en in Bijzondere
+  momenten.
 - **Pin-beveiliging met versleuteling** — de gegevens worden met een van de pin afgeleide
-  sleutel versleuteld opgeslagen; na ontgrendelen een uur toegang. Bijzondere momenten zijn
-  ook zonder pin in te zien (zonder gezinsdossiers).
+  sleutel versleuteld opgeslagen; na ontgrendelen een uur toegang, of eerder vergrendelen met
+  het slot-icoon rechtsboven. De pin wijzig je via ⚙ → Instellingen → Beveiliging.
+  Bijzondere momenten zijn ook zonder pin in te zien (zonder gezinsdossiers).
+- **Licht en donker** — via ⚙ → Instellingen → Weergave kies je Automatisch (volgt de
+  instelling van je computer of telefoon), Licht of Donker. De keuze geldt per apparaat en
+  gaat niet mee in de back-up; de overdrachtskaart blijft altijd licht, want die is om af te
+  drukken.
 - **Offline en installeerbaar (PWA)** — eenmaal geopend werkt de app zonder internet en kun
   je hem via "Installeren" / "Zet op beginscherm" als losse app gebruiken.
 
-De volledige uitleg staat in de app zelf: menu → **Handleiding**.
+### Menu
+
+Rechtsboven staan, naast de back-upindicator, vier iconen:
+
+| Icoon | Wat het doet |
+|---|---|
+| 📅 (kalender met ster) | Opent Bijzondere momenten; rood stipje = er komt binnen 14 dagen iets aan |
+| ☰ | De onderdelen van de app: Bijzondere momenten, Planrondes en — als die functie aanstaat — Bijbelgedeelten |
+| ⚙ | Beheer: Instellingen, de gegevens (Excel-import en -export, back-up maken en terugzetten) en hulp (Handleiding, Release historie, Debug) |
+| 🔒 | Direct vergrendelen |
+
+Klik op het logo linksboven om vanuit elk scherm terug te gaan naar het hoofdscherm.
+
+De volledige uitleg staat in de app zelf: ⚙ → **Handleiding**.
 
 ## Aan de slag
 
@@ -96,7 +121,7 @@ De browseropslag is gebonden aan de herkomst (origin): wissel je van computer, v
 of van een lokaal geopend bestand naar de online versie, dan begint de app daar leeg. Zo
 neem je alles mee:
 
-1. **Oude omgeving:** klik op de back-upindicator rechtsboven (of menu → *Back-up maken*)
+1. **Oude omgeving:** klik op de back-upindicator rechtsboven (of ⚙ → *Back-up maken*)
    en bewaar het `.json`-bestand.
 2. **Nieuwe omgeving:** stel een pin in en kies op het startscherm
    *"of zet een eerdere back-up terug (.json)"*.
@@ -117,13 +142,22 @@ lege app die alleen met de eigen, lokale gegevens werkt.
 
 ## Voor wie aan de code werkt
 
-Statische site zonder build-stap — bewerk de bestanden en ververs de browser.
+Statische site zonder build-stap — bewerk de bestanden en ververs de browser. Lokaal
+bekijken gaat het makkelijkst met een eenvoudige webserver in de projectmap:
+
+```sh
+python3 -m http.server 8000
+```
+
+en dan `http://localhost:8000`. Let op: de browser en de service worker kunnen een oude
+versie van `styles.css`/`app.js` blijven tonen. Ververs dan hard (Cmd+Shift+R), of vink in de
+ontwikkelaarstools onder *Netwerk* "Cache uitschakelen" aan.
 
 | Bestand | Inhoud |
 |---|---|
 | `index.html` | Pagina-skelet, laadt de overige bestanden |
 | `app.js` | Alle applicatielogica en UI (templates + events) |
-| `styles.css` | Vormgeving |
+| `styles.css` | Vormgeving; alle kleuren staan als variabelen in `:root`, met een donkere set eronder |
 | `sw.js` | Service worker: offline-cache |
 | `manifest.webmanifest` | PWA-manifest (naam, iconen, kleuren) |
 | `icons/` | App-iconen (192 en 512 px) |
@@ -132,15 +166,24 @@ Statische site zonder build-stap — bewerk de bestanden en ververs de browser.
 
 Gegevensopslag: IndexedDB met als kern de store `kluis` — daarin staan alle personen en
 gezinsgegevens als één AES-256-GCM-versleuteld blok. Daarnaast `instellingen` (onversleuteld:
-schema-instellingen, pin-zout, sleutelcontrole, mijlpalen-cache) en de legacy-stores
+schema-instellingen, pin-zout, sleutelcontrole, mijlpalen-cache, kleurmodus) en de legacy-stores
 `personen`/`gezinsdata` die alleen nog dienen voor de eenmalige migratie van oudere
-installaties en als vangnet in browsers zonder Web Crypto.
+installaties en als vangnet in browsers zonder Web Crypto. De gekozen kleurmodus staat
+daarnaast ook in `localStorage` (`contactplanner-kleurmodus`), zodat `index.html` hem al
+toepast vóórdat IndexedDB geladen is — anders zou een donkere gebruiker eerst een lichte
+flits zien.
+
+**Licht en donker:** gebruik in `styles.css` altijd de kleurvariabelen (`var(--surface)`,
+`var(--text)`, …) in plaats van vaste kleuren. Een nieuwe kleur voeg je toe aan `:root` én
+aan beide donkere blokken (`@media (prefers-color-scheme: dark)` en
+`:root[data-theme="dark"]`). Zonder `data-theme` op `<html>` volgt de app het systeem;
+Instellingen zet `data-theme="light"` of `"dark"` bij een bewuste keuze.
 
 **Belangrijk bij elke wijziging die je publiceert:** verhoog `CACHE_VERSIE` in `sw.js`
 (bijv. `contactplanner-v2`), anders blijven bestaande bezoekers op de oude offline-versie
 hangen tot hun service worker ververst.
 
-Werk daarnaast `APP_VERSIE` in `app.js` bij — het versienummer onderin het menu. Dit is een
+Werk daarnaast `APP_VERSIE` in `app.js` bij — het versienummer onderin het ⚙-menu. Dit is een
 los, semantisch nummer met als notatie `bestaansjaar.maand.releasenr`: het eerste cijfer is
 in welk jaar sinds de start van de app je zit (1 = het eerste jaar), het tweede de
 kalendermaand, en het derde het releasenummer in die maand (begint weer bij 1 in een nieuwe

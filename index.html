@@ -10,6 +10,14 @@
 <link rel="icon" href="icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
 <link rel="stylesheet" href="styles.css" />
+<script>
+  // Dag/nacht-keuze direct toepassen, vóór de eerste weergave (zie pasKleurModusToe in app.js).
+  try {
+    var w = localStorage.getItem("contactplanner-kleurmodus");
+    if (w === "licht") document.documentElement.setAttribute("data-theme", "light");
+    if (w === "donker") document.documentElement.setAttribute("data-theme", "dark");
+  } catch (e) {}
+</script>
 </head>
 <body>
 <div id="app"></div>
