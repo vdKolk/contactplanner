@@ -167,6 +167,7 @@ const VERSIE_NOTITIES = {
       "Importrapport met schuifjes: bij wie niet meer in de import voorkomt staat \"Behouden\" standaard aan, en bij een verhuisd gezin \"Meeverhuizen\". Zet een schuifje uit voor wat je anders wilt; met \"Alles behouden\" of \"Alles verwijderen\" doe je dat in één keer",
       "Eén knop \"Bijwerken\" voert alle keuzes uit het importrapport in één keer uit, met één bevestiging, en brengt je direct naar het overzicht. De knop \"Laten staan\", die niets zichtbaars deed, is vervallen",
       "Valt door het verwijderen een heel gezin weg, dan waarschuwt het rapport dat de contactmomenten en notities van dat gezin verloren gaan, en kun je eerst een overdrachtskaart maken",
+      "Het standaardsjabloon voor \"Datum afspraak voorstellen\" draagt nu het voorbehoud van Jakobus: \"Zou [datum] om [tijd] uur D.V. schikken?\". Had je de standaardtekst nooit aangepast, dan is hij automatisch bijgewerkt; zelf aangepaste sjablonen blijven zoals ze zijn",
     ],
   },
 };
@@ -209,7 +210,7 @@ const STANDAARD_AFSPRAAK_SJABLOON = {
   id: "standaard",
   naam: "Standaard",
   onderwerp: "Huisbezoek inplannen",
-  tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+  tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen. Zou [datum] om [tijd] uur D.V. schikken?\n\nLaat gerust weten wat het beste past.\n\nMet vriendelijke groet,",
 };
 
 // Standaardsjabloon voor een AfspraakPlanner-uitnodiging (zie afspraakplannerPaginaHTML).
@@ -222,17 +223,26 @@ const STANDAARD_TIJDSLOT_SJABLOON = {
   tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen, zou je hiervoor een geschikt moment willen kiezen? Via de planner kies je wat jou het beste past:\n[link]\n\nMet vriendelijke groet,",
 };
 
-// Standaardwaarden t/m v1.7.9: wie ze nooit heeft aangepast, krijgt bij het laden automatisch
-// de nieuwe standaard hierboven; eigen bewerkingen blijven onaangeroerd (per veld gecontroleerd).
+// Eerdere standaardwaarden: wie ze nooit heeft aangepast, krijgt bij het laden automatisch de
+// nieuwe standaard hierboven; eigen bewerkingen blijven onaangeroerd (per veld gecontroleerd).
+// Per sjabloon een lijst, oudste eerst: t/m v1.7.9, en t/m v1.10.x (zonder het voorbehoud D.V.).
 const OUDE_SJABLOON_STANDAARDEN = {
-  [STANDAARD_AFSPRAAK_SJABLOON.id]: {
-    onderwerp: "Huisbezoek inplannen",
-    tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
-  },
-  [STANDAARD_TIJDSLOT_SJABLOON.id]: {
-    onderwerp: "Kies een moment voor een bezoek",
-    tekst: "Beste [naam],\n\nWilt u een moment kiezen dat u schikt? Klik op de link en kies uw tijdslot:\n[link]\n\nMet vriendelijke groet,",
-  },
+  [STANDAARD_AFSPRAAK_SJABLOON.id]: [
+    {
+      onderwerp: "Huisbezoek inplannen",
+      tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+    },
+    {
+      onderwerp: "Huisbezoek inplannen",
+      tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+    },
+  ],
+  [STANDAARD_TIJDSLOT_SJABLOON.id]: [
+    {
+      onderwerp: "Kies een moment voor een bezoek",
+      tekst: "Beste [naam],\n\nWilt u een moment kiezen dat u schikt? Klik op de link en kies uw tijdslot:\n[link]\n\nMet vriendelijke groet,",
+    },
+  ],
 };
 
 const STATUS_META = {
@@ -2189,7 +2199,8 @@ function handleidingModalHTML() {
         polsen voor een datum. De tekst komt uit een sjabloon met de plekhouders
         <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>:
         <span class="mono">[naam]</span> wordt ingevuld zodra je een sjabloon kiest of een gezin opent,
-        <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> pas bij het versturen. Je beheert
+        <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> pas bij het versturen. De standaardtekst
+        draagt het voorbehoud van Jakobus: "Zou [datum] om [tijd] uur <strong>D.V.</strong> schikken?". Je beheert
         je eigen sjablonen via ⚙ → Instellingen — handig als je verschillende contacten anders aanspreekt,
         want je kunt er zoveel maken als je wilt en per afspraak kiezen welke je gebruikt. Ook "Mail sturen"
         bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
@@ -5716,10 +5727,10 @@ function vergrendelNu() {
     let sjablonenGemigreerd = false;
     [STANDAARD_AFSPRAAK_SJABLOON, STANDAARD_TIJDSLOT_SJABLOON].forEach((standaard) => {
       const eigen = state.afspraakSjablonen.find((s) => s.id === standaard.id);
-      const oud = OUDE_SJABLOON_STANDAARDEN[standaard.id];
-      if (!eigen || !oud) return;
-      if (eigen.tekst === oud.tekst) { eigen.tekst = standaard.tekst; sjablonenGemigreerd = true; }
-      if (eigen.onderwerp === oud.onderwerp && eigen.onderwerp !== standaard.onderwerp) { eigen.onderwerp = standaard.onderwerp; sjablonenGemigreerd = true; }
+      const oude = OUDE_SJABLOON_STANDAARDEN[standaard.id] || [];
+      if (!eigen || !oude.length) return;
+      if (oude.some((o) => o.tekst === eigen.tekst)) { eigen.tekst = standaard.tekst; sjablonenGemigreerd = true; }
+      if (eigen.onderwerp !== standaard.onderwerp && oude.some((o) => o.onderwerp === eigen.onderwerp)) { eigen.onderwerp = standaard.onderwerp; sjablonenGemigreerd = true; }
     });
     if (sjablonenGemigreerd) {
       dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen)
