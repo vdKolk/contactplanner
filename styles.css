@@ -348,6 +348,29 @@ table.gezin-table { width: 100%; border-collapse: collapse; font-size: 12.5px; b
   padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; background: var(--surface);
 }
 .report-row:last-child { border-bottom: none; }
+.report-row-verwijderen { background: var(--red-bg); }
+.report-row-verwijderen .report-naam { text-decoration: line-through; color: var(--text-soft); }
+.report-alles { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 6px; }
+.verwijder-waarschuwing {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px;
+  font-size: 12px; font-weight: 600; color: var(--red);
+}
+
+/* Schuifje (aan/uit), gebouwd op een gewone checkbox zodat het toetsenbord en schermlezers
+   het als keuzevakje blijven zien. */
+.schuifje { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; flex-shrink: 0; user-select: none; }
+.schuifje input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.schuifje-baan {
+  position: relative; width: 34px; height: 20px; border-radius: 999px; background: var(--border-hover);
+  transition: background .15s;
+}
+.schuifje-baan::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--surface); box-shadow: 0 1px 2px rgba(var(--shadow),.25); transition: transform .15s;
+}
+.schuifje input:checked + .schuifje-baan { background: var(--green); }
+.schuifje input:checked + .schuifje-baan::after { transform: translateX(14px); }
+.schuifje input:focus-visible + .schuifje-baan { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 .sectie-prominent { background: var(--accent-soft); border-radius: 12px; padding: 16px 16px 4px; }

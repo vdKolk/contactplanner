@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.10.2"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.10.3"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -162,6 +162,14 @@ const VERSIE_NOTITIES = {
       "In de lichte weergave kregen gezinskaarten, tellers en planrondes bij aanwijzen met de muis een bijna zwarte rand; dat is weer de bedoelde lichte, grijze rand. Ook de rode rand bij foutmeldingen in Debug en de kleur van de scrollbalk zijn hersteld",
     ],
   },
+  "1.10.3": {
+    nieuw: [
+      "Importrapport met schuifjes: bij wie niet meer in de import voorkomt staat \"Behouden\" standaard aan, en bij een verhuisd gezin \"Meeverhuizen\". Zet een schuifje uit voor wat je anders wilt; met \"Alles behouden\" of \"Alles verwijderen\" doe je dat in één keer",
+      "Eén knop \"Bijwerken\" voert alle keuzes uit het importrapport in één keer uit, met één bevestiging, en brengt je direct naar het overzicht. De knop \"Laten staan\", die niets zichtbaars deed, is vervallen",
+      "Valt door het verwijderen een heel gezin weg, dan waarschuwt het rapport dat de contactmomenten en notities van dat gezin verloren gaan, en kun je eerst een overdrachtskaart maken",
+      "Het standaardsjabloon voor \"Datum afspraak voorstellen\" draagt nu het voorbehoud van Jakobus: \"Zou [datum] om [tijd] uur D.V. schikken?\". Had je de standaardtekst nooit aangepast, dan is hij automatisch bijgewerkt; zelf aangepaste sjablonen blijven zoals ze zijn",
+    ],
+  },
 };
 const STORE_PERSONEN = "personen"; // t/m v3: platte gegevens; blijft bestaan voor migratie en als noodvangnet zonder Web Crypto
 const STORE_GEZINSDATA = "gezinsdata"; // idem
@@ -202,7 +210,7 @@ const STANDAARD_AFSPRAAK_SJABLOON = {
   id: "standaard",
   naam: "Standaard",
   onderwerp: "Huisbezoek inplannen",
-  tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+  tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen. Zou [datum] om [tijd] uur D.V. schikken?\n\nLaat gerust weten wat het beste past.\n\nMet vriendelijke groet,",
 };
 
 // Standaardsjabloon voor een AfspraakPlanner-uitnodiging (zie afspraakplannerPaginaHTML).
@@ -215,17 +223,26 @@ const STANDAARD_TIJDSLOT_SJABLOON = {
   tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen, zou je hiervoor een geschikt moment willen kiezen? Via de planner kies je wat jou het beste past:\n[link]\n\nMet vriendelijke groet,",
 };
 
-// Standaardwaarden t/m v1.7.9: wie ze nooit heeft aangepast, krijgt bij het laden automatisch
-// de nieuwe standaard hierboven; eigen bewerkingen blijven onaangeroerd (per veld gecontroleerd).
+// Eerdere standaardwaarden: wie ze nooit heeft aangepast, krijgt bij het laden automatisch de
+// nieuwe standaard hierboven; eigen bewerkingen blijven onaangeroerd (per veld gecontroleerd).
+// Per sjabloon een lijst, oudste eerst: t/m v1.7.9, en t/m v1.10.x (zonder het voorbehoud D.V.).
 const OUDE_SJABLOON_STANDAARDEN = {
-  [STANDAARD_AFSPRAAK_SJABLOON.id]: {
-    onderwerp: "Huisbezoek inplannen",
-    tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
-  },
-  [STANDAARD_TIJDSLOT_SJABLOON.id]: {
-    onderwerp: "Kies een moment voor een bezoek",
-    tekst: "Beste [naam],\n\nWilt u een moment kiezen dat u schikt? Klik op de link en kies uw tijdslot:\n[link]\n\nMet vriendelijke groet,",
-  },
+  [STANDAARD_AFSPRAAK_SJABLOON.id]: [
+    {
+      onderwerp: "Huisbezoek inplannen",
+      tekst: "Beste [naam],\n\nGraag zouden we binnenkort een huisbezoek bij u inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat het gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+    },
+    {
+      onderwerp: "Huisbezoek inplannen",
+      tekst: "Hallo [naam],\n\nGraag wil ik een huisbezoek inplannen. Zou [datum] om [tijd] uur schikken?\n\nLaat gerust weten wat het beste past.\n\nMet vriendelijke groet,",
+    },
+  ],
+  [STANDAARD_TIJDSLOT_SJABLOON.id]: [
+    {
+      onderwerp: "Kies een moment voor een bezoek",
+      tekst: "Beste [naam],\n\nWilt u een moment kiezen dat u schikt? Klik op de link en kies uw tijdslot:\n[link]\n\nMet vriendelijke groet,",
+    },
+  ],
 };
 
 const STATUS_META = {
@@ -875,28 +892,16 @@ async function verplaatsMijlpaalMarkeringen(oudeKey, nieuweKey) {
   }
 }
 
-// Het dossier van het oude naar het nieuwe adres verplaatsen. Ligt er op het nieuwe adres al
-// een gevuld dossier (bijvoorbeeld omdat het gezin naar een adres verhuist waar eerder iemand
-// anders woonde), dan wordt er niets overschreven zonder dat de gebruiker het bevestigt.
-async function verhuisDossier(oudeKey, nieuweKey) {
+// Het dossier van het oude naar het nieuwe adres verplaatsen. Wordt uitgevoerd vanuit
+// "Bijwerken" in het importrapport; een gevuld dossier op het nieuwe adres is daar al
+// expliciet bevestigd, en opslaan gebeurt daar in één keer.
+async function verplaatsDossier(oudeKey, nieuweKey) {
   const dossier = state.gezinsdata[oudeKey];
   if (!dossier) return;
-  if (heeftDossierInhoud(state.gezinsdata[nieuweKey])
-    && !confirm("Op het nieuwe adres staat al een dossier met gegevens. Dat wordt vervangen door het dossier van het oude adres. Doorgaan?")) return;
-
   state.gezinsdata[nieuweKey] = { ...dossier, gezinsKey: nieuweKey };
   delete state.gezinsdata[oudeKey];
   await verplaatsMijlpaalMarkeringen(oudeKey, nieuweKey);
-
-  if (state.importDiff) {
-    state.importDiff = {
-      ...state.importDiff,
-      verhuisd: (state.importDiff.verhuisd || []).map((v) => (v.oudeKey === oudeKey ? { ...v, gedaan: true } : v)),
-    };
-  }
   logDebug("info", "Dossier meeverhuisd", { van: oudeKey, naar: nieuweKey });
-  await veiligOpslaan(bewaarGegevens, "dossier meeverhuizen");
-  render();
 }
 
 function defaultGezinsdata() {
@@ -1556,13 +1561,49 @@ async function bevestigMapping() {
   }
 }
 
-async function verwijderVertrokkenPersoon(regnr) {
-  await verwijderPersoon(regnr);
-  render();
+// Wat gebeurt er met een gezin als deze personen verwijderd worden? Valt het hele gezin weg
+// (er blijft niemand over op dat adres), dan verdwijnt ook het dossier — en daarmee de
+// contactmomenten. Dat tonen we vóórdat je op Bijwerken drukt.
+function gezinnenDieWegvallen(teVerwijderen) {
+  const weg = new Set(teVerwijderen);
+  return computeGezinnen()
+    .filter((g) => g.leden.some((p) => weg.has(p.regnr)) && g.leden.every((p) => weg.has(p.regnr)))
+    .map((g) => ({ gezin: g, aantalContactmomenten: (getGezinsdata(g.gezinsKey).historie || []).length, heeftDossier: heeftDossierInhoud(state.gezinsdata[g.gezinsKey]) }));
 }
 
-async function behoudVertrokkenPersoon(regnr) {
-  // simply leave as-is (already flagged); nothing more to do, just acknowledge
+// "Bijwerken" onder het importrapport: de keuzes uit het rapport in één keer uitvoeren. De
+// import zelf is al opgeslagen; wie het rapport sluit zonder te kiezen raakt dus niets kwijt.
+async function bevestigImportRapport() {
+  const d = state.importDiff || { nieuw: [], vertrokken: [], verhuisd: [] };
+  const verwijderen = (d.verwijderen || []).filter((regnr) => findPersoon(regnr));
+  const verhuizen = (d.verhuisd || []).filter((v) => !v.gedaan && !(d.nietVerhuizen || []).includes(v.oudeKey));
+
+  const bezet = verhuizen.filter((v) => v.doelBezet);
+  if (bezet.length && !confirm(`Op het nieuwe adres van ${bezet.map((v) => v.naam).join(", ")} staat al een dossier met gegevens. Dat wordt vervangen door het dossier van het oude adres. Doorgaan?`)) return;
+
+  if (verwijderen.length) {
+    const wegvallend = gezinnenDieWegvallen(verwijderen).filter((w) => w.heeftDossier);
+    let tekst = `${verwijderen.length} perso${verwijderen.length === 1 ? "on" : "nen"} verwijderen uit de lijst?`;
+    if (wegvallend.length) {
+      tekst += "\n\nDaarmee verdwijnt ook het gezinsdossier van:\n"
+        + wegvallend.map((w) => `\u2022 ${w.gezin.gezinshoofd.naam}${w.aantalContactmomenten ? ` (${w.aantalContactmomenten} contactmoment${w.aantalContactmomenten === 1 ? "" : "en"})` : ""}`).join("\n")
+        + "\n\nDe contactmomenten en notities gaan dan definitief verloren. Heb je al een overdrachtskaart gemaakt?";
+    }
+    if (!confirm(tekst)) return;
+  }
+
+  for (const v of verhuizen) await verplaatsDossier(v.oudeKey, v.nieuweKey);
+  if (verwijderen.length) {
+    gezinnenDieWegvallen(verwijderen).forEach((w) => { delete state.gezinsdata[w.gezin.gezinsKey]; });
+    const weg = new Set(verwijderen);
+    state.personen = state.personen.filter((p) => !weg.has(p.regnr));
+  }
+  if (verhuizen.length || verwijderen.length) {
+    logDebug("info", "Importrapport bijgewerkt", { verhuisd: verhuizen.length, verwijderd: verwijderen.length });
+    if (!await veiligOpslaan(bewaarGegevens, "importrapport bijwerken")) return;
+  }
+  state.importDiff = null;
+  state.stage = "dashboard";
   render();
 }
 
@@ -2090,8 +2131,12 @@ function handleidingModalHTML() {
         kolomnamen aanwijzen \u2014 handig als er een titel- of filterregel boven de echte koppen staat. Daarna
         koppel je kolommen aan velden (Regnr. en Naam zijn verplicht). <strong>Regnr.</strong> is het kenmerk
         waarmee personen bij een volgende import worden herkend. Na de import zie je een rapport met wie
-        nieuw is en wie niet meer voorkwam \u2014 die laatste groep verdwijnt niet automatisch, je kiest zelf
-        per persoon of je 'm laat staan of verwijdert. Laat je ze staan, dan worden gezinnen waarvan
+        nieuw is en wie niet meer voorkwam \u2014 die laatste groep verdwijnt niet automatisch. Per persoon staat
+        het schuifje <strong>Behouden</strong> standaard aan; zet het uit voor wie je uit de lijst wilt halen (met
+        "Alles behouden" / "Alles verwijderen" doe je dat in één keer). Er gebeurt pas iets als je op
+        <strong>Bijwerken</strong> klikt; daarna ga je direct naar het overzicht. Valt daarmee een heel gezin weg,
+        dan gaan ook de contactmomenten en notities van dat gezin verloren \u2014 het rapport waarschuwt je daarvoor
+        en biedt een knop om eerst een <strong>overdrachtskaart</strong> te maken. Laat je ze staan, dan worden gezinnen waarvan
         <em>niemand</em> meer in de import voorkomt in alle overzichten <strong>lichter</strong> getoond: ze blijven
         vindbaar en je raakt niets kwijt, maar ze vragen niet meer om aandacht bij je planning. Wijs je er met de
         muis naartoe, dan komen ze weer op volle sterkte.</p>
@@ -2103,9 +2148,10 @@ function handleidingModalHTML() {
         <p><strong>Verhuizingen:</strong> omdat een gezin op adres wordt herkend, zou het dossier bij een verhuizing
         achterblijven op het oude adres. Daarom kijkt de app bij een import ook naar het <strong>regnr van het
         gezinshoofd</strong> \u2014 dat verandert niet als een gezin verhuist. Herkent hij zo'n verhuizing, dan komt
-        het gezin in het importrapport onder "Verhuisd" te staan met de knop <strong>Dossier meeverhuizen</strong>,
-        zodat de contactgeschiedenis bij het gezin blijft. Het gebeurt niet vanzelf: verhuist een gezin naar een
-        adres waar al een dossier ligt, dan bepaal jij wat er moet gebeuren. Gaat een kind op zichzelf wonen, dan is
+        het gezin in het importrapport onder "Verhuisd" te staan met het schuifje <strong>Meeverhuizen</strong>
+        (standaard aan), zodat de contactgeschiedenis bij het gezin blijft. Het dossier verhuist mee zodra je op
+        Bijwerken klikt; zet het schuifje uit als je dat niet wilt. Verhuist een gezin naar een adres waar al een
+        dossier ligt, dan vraagt de app eerst of dat overschreven mag worden. Gaat een kind op zichzelf wonen, dan is
         dat gewoon een nieuw gezin op een nieuw adres \u2014 dat wordt niet als verhuizing gezien.</p>
 
         <h4 id="hl-loggen">Contactmoment loggen, bewerken en verwijderen</h4>
@@ -2153,7 +2199,8 @@ function handleidingModalHTML() {
         polsen voor een datum. De tekst komt uit een sjabloon met de plekhouders
         <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>:
         <span class="mono">[naam]</span> wordt ingevuld zodra je een sjabloon kiest of een gezin opent,
-        <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> pas bij het versturen. Je beheert
+        <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> pas bij het versturen. De standaardtekst
+        draagt het voorbehoud van Jakobus: "Zou [datum] om [tijd] uur <strong>D.V.</strong> schikken?". Je beheert
         je eigen sjablonen via ⚙ → Instellingen — handig als je verschillende contacten anders aanspreekt,
         want je kunt er zoveel maken als je wilt en per afspraak kiezen welke je gebruikt. Ook "Mail sturen"
         bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
@@ -3173,24 +3220,37 @@ function importReportHTML() {
       </span>
       ${v.gedaan
         ? `<span class="tag-grey" style="color:var(--green);background:var(--green-bg);">\u2713 meeverhuisd</span>`
-        : `<button class="btn-sm btn-primary" data-verhuis-oud="${esc(v.oudeKey)}" data-verhuis-nieuw="${esc(v.nieuweKey)}">Dossier meeverhuizen</button>`}
+        : schuifjeHTML("Meeverhuizen", !(d.nietVerhuizen || []).includes(v.oudeKey), `data-verhuis-keuze="${esc(v.oudeKey)}"`)}
     </div>`).join("");
   const nieuwList = d.nieuw.map((regnr) => {
     const p = findPersoon(regnr);
     return `<div class="report-row"><span>${esc(p ? p.naam : regnr)} <span class="mono" style="color:var(--text-soft);">(${esc(regnr)})</span></span><span class="tag-grey">nieuw</span></div>`;
   }).join("") || `<div class="report-row" style="color:var(--text-soft);">Geen nieuwe personen.</div>`;
 
+  const verwijderen = d.verwijderen || [];
+  // Per gezin dat door deze keuzes helemaal wegvalt: de waarschuwing komt bij het gezinshoofd
+  // (of het eerste lid dat in de lijst staat), samen met de knop voor de overdrachtskaart.
+  const waarschuwingBij = {};
+  gezinnenDieWegvallen(verwijderen).filter((w) => w.heeftDossier).forEach((w) => {
+    const bij = w.gezin.leden.find((p) => p.regnr === w.gezin.gezinshoofd.regnr && d.vertrokken.includes(p.regnr))
+      || w.gezin.leden.find((p) => d.vertrokken.includes(p.regnr));
+    if (bij) waarschuwingBij[bij.regnr] = w;
+  });
   const vertrokkenList = d.vertrokken.map((regnr) => {
     const p = findPersoon(regnr);
     if (!p) return "";
-    return `<div class="report-row">
-      <span>${esc(p.naam)} <span class="mono" style="color:var(--text-soft);">(${esc(regnr)})</span></span>
-      <span style="display:flex;gap:6px;">
-        <button class="btn-sm" data-behoud-vertrokken="${esc(regnr)}">Laten staan</button>
-        <button class="btn-sm btn-danger" data-verwijder-vertrokken="${esc(regnr)}">Verwijderen</button>
+    const behouden = !verwijderen.includes(regnr);
+    const w = waarschuwingBij[regnr];
+    return `<div class="report-row${behouden ? "" : " report-row-verwijderen"}">
+      <span>
+        <span class="report-naam">${esc(p.naam)}</span> <span class="mono" style="color:var(--text-soft);">(${esc(regnr)})</span>
+        ${w ? `<span class="verwijder-waarschuwing">\u26A0 Hiermee verdwijnt het hele gezinsdossier${w.aantalContactmomenten ? `, inclusief ${w.aantalContactmomenten} contactmoment${w.aantalContactmomenten === 1 ? "" : "en"}` : ""}. Heb je al een overdrachtskaart gemaakt?
+          <button class="btn-sm" data-overdracht-gezin="${esc(w.gezin.gezinsKey)}">Overdrachtskaart maken</button></span>` : ""}
       </span>
+      ${schuifjeHTML("Behouden", behouden, `data-behoud-keuze="${esc(regnr)}"`)}
     </div>`;
   }).join("") || `<div class="report-row" style="color:var(--text-soft);">Niemand is weggevallen.</div>`;
+  const heeftKeuzes = d.vertrokken.some((r) => findPersoon(r)) || (d.verhuisd || []).some((v) => !v.gedaan);
 
   return `
     <h2 style="font-size:23px;margin:4px 0 14px;">Importrapport</h2>
@@ -3199,8 +3259,8 @@ function importReportHTML() {
         <div class="report-title">Verhuisd (${d.verhuisd.length})</div>
         <p style="font-size:12.5px;color:var(--text-soft);margin:-4px 0 8px;">
           Zelfde gezinshoofd, nieuw adres. Omdat een gezin op adres wordt herkend, hoort het dossier
-          (contactmomenten, notitie, schema) nog bij het oude adres. Verhuis het mee, dan blijft de
-          geschiedenis bij het gezin.
+          (contactmomenten, notitie, schema) nog bij het oude adres. Laat "Meeverhuizen" aan, dan gaat het
+          dossier bij Bijwerken mee en blijft de geschiedenis bij het gezin.
         </p>
         <div class="report-list">${verhuisdList}</div>
       </div>` : ""}
@@ -3211,11 +3271,21 @@ function importReportHTML() {
     <div class="report-section">
       <div class="report-title">Niet meer in deze import (${d.vertrokken.length})</div>
       <p style="font-size:12.5px;color:var(--text-soft);margin:-4px 0 8px;">
-        Ze blijven zichtbaar met een grijs label totdat je kiest, zodat je niemand kwijtraakt.
+        Standaard blijft iedereen staan, lichter weergegeven, zodat je niemand kwijtraakt. Zet
+        "Behouden" uit voor wie je uit de lijst wilt halen; dat gebeurt pas als je op Bijwerken klikt.
       </p>
+      ${d.vertrokken.filter((r) => findPersoon(r)).length > 1 ? `
+      <div class="report-alles">
+        <button class="btn-ghost btn-sm" id="btnAllesBehouden">Alles behouden</button>
+        <button class="btn-ghost btn-sm btn-danger" id="btnAllesVerwijderen">Alles verwijderen</button>
+      </div>` : ""}
       <div class="report-list">${vertrokkenList}</div>
     </div>
-    <button class="btn-primary" id="btnImportReportKlaar">Naar het overzicht</button>`;
+    <button class="btn-primary" id="btnImportReportKlaar">${heeftKeuzes ? "Bijwerken" : "Naar het overzicht"}</button>`;
+}
+
+function schuifjeHTML(label, aan, attrs) {
+  return `<label class="schuifje"><input type="checkbox" ${aan ? "checked" : ""} ${attrs} /><span class="schuifje-baan"></span><span>${esc(label)}</span></label>`;
 }
 
 function statsRowHTML() {
@@ -4396,10 +4466,22 @@ function attachEvents() {
   }));
   if ($("#btnBevestigMapping")) $("#btnBevestigMapping").addEventListener("click", bevestigMapping);
 
-  if ($("#btnImportReportKlaar")) $("#btnImportReportKlaar").addEventListener("click", () => { state.stage = "dashboard"; render(); });
-  $$("[data-verwijder-vertrokken]").forEach((el) => el.addEventListener("click", (e) => verwijderVertrokkenPersoon(e.target.dataset.verwijderVertrokken)));
-  $$("[data-behoud-vertrokken]").forEach((el) => el.addEventListener("click", (e) => behoudVertrokkenPersoon(e.target.dataset.behoudVertrokken)));
-  $$("[data-verhuis-oud]").forEach((el) => el.addEventListener("click", (e) => verhuisDossier(e.currentTarget.dataset.verhuisOud, e.currentTarget.dataset.verhuisNieuw)));
+  if ($("#btnImportReportKlaar")) $("#btnImportReportKlaar").addEventListener("click", bevestigImportRapport);
+  // Keuzes in het importrapport: alleen onthouden, uitgevoerd wordt pas bij "Bijwerken".
+  const zetImportKeuze = (veld, waarde, opnemen) => {
+    const lijst = new Set(state.importDiff[veld] || []);
+    if (opnemen) lijst.add(waarde); else lijst.delete(waarde);
+    state.importDiff = { ...state.importDiff, [veld]: [...lijst] };
+    render();
+  };
+  $$("[data-behoud-keuze]").forEach((el) => el.addEventListener("change", (e) => zetImportKeuze("verwijderen", e.target.dataset.behoudKeuze, !e.target.checked)));
+  $$("[data-verhuis-keuze]").forEach((el) => el.addEventListener("change", (e) => zetImportKeuze("nietVerhuizen", e.target.dataset.verhuisKeuze, !e.target.checked)));
+  if ($("#btnAllesBehouden")) $("#btnAllesBehouden").addEventListener("click", () => { state.importDiff = { ...state.importDiff, verwijderen: [] }; render(); });
+  if ($("#btnAllesVerwijderen")) $("#btnAllesVerwijderen").addEventListener("click", () => {
+    state.importDiff = { ...state.importDiff, verwijderen: state.importDiff.vertrokken.filter((r) => findPersoon(r)) };
+    render();
+  });
+  $$("[data-overdracht-gezin]").forEach((el) => el.addEventListener("click", (e) => { state.overdrachtGezinsKey = e.currentTarget.dataset.overdrachtGezin; render(); }));
 
   if (state.stage === "dashboard") {
     attachDashboardResultEvents();
@@ -5645,10 +5727,10 @@ function vergrendelNu() {
     let sjablonenGemigreerd = false;
     [STANDAARD_AFSPRAAK_SJABLOON, STANDAARD_TIJDSLOT_SJABLOON].forEach((standaard) => {
       const eigen = state.afspraakSjablonen.find((s) => s.id === standaard.id);
-      const oud = OUDE_SJABLOON_STANDAARDEN[standaard.id];
-      if (!eigen || !oud) return;
-      if (eigen.tekst === oud.tekst) { eigen.tekst = standaard.tekst; sjablonenGemigreerd = true; }
-      if (eigen.onderwerp === oud.onderwerp && eigen.onderwerp !== standaard.onderwerp) { eigen.onderwerp = standaard.onderwerp; sjablonenGemigreerd = true; }
+      const oude = OUDE_SJABLOON_STANDAARDEN[standaard.id] || [];
+      if (!eigen || !oude.length) return;
+      if (oude.some((o) => o.tekst === eigen.tekst)) { eigen.tekst = standaard.tekst; sjablonenGemigreerd = true; }
+      if (eigen.onderwerp !== standaard.onderwerp && oude.some((o) => o.onderwerp === eigen.onderwerp)) { eigen.onderwerp = standaard.onderwerp; sjablonenGemigreerd = true; }
     });
     if (sjablonenGemigreerd) {
       dbSetInstelling("afspraakSjablonen", state.afspraakSjablonen)
