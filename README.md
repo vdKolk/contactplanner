@@ -53,7 +53,11 @@ Daar horen twee verantwoordelijkheden bij:
 
 - **Excel-import met kolomkoppeling** — kies zelf het tabblad, de kop-rij en welke kolom bij
   welk veld hoort. Bij een nieuwe import blijven alle eigen gegevens (contactmomenten,
-  notities, schema's) bewaard; een importrapport toont wie nieuw is en wie wegviel.
+  notities, schema's) bewaard; een importrapport toont wie nieuw is, wie verhuisde en wie
+  wegviel. Met schuifjes kies je wie blijft staan (standaard iedereen) en welke dossiers
+  meeverhuizen; "Bijwerken" voert die keuzes in één keer uit. Valt daarbij een heel gezin weg,
+  dan waarschuwt de app dat de contactmomenten verloren gaan en biedt eerst een
+  overdrachtskaart aan.
 - **Gezinnen** — personen worden op adres + postcode gegroepeerd; het gezinshoofd bepaalt de
   weergegeven naam en contactgegevens.
 - **Contactmomenten** — log bezoeken met datum, tijd, soort (huisbezoek, doopbezoek,
