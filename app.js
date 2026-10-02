@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.10.1"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.10.2"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -155,6 +155,11 @@ const VERSIE_NOTITIES = {
       "Bijzondere momenten open je met het kalendericoon rechtsboven; het rode stipje laat zien dat er binnen 14 dagen iets aankomt",
       "Vergrendelen is een compact slot-icoon geworden",
       "PIN wijzigen staat niet meer in het menu, maar bij \u2699 \u2192 Instellingen \u2192 Beveiliging",
+    ],
+  },
+  "1.10.2": {
+    nieuw: [
+      "In de lichte weergave kregen gezinskaarten, tellers en planrondes bij aanwijzen met de muis een bijna zwarte rand; dat is weer de bedoelde lichte, grijze rand. Ook de rode rand bij foutmeldingen in Debug en de kleur van de scrollbalk zijn hersteld",
     ],
   },
 };

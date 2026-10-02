@@ -16,9 +16,9 @@
   --blue: #2563EB;
   --blue-bg: #EFF6FF;
   --grey-bg: #F2F4F7;
-  --border-hover: var(--border-hover);
-  --red-border: var(--red-border);
-  --scrollbar: var(--scrollbar);
+  --border-hover: #C7CBD3;
+  --red-border: #FCD3D3;
+  --scrollbar: #D0D5DD;
   --on-accent: #FFFFFF;
   --toast-bg: #101828;
   --toast-text: #FFFFFF;
