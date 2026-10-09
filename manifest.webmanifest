@@ -1,7 +1,7 @@
 {
   "name": "ContactPlanner",
   "short_name": "ContactPlanner",
-  "description": "Huisbezoek- en contactplanner — alle gegevens blijven lokaal in je eigen browser.",
+  "description": "Huisbezoek- en contactplanner, alle gegevens blijven lokaal in je eigen browser.",
   "lang": "nl",
   "start_url": ".",
   "display": "standalone",

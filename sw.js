@@ -6,7 +6,7 @@
      offline blijft werken.
    Verhoog CACHE_VERSIE bij elke wijziging aan de app-bestanden. */
 
-const CACHE_VERSIE = "contactplanner-v23";
+const CACHE_VERSIE = "contactplanner-v24";
 const KERN_BESTANDEN = [
   "./",
   "index.html",
