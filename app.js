@@ -1,18 +1,18 @@
 /* ================= Huisbezoek & Contactplanner ================= */
 /* Alle gegevens blijven op dit apparaat, in de IndexedDB van de browser waarin je de app
-   opent — er wordt niets naar een server gestuurd, ook niet in de gehoste (GitHub Pages)
+   opent, er wordt niets naar een server gestuurd, ook niet in de gehoste (GitHub Pages)
    versie. Excel wordt gebruikt om basisgegevens aan te leveren/te verversen; alles wat je
    in de app zelf toevoegt (contactmomenten, notities, schema) blijft bewaard.
    De persoonsgegevens staan versleuteld (AES-256-GCM) in de "kluis"-store; de sleutel wordt
-   met PBKDF2 afgeleid van de pin. Back-ups (.json) zijn bewust ONversleuteld — dat is het
+   met PBKDF2 afgeleid van de pin. Back-ups (.json) zijn bewust ONversleuteld, dat is het
    vangnet bij een vergeten pin. Uitzondering op de versleuteling: een kleine cache met
    verjaardagen/jubilea, zodat "bijzondere momenten" ook op het slotscherm werkt.
-   Let op: IndexedDB is gebonden aan de herkomst (origin) — wissel je van computer, browser
+   Let op: IndexedDB is gebonden aan de herkomst (origin), wissel je van computer, browser
    of van lokaal bestand naar de online versie, neem dan je gegevens mee via een back-up. */
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.10.3"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.10.4"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -23,17 +23,17 @@ const VERSIE_NOTITIES = {
       "Je krijgt voortaan na een update eenmalig een melding te zien met wat er nieuw is (en eventuele acties)",
       "Gezinsdossier opgesplitst in tabs: Gezin, Loggen, Plannen",
       "Contactmoment loggen is nu visueel prominent",
-      "\"Bijzonder contactmoment inplannen\" hernoemd naar \"Inplannen — Bijzonder contactmoment\"",
-      "Belafspraak toegevoegd als soort bij Inplannen — Bijzonder contactmoment",
+      "\"Bijzonder contactmoment inplannen\" hernoemd naar \"Inplannen: Bijzonder contactmoment\"",
+      "Belafspraak toegevoegd als soort bij Inplannen: Bijzonder contactmoment",
       "Kruisje om de zoekopdracht te wissen verschijnt nu direct tijdens typen, ook in de Planningweergave",
       "Opmerking-label in de Planningweergave netjes uitgelijnd naast de datum",
       "Importlabel \"Trouwdatum (optioneel)\" hernoemd naar \"Huwelijksdatum\"",
       "Berichtsjablonen voor Afspraak inplannen: meerdere eigen sjablonen maken/beheren via Instellingen, met [naam]/[datum]/[tijd] als plekhouders",
-      "E-mail-instelling toegevoegd: \"Mail sturen\" en \"Open in e-mail\" kunnen naar het standaard mailprogramma of direct naar Outlook op het web (Microsoft 365) — instelbaar via Instellingen",
+      "E-mail-instelling toegevoegd: \"Mail sturen\" en \"Open in e-mail\" kunnen naar het standaard mailprogramma of direct naar Outlook op het web (Microsoft 365), instelbaar via Instellingen",
       "Index bovenaan de handleiding om snel naar een sectie te springen",
-      "Back-up opslaan kan nu ook via \"Opslaan als\" (zelf een locatie kiezen, bv. een OneDrive-map) in plaats van altijd te downloaden — instelbaar via Instellingen",
+      "Back-up opslaan kan nu ook via \"Opslaan als\" (zelf een locatie kiezen, bv. een OneDrive-map) in plaats van altijd te downloaden, instelbaar via Instellingen",
     ],
-    actie: "Maak een nieuwe import vanuit Scipio en lees die in — dan staan o.a. Mobiel en Huwelijksdatum overal goed gevuld (zie de handleiding voor de importselectie).",
+    actie: "Maak een nieuwe import vanuit Scipio en lees die in, dan staan o.a. Mobiel en Huwelijksdatum overal goed gevuld (zie de handleiding voor de importselectie).",
   },
   "1.7.7": {
     nieuw: [
@@ -51,7 +51,7 @@ const VERSIE_NOTITIES = {
       "Uitnodigingen opnieuw versturen (mail/WhatsApp) voor gezinnen die nog niet gekozen hebben",
       "Op de gezinskaarten (lijst, 2 kolommen en planbord) zie je nu een label als er een aanvraag uitstaat, en de gekozen datum zodra het gezin gekozen heeft",
       "Tijdslots snel vullen met \"Wekelijks herhalen\": bijv. elke dinsdag 20:00, tien weken vooruit",
-      "De eindtijd van een tijdslot is voortaan optioneel — laat hem leeg als alleen de starttijd vaststaat",
+      "De eindtijd van een tijdslot is voortaan optioneel, laat hem leeg als alleen de starttijd vaststaat",
       "Tijdslots waarvan de starttijd verstreken is, zijn niet meer kiesbaar en tonen als \"verlopen\"",
       "Het selectievinkje in de Planningweergave staat nu rechts in het midden van de kaart, los van het markeer-sterretje",
       "Instellingen en \"Aanvraag uitzetten\" zijn volledige pagina's geworden in plaats van popup-vensters",
@@ -64,7 +64,7 @@ const VERSIE_NOTITIES = {
       "Na het ontgrendelen wordt de status van lopende aanvragen automatisch ververst; handmatig kan met het ↻-icoon naast \"Lopende aanvragen\"",
       "Duidelijke melding (met knop naar Instellingen) als je een aanvraag wilt uitzetten zonder ingevulde API-sleutel",
       "Instellingen: AfspraakPlanner staat nu naast E-mail, met een waarschuwing dat de API-sleutel bewust niet in de back-up meegaat",
-      "\"Afspraak inplannen\" in het gezinsdossier heet nu \"Afspraak inplannen — Handmatig\"",
+      "\"Afspraak inplannen\" in het gezinsdossier heet nu \"Afspraak inplannen: Handmatig\"",
       "Outlook op het web is de standaard e-mailinstelling voor nieuwe gebruikers",
       "Nieuw menu-item \"Release historie\": blader door wat er per versie veranderd is",
     ],
@@ -73,7 +73,7 @@ const VERSIE_NOTITIES = {
     nieuw: [
       "De status van lopende aanvragen wordt nu ook elke 10 minuten en bij het herladen van de app automatisch ververst",
       "Kaartjes worden weer wit zodra je na het gekozen moment een contactmoment logt (of automatisch na 14 dagen), en ook als er in een aanvraag niets meer te kiezen valt",
-      "Nieuwe, persoonlijkere standaardteksten voor de berichtsjablonen (\"Hallo [naam], graag wil ik een huisbezoek inplannen…\") — alleen als je ze nooit zelf had aangepast",
+      "Nieuwe, persoonlijkere standaardteksten voor de berichtsjablonen (\"Hallo [naam], graag wil ik een huisbezoek inplannen…\"), alleen als je ze nooit zelf had aangepast",
     ],
   },
   "1.7.11": {
@@ -91,24 +91,24 @@ const VERSIE_NOTITIES = {
   "1.8.1": {
     nieuw: [
       "De weergave \"Lijst\" toont de gezinskaarten voortaan in twee kolommen (op een smal scherm één); de aparte knop \"2 kolommen\" is vervallen",
-      "Nieuw filter \"Boven leeftijdsgrens\" bovenin het overzicht: alle gezinnen waarvan het gezinshoofd de leeftijdsgrens uit de instellingen heeft bereikt — werkt in elke weergave",
+      "Nieuw filter \"Boven leeftijdsgrens\" bovenin het overzicht: alle gezinnen waarvan het gezinshoofd de leeftijdsgrens uit de instellingen heeft bereikt, werkt in elke weergave",
     ],
   },
   "1.8.2": {
     nieuw: [
-      "AfspraakPlanner werkt nu met planrondes: maak eerst een set tijdslots aan (\"+ Nieuwe planronde\", ook zonder gezinnen) en voeg daarna gezinnen toe — in één keer via \"Selecteren\" in de Planningweergave, of later één voor één",
+      "AfspraakPlanner werkt nu met planrondes: maak eerst een set tijdslots aan (\"+ Nieuwe planronde\", ook zonder gezinnen) en voeg daarna gezinnen toe, in één keer via \"Selecteren\" in de Planningweergave, of later één voor één",
       "Bij het toevoegen van geselecteerde gezinnen kies je voortaan een bestaande planronde of maak je direct een nieuwe",
-      "\"Lopende aanvragen\" is vervangen door de volledige pagina \"Planrondes\": een overzicht met per planronde de voortgang en het eerstvolgende vrije tijdslot, met per planronde een eigen detailpagina (gezinnen links, tijdslots rechts) — geen popup meer",
+      "\"Lopende aanvragen\" is vervangen door de volledige pagina \"Planrondes\": een overzicht met per planronde de voortgang en het eerstvolgende vrije tijdslot, met per planronde een eigen detailpagina (gezinnen links, tijdslots rechts), geen popup meer",
       "Het aparte resultaatscherm na het uitzetten is vervallen: na het aanmaken of toevoegen kom je direct op de detailpagina, waar je de uitnodigingen verstuurt en de voortgang volgt",
       "WhatsApp-knoppen openen WhatsApp Web voortaan steeds in hetzelfde tabblad, zodat je niet bij elke klik in het vorige tabblad wordt afgemeld",
-      "Nieuwe instelling WhatsApp: kies tussen WhatsApp Web (browser) of de WhatsApp-app op deze computer — met de app opent het bericht direct, zonder tabbladen",
-      "De browser of password manager biedt niet meer aan om de pin op te slaan — een pin hoort niet in een password manager (de API-sleutel bij Instellingen mag daar wél in en blijft een gewoon wachtwoordveld)",
+      "Nieuwe instelling WhatsApp: kies tussen WhatsApp Web (browser) of de WhatsApp-app op deze computer, met de app opent het bericht direct, zonder tabbladen",
+      "De browser of password manager biedt niet meer aan om de pin op te slaan, een pin hoort niet in een password manager (de API-sleutel bij Instellingen mag daar wél in en blijft een gewoon wachtwoordveld)",
     ],
   },
   "1.8.3": {
     nieuw: [
       "De instelling \"WhatsApp-app op deze computer\" opent nu wél de chat van het juiste nummer: telefoonnummers met + of 0031 worden voortaan goed omgezet (de app viel daardoor stilletjes terug op de laatst geopende chat)",
-      "Nieuwe knop \"Kopieer link\" bij het uitnodigen, naast Mail en WhatsApp — plak de uitnodigingslink zelf in een bericht; ook handig als er geen e-mail of mobiel nummer bekend is",
+      "Nieuwe knop \"Kopieer link\" bij het uitnodigen, naast Mail en WhatsApp, plak de uitnodigingslink zelf in een bericht; ook handig als er geen e-mail of mobiel nummer bekend is",
       "Per ongeluk het verkeerde gezin aan een planronde toegevoegd? Met het kruisje op de detailpagina haal je het er weer uit (zolang het nog geen tijdslot koos); de verstuurde link vervalt dan",
       "Bij Instellingen → Online back-up zie je nu van beide serverversies (laatste en dagelijks herstelpunt) wanneer ze zijn opgeslagen; ook de terugzet-bevestiging toont dat tijdstip netjes",
     ],
@@ -120,7 +120,7 @@ const VERSIE_NOTITIES = {
   },
   "1.8.5": {
     nieuw: [
-      "Snelle invoer van het laatste contact: in de tabelweergave kun je een lege \"Laatste contact\"-cel direct invullen met een datum — handig na een eerste import. De datum wordt als huisbezoek in het dossier gezet (notitie: \"Contactmoment gelogd via tabelweergave\"); sorteer op laatste contact om alle lege rijen bovenaan te krijgen",
+      "Snelle invoer van het laatste contact: in de tabelweergave kun je een lege \"Laatste contact\"-cel direct invullen met een datum, handig na een eerste import. De datum wordt als huisbezoek in het dossier gezet (notitie: \"Contactmoment gelogd via tabelweergave\"); sorteer op laatste contact om alle lege rijen bovenaan te krijgen",
       "Zelf kiezen welke kolommen de tabelweergave toont, via de nieuwe kolommenknop (▥) naast de weergaveknoppen: naast de vertrouwde kolommen zijn nu ook leeftijd, postcode, wijk/sectie, telefoon, mobiel en e-mail beschikbaar. Je keuze wordt onthouden",
       "De standaard starttijd voor tijdslots in planrondes is nu 19:30 en is instelbaar via Instellingen → AfspraakPlanner (zichtbaar zodra de koppeling is ingesteld)",
       "Klik op het logo linksboven om vanuit elk scherm terug te gaan naar het hoofdscherm",
@@ -130,28 +130,28 @@ const VERSIE_NOTITIES = {
   "1.8.6": {
     nieuw: [
       "Kaartknopje achter het adres in het gezinsdossier: \u00e9\u00e9n klik opent dat adres in Google Maps in een nieuw tabblad",
-      "Overdrachtskaart: onder tab Gezin maak je een nette, afdrukbare samenvatting van \u00e9\u00e9n gezin \u2014 samenstelling, status, opmerking en alle contactmomenten met datum, soort en gelezen gedeelte. Handig om bij een wisseling van ouderling als pdf over te dragen; de inhoud van je notities blijft er bewust buiten",
-      "Verhuizingen worden bij een import herkend aan het regnr van het gezinshoofd: het gezin komt in het importrapport onder \"Verhuisd\" te staan, met een knop om het dossier (contactmomenten, notitie, schema) mee te verhuizen naar het nieuwe adres \u2014 voorheen bleef dat onbereikbaar op het oude adres achter",
+      "Overdrachtskaart: onder tab Gezin maak je een nette, afdrukbare samenvatting van \u00e9\u00e9n gezin: samenstelling, status, opmerking en alle contactmomenten met datum, soort en gelezen gedeelte. Handig om bij een wisseling van ouderling als pdf over te dragen; de inhoud van je notities blijft er bewust buiten",
+      "Verhuizingen worden bij een import herkend aan het regnr van het gezinshoofd: het gezin komt in het importrapport onder \"Verhuisd\" te staan, met een knop om het dossier (contactmomenten, notitie, schema) mee te verhuizen naar het nieuwe adres, voorheen bleef dat onbereikbaar op het oude adres achter",
       "Gezinnen waarvan niemand meer in de laatste import voorkomt worden in lijst-, tabel- en planningweergave lichter getoond, zodat duidelijk is dat ze niet meer in de wijk zitten. Ze blijven gewoon zichtbaar en bij hover weer volledig leesbaar",
     ],
   },
   "1.9.1": {
     nieuw: [
-      "De knop \"Zet in planning\" is vervallen: kiest een gezin een tijdslot in een planronde, dan komt die afspraak bij het vernieuwen van de status automatisch als gepland bijzonder contactmoment in het gezinsdossier — en dus ook in Bijzondere momenten, waar je hem met \"Gedaan (log contact)\" afhandelt",
+      "De knop \"Zet in planning\" is vervallen: kiest een gezin een tijdslot in een planronde, dan komt die afspraak bij het vernieuwen van de status automatisch als gepland bijzonder contactmoment in het gezinsdossier, en dus ook in Bijzondere momenten, waar je hem met \"Gedaan (log contact)\" afhandelt",
       "In de planronde zie je per gezin alleen nog de stand: \"✓ in planning\" zodra de afspraak is overgenomen",
       "Een afspraak die je zelf hebt afgehandeld of verwijderd komt bij een volgende verversing niet meer terug",
-      "Een zelf ingepland bijzonder contactmoment is nu op de gezinskaarten net zo zichtbaar als een afspraak uit AfspraakPlanner: een label met datum, tijd en soort, en dezelfde kaartkleur \u2014 lichtgroen zolang het moment nog komt, lichtgeel zodra de datum verstreken is en je het nog moet loggen",
-      "Staan er meerdere momenten gepland, dan zie je ze nu allemaal op de kaart in plaats van alleen de eerste \u2014 ook in de planbordweergave, waar ze eerder helemaal ontbraken",
-      "Bij Inplannen \u2014 (Bijzonder) contactmoment kun je naast de datum ook een tijd invullen; die komt mee op de kaart, in Bijzondere momenten en in het gelogde contactmoment",
-      "\"Inplannen \u2014 Bijzonder contactmoment\" hernoemd naar \"Inplannen \u2014 (Bijzonder) contactmoment\"",
-      "\"Afspraak inplannen \u2014 Handmatig\" in het gezinsdossier heet nu \"Datum afspraak voorstellen\" \u2014 die plek genereert alleen een bericht, er wordt niets vastgezet",
+      "Een zelf ingepland bijzonder contactmoment is nu op de gezinskaarten net zo zichtbaar als een afspraak uit AfspraakPlanner: een label met datum, tijd en soort, en dezelfde kaartkleur: lichtgroen zolang het moment nog komt, lichtgeel zodra de datum verstreken is en je het nog moet loggen",
+      "Staan er meerdere momenten gepland, dan zie je ze nu allemaal op de kaart in plaats van alleen de eerste, ook in de planbordweergave, waar ze eerder helemaal ontbraken",
+      "Bij Inplannen: (Bijzonder) contactmoment kun je naast de datum ook een tijd invullen; die komt mee op de kaart, in Bijzondere momenten en in het gelogde contactmoment",
+      "\"Inplannen: Bijzonder contactmoment\" hernoemd naar \"Inplannen: (Bijzonder) contactmoment\"",
+      "\"Afspraak inplannen: Handmatig\" in het gezinsdossier heet nu \"Datum afspraak voorstellen\", want die plek genereert alleen een bericht, er wordt niets vastgezet",
     ],
   },
   "1.10.1": {
     nieuw: [
       "Bovenin staat naast het aantal gezinnen en personen nu ook hoeveel huisbezoeken je per jaar nodig hebt om iedereen volgens schema te bezoeken (2x per jaar telt 2, 1x per jaar telt 1, om het jaar telt \u00bd). Zo weet je direct hoeveel bezoekavonden je minimaal vrij moet houden; gezinnen die niet meer in de wijk zitten tellen niet mee",
       "Donkere modus: kies bij \u2699 \u2192 Instellingen \u2192 Weergave voor Automatisch (volgt je computer of telefoon), Licht of Donker. De keuze geldt per apparaat; de overdrachtskaart blijft altijd licht",
-      "Het menu staat nu rechtsboven: \u2630 voor de onderdelen van de app (Bijzondere momenten, Planrondes en \u2014 als die aanstaat \u2014 Bijbelgedeelten) en \u2699 voor beheer (Instellingen, import/export, back-ups en hulp)",
+      "Het menu staat nu rechtsboven: \u2630 voor de onderdelen van de app (Bijzondere momenten, Planrondes en, als die aanstaat, Bijbelgedeelten) en \u2699 voor beheer (Instellingen, import/export, back-ups en hulp)",
       "Bijzondere momenten open je met het kalendericoon rechtsboven; het rode stipje laat zien dat er binnen 14 dagen iets aankomt",
       "Vergrendelen is een compact slot-icoon geworden",
       "PIN wijzigen staat niet meer in het menu, maar bij \u2699 \u2192 Instellingen \u2192 Beveiliging",
@@ -168,6 +168,22 @@ const VERSIE_NOTITIES = {
       "Eén knop \"Bijwerken\" voert alle keuzes uit het importrapport in één keer uit, met één bevestiging, en brengt je direct naar het overzicht. De knop \"Laten staan\", die niets zichtbaars deed, is vervallen",
       "Valt door het verwijderen een heel gezin weg, dan waarschuwt het rapport dat de contactmomenten en notities van dat gezin verloren gaan, en kun je eerst een overdrachtskaart maken",
       "Het standaardsjabloon voor \"Datum afspraak voorstellen\" draagt nu het voorbehoud van Jakobus: \"Zou [datum] om [tijd] uur D.V. schikken?\". Had je de standaardtekst nooit aangepast, dan is hij automatisch bijgewerkt; zelf aangepaste sjablonen blijven zoals ze zijn",
+    ],
+  },
+  "1.10.4": {
+    nieuw: [
+      "Nieuwe, rustigere vormgeving voor de hele app: systeemlettertype, zachtere schaduwen, rondere hoeken, en iconen in plaats van emoji op de kaartjes",
+      "Het gezinsdossier is opnieuw ontworpen: een kop met initialen, status en contactgegevens, drie tegels voor laatste huisbezoek, volgend contact en schema, en de gezinsleden als compacte lijst",
+      "Contactmomenten staan onder Loggen als tijdlijn, het nieuwste bovenaan, met een gekleurd label per soort bezoek; geplande momenten krijgen een datumblokje zoals in een agenda",
+      "Het dossier springt niet meer naar boven bij een wijziging of tabwissel",
+      "De kolommen van het planbord hebben elk een eigen tint en een korte uitleg, zoals \"binnen 30 dagen\"",
+      "De filters bovenin staan in een logischere volgorde: Alle gezinnen, Gemarkeerd, dan de status van urgent naar rustig, en daarna de overige",
+      "Bijzondere momenten staan in een vast raster met een datumblokje, zodat alles netjes onder elkaar staat",
+      "Tijden altijd in 24-uursnotatie en datums altijd als dd/mm/jjjj, ongeacht de taal van je browser. Je kunt ook snel typen, bijvoorbeeld 1930 of 14-10-2026; de kalenderknop blijft beschikbaar",
+      "Beter op de telefoon: de tellers zijn een veegbare rij, lijstkaarten en planrondes gebruiken de volle breedte, het planbord veegt per kolom, en de tijdslots van een nieuwe planronde passen weer op het scherm",
+      "De back-upstatus rechtsboven heeft nette iconen in plaats van losse tekens",
+      "Het slotscherm is vernieuwd, met het ContactPlanner-logo als middelpunt",
+      "De handleiding heeft een eigen stuk over de overdrachtskaart",
     ],
   },
 };
@@ -358,7 +374,7 @@ function berekenMijlpalen() {
         geplandId: g.id,
         naam: hoofd.naam,
         roepnaam: hoofd.roepnaam,
-        omschrijving: `${g.soort}${g.tijd ? " " + g.tijd + " uur" : ""}${g.betreft ? " \u2014 " + g.betreft : ""}${g.notitie ? ": " + g.notitie : ""}`,
+        omschrijving: `${g.soort}${g.tijd ? " " + g.tijd + " uur" : ""}${g.betreft ? " (" + g.betreft + ")" : ""}${g.notitie ? ": " + g.notitie : ""}`,
         datum: g.datum,
         sleutel: `gepland:${gezin.gezinsKey}:${g.id}`,
       });
@@ -398,7 +414,7 @@ const MIJLPAAL_HORIZON_DAGEN = 90;
 // rechtsboven onder de bovenbalk, zodat het voelt als een venster dat je sluit — sluiten
 // brengt je terug naar het hoofdscherm.
 function paginaSluitKnopHTML(id) {
-  return `<div class="pagina-sluit-rij"><button class="btn-ghost pagina-sluit" id="${id}" title="Sluiten — terug naar het overzicht">✕</button></div>`;
+  return `<div class="pagina-sluit-rij"><button class="btn-ghost pagina-sluit" id="${id}" title="Sluiten en terug naar het overzicht">✕</button></div>`;
 }
 
 function mijlpaalRijHTML(m, alleenLezen) {
@@ -409,22 +425,28 @@ function mijlpaalRijHTML(m, alleenLezen) {
     gepland: ["var(--red)", "var(--red-bg)"],
   };
   const [kleur, achtergrond] = typeKleuren[m.type];
-  const dagenTekst = m.dagenTot === 0 ? "vandaag" : m.dagenTot < 0 ? `${Math.abs(m.dagenTot)}d geleden` : `over ${m.dagenTot}d`;
+  const dagenTekst = m.dagenTot < 0 && m.type === "gepland" ? "verstreken, nog loggen" : relatieveDagenTekst(m.datum);
   const actieHTML = alleenLezen ? "" : (m.type === "gepland"
-    ? `<span style="display:flex;gap:4px;">
-         <button class="btn-sm btn-primary" data-gepland-gedaan-mp="${esc(m.gezinsKey)}" data-gepland-id-mp="${esc(m.geplandId)}">Gedaan (log contact)</button>
-         <button class="btn-sm btn-danger" data-gepland-verwijder-mp="${esc(m.gezinsKey)}" data-gepland-id-mp="${esc(m.geplandId)}">Verwijderen</button>
-       </span>`
-    : `<button class="btn-sm ${m.gedaan ? "btn-primary" : ""}" data-toggle-mijlpaal="${esc(m.sleutel)}">${m.gedaan ? "\u2713 Kaartje gestuurd" : "Markeer als gedaan"}</button>`);
+    ? `<button class="btn-sm btn-primary" data-gepland-gedaan-mp="${esc(m.gezinsKey)}" data-gepland-id-mp="${esc(m.geplandId)}" title="Gedaan: dit moment als contactmoment loggen">${DOSSIER_ICOON.vink}Gedaan</button>
+       <button class="btn-ghost btn-icoon btn-icoon-klein btn-danger" data-gepland-verwijder-mp="${esc(m.gezinsKey)}" data-gepland-id-mp="${esc(m.geplandId)}" title="Verwijderen" aria-label="Verwijderen">${DOSSIER_ICOON.prullenbak}</button>`
+    : `<button class="btn-sm ${m.gedaan ? "btn-primary" : ""}" data-toggle-mijlpaal="${esc(m.sleutel)}">${m.gedaan ? `${DOSSIER_ICOON.vink}Kaartje gestuurd` : "Markeer als gedaan"}</button>`);
+  const d = new Date(m.datum + "T00:00:00");
 
   return `
-    <div class="mijlpaal-rij ${m.gedaan ? "mijlpaal-gedaan" : ""}">
-      <div class="mijlpaal-type-tag" style="background:${achtergrond};color:${kleur};">${typeLabels[m.type]}</div>
-      <div class="mijlpaal-naam" ${alleenLezen ? "" : `data-open="${esc(m.gezinsKey)}"`}>${esc(m.naam)}${m.roepnaam ? ` (${esc(m.roepnaam)})` : ""}</div>
-      <div class="mijlpaal-omschrijving">${esc(m.omschrijving)}</div>
-      <div class="mijlpaal-datum mono">${fmtDatum(m.datum)}</div>
-      <div class="mijlpaal-dagen">${dagenTekst}</div>
-      ${actieHTML}
+    <div class="mijlpaal-rij ${m.gedaan ? "mijlpaal-gedaan" : ""}${m.type === "gepland" && m.dagenTot < 0 ? " mijlpaal-verstreken" : ""}">
+      <div class="datum-blok" title="${esc(fmtDatum(m.datum))}">
+        <span class="datum-blok-maand">${esc(d.toLocaleDateString("nl-NL", { month: "short" }).replace(".", ""))}</span>
+        <span class="datum-blok-dag">${d.getDate()}</span>
+      </div>
+      <div class="mijlpaal-info">
+        <div class="mijlpaal-naam" ${alleenLezen ? "" : `data-open="${esc(m.gezinsKey)}"`}>${esc(m.naam)}${m.roepnaam && !String(m.naam || "").startsWith(m.roepnaam) ? ` <span class="mijlpaal-roepnaam">(${esc(m.roepnaam)})</span>` : ""}</div>
+        <div class="mijlpaal-onder">
+          <span class="mijlpaal-type-tag" style="background:${achtergrond};color:${kleur};">${typeLabels[m.type]}</span>
+          <span class="mijlpaal-omschrijving">${esc(m.omschrijving)}</span>
+        </div>
+      </div>
+      <div class="mijlpaal-dagen">${esc(dagenTekst)}</div>
+      <div class="mijlpaal-acties">${actieHTML}</div>
     </div>`;
 }
 
@@ -447,7 +469,7 @@ function mijlpalenHTML(alleenLezen) {
     ${alleenLezen ? "" : paginaSluitKnopHTML("btnMijlpalenTerug")}
     <h2 style="font-size:22px;margin:0 0 4px;">Bijzondere momenten</h2>
     <p style="color:var(--text-soft);font-size:13px;margin-bottom:16px;">
-      Verjaardagen vanaf de ingestelde leeftijd, en huwelijksjubilea in de ingestelde jaren \u2014 zodat je op tijd weet
+      Verjaardagen vanaf de ingestelde leeftijd, en huwelijksjubilea in de ingestelde jaren, zodat je op tijd weet
       wanneer een kaartje of belletje op zijn plaats is.${alleenLezen ? " Namen zijn hier zichtbaar zonder pin; geplande bijzondere contactmomenten en het openen van een gezinsdossier vereisen volledig ontgrendelen." : ""}
     </p>
 
@@ -678,7 +700,7 @@ function parseDatumFlexibel(value) {
 }
 
 function fmtDatum(iso) {
-  if (!iso) return "\u2014";
+  if (!iso) return "-";
   const d = new Date(iso + "T00:00:00");
   if (isNaN(d)) return iso;
   return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "short", year: "numeric" });
@@ -731,7 +753,7 @@ function berekenVolgendContact(gd, gezin) {
   const regulier = gd.laatsteContact ? addMonths(gd.laatsteContact, intervalMaanden(gd, gezin)) : "";
 
   // Een huwelijks- of doopbezoek na het laatste huisbezoek schuift het volgende huisbezoek
-  // een jaar op \u2014 maar nooit eerder dan wat het reguliere schema al aangaf.
+  // een jaar op — maar nooit eerder dan wat het reguliere schema al aangaf.
   const specialeSoorten = ["Huwelijksbezoek", "Doopbezoek"];
   const specialeBezoeken = (gd.historie || []).filter((h) => specialeSoorten.includes(h.soort));
   let speciaalVervolg = "";
@@ -1252,7 +1274,7 @@ async function ontgrendelMetPin(pin) {
   const juist = (await veiligeHash(pin)) === state.pinHash || eenvoudigeHashOud(pin) === state.pinHash;
   if (!juist) return false;
   if (versleutelingBeschikbaar()) {
-    logDebug("info", "Pin klopt — bestaande onversleutelde gegevens worden nu eenmalig versleuteld");
+    logDebug("info", "Pin klopt, bestaande onversleutelde gegevens worden nu eenmalig versleuteld");
     await activeerVersleuteling(pin);
   }
   return true;
@@ -1320,7 +1342,7 @@ function herstelLaatsteContactAlleGezinnen() {
     }
   });
   if (aangepast > 0) {
-    logDebug("info", `Schema-herstel: laatste contact herberekend voor ${aangepast} gezin(nen) \u2014 alleen "Huisbezoek" telt nog mee voor het reguliere schema`);
+    logDebug("info", `Schema-herstel: laatste contact herberekend voor ${aangepast} gezin(nen), alleen "Huisbezoek" telt nog mee voor het reguliere schema`);
     bewaarGegevens().catch((e) => logDebug("fout", "Kon herstelde gezinsdata niet opslaan: " + e.message));
   }
 }
@@ -1329,7 +1351,7 @@ function migreerOudeContactgegevens() {
   if (Object.keys(state.gezinsdata).length > 0) return;
   const heeftLegacyData = state.personen.some((p) => p.laatsteContact || (p.historie && p.historie.length) || p.notitie || p.gelezenGedeelte);
   if (!heeftLegacyData) return;
-  logDebug("info", "Oude contactgegevens per persoon gevonden \u2014 migreren naar gezinsniveau");
+  logDebug("info", "Oude contactgegevens per persoon gevonden, migreren naar gezinsniveau");
   const gezinnen = computeGezinnen();
   const migrated = {};
   gezinnen.forEach((g) => {
@@ -1392,7 +1414,7 @@ function loadSheetAOA(sheetName) {
   const opgegevenBereik = sheet["!ref"] || "(geen)";
   const werkelijkBereik = berekenWerkelijkBereik(sheet);
   if (werkelijkBereik !== opgegevenBereik) {
-    logDebug("info", `Tabblad "${sheetName}": opgegeven bereik (${opgegevenBereik}) week af van werkelijke celdata \u2014 gecorrigeerd naar ${werkelijkBereik}`);
+    logDebug("info", `Tabblad "${sheetName}": opgegeven bereik (${opgegevenBereik}) week af van werkelijke celdata, gecorrigeerd naar ${werkelijkBereik}`);
   }
   const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", range: werkelijkBereik });
   return aoa.map((row) => row.map(cellToDisplay));
@@ -1499,7 +1521,7 @@ function bevestigHeaderRij() {
 
 async function bevestigMapping() {
   try {
-    if (!state.mapping.regnr) { alert("Wijs een kolom toe aan 'Regnr.' \u2014 dit is het unieke kenmerk waarmee personen worden herkend."); return; }
+    if (!state.mapping.regnr) { alert("Wijs een kolom toe aan 'Regnr.', dit is het unieke kenmerk waarmee personen worden herkend."); return; }
     if (!state.mapping.naam) { alert("Wijs in elk geval ook een kolom toe aan 'Naam'."); return; }
 
     const bestaandeByRegnr = {};
@@ -1647,7 +1669,7 @@ function exporteerExcel() {
       "Gelezen gedeelte (gezin)": gd.gelezenGedeelte,
       "Notitie (gezin)": gd.notitie,
       "Algemene notitie (gezin)": gd.algemeneNotitie,
-      "Gepland bijzonder moment": gd.gepland && gd.gepland[0] ? `${fmtDatum(gd.gepland[0].datum)}${gd.gepland[0].tijd ? " " + gd.gepland[0].tijd : ""} \u2014 ${gd.gepland[0].soort}${gd.gepland[0].betreft ? " (" + gd.gepland[0].betreft + ")" : ""}` : "",
+      "Gepland bijzonder moment": gd.gepland && gd.gepland[0] ? `${fmtDatum(gd.gepland[0].datum)}${gd.gepland[0].tijd ? " " + gd.gepland[0].tijd : ""}, ${gd.gepland[0].soort}${gd.gepland[0].betreft ? " (" + gd.gepland[0].betreft + ")" : ""}` : "",
       "Contactstatus (gezin)": status,
       "Niet in laatste import": p._nietInLaatsteImport ? "Ja" : "",
     };
@@ -1843,7 +1865,7 @@ async function markeerGeplandGedaan(gezinsKey, id) {
   const gd = getGezinsdata(gezinsKey);
   const item = (gd.gepland || []).find((g) => g.id === id);
   if (!item) return;
-  const notitieMetBetreft = item.notitie + (item.betreft ? `${item.notitie ? " \u2014 " : ""}Betreft: ${item.betreft}` : "");
+  const notitieMetBetreft = item.notitie + (item.betreft ? `${item.notitie ? ". " : ""}Betreft: ${item.betreft}` : "");
   // Een tijd van "19:00–19:30" (uit AfspraakPlanner) past niet in het tijdveld van een
   // contactmoment; alleen een enkele starttijd gaat mee.
   const tijd = /^\d{2}:\d{2}$/.test(item.tijd || "") ? item.tijd : "";
@@ -1990,7 +2012,7 @@ function gefilterdeGezinnen() {
       return richting * (((a.gezinshoofd.email || "").localeCompare(b.gezinshoofd.email || "")) || (a.gezinshoofd.naam || "").localeCompare(b.gezinshoofd.naam || ""));
     }
     if (state.sortBy === "laatsteContact") {
-      // nog nooit bezocht (leeg) staat vooraan \u2014 dat heeft de meeste aandacht nodig
+      // nog nooit bezocht (leeg) staat vooraan — dat heeft de meeste aandacht nodig
       return richting * ((gdA.laatsteContact || "").localeCompare(gdB.laatsteContact || "") || (a.gezinshoofd.naam || "").localeCompare(b.gezinshoofd.naam || ""));
     }
     if (state.sortBy === "volgendContact") {
@@ -2034,13 +2056,24 @@ function render() {
   }
   // Het overzicht is in alle weergaves even breed (lijst, tabel én planning).
   const breed = state.stage === "dashboard";
+  // render() vervangt alles; onthoud waar je in het gezinsdossier was, zodat het niet bij elke
+  // wijziging (ster, tab, opslaan) terugspringt naar boven.
+  const oudPanel = document.getElementById("detailPanel");
+  const oudeScroll = oudPanel && oudPanel.dataset.gezin === state.selectedGezinsKey ? oudPanel.scrollTop : 0;
   root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + overdrachtskaartHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + versieMeldingModalHTML();
+  const panel = document.getElementById("detailPanel");
+  if (panel && oudeScroll) {
+    // Na een tabwissel begint de nieuwe inhoud direct onder de (vastgezette) tabs.
+    const tabs = panel.querySelector(".detail-tabs");
+    panel.scrollTop = state.dossierTabGewisseld && tabs ? Math.min(oudeScroll, tabs.offsetTop - 8) : oudeScroll;
+  }
+  state.dossierTabGewisseld = false;
   attachEvents();
 }
 
 function opslagIndicatorHTML() {
   if (state.saveState === "saving") return `<span class="save-indicator">Opslaan\u2026</span>`;
-  if (state.saveState === "fout") return `<span class="save-indicator save-indicator-fout">\u26A0 Niet opgeslagen \u2014 zie Debug</span>`;
+  if (state.saveState === "fout") return `<span class="save-indicator save-indicator-fout">\u26A0 Niet opgeslagen, zie Debug</span>`;
   if (state.saveState === "saved") return `<span class="save-indicator save-indicator-ok">\u2713 Opgeslagen</span>`;
   return "";
 }
@@ -2055,6 +2088,15 @@ function fmtRelatiefMoment(ms) {
   return "op " + fmtDatum(dagIso);
 }
 
+// Iconen voor de back-upstatus rechtsboven, in dezelfde lijnstijl als de rest van de app.
+const BACKUP_ICOON = {
+  wolkVink: SVG_ICOON('<path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9"/><path d="m9 17 2.5 2.5L16 15"/>'),
+  wolkLet: SVG_ICOON('<path d="M17 18h.5a4.5 4.5 0 0 0 0-9h-1.8A7 7 0 1 0 4 14.9"/><path d="M12 12v4"/><path d="M12 20h.01"/>'),
+  wolkSync: SVG_ICOON('<path d="M20.9 15.3A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 3 13.6"/><path d="m17 18-1.5 1.6a5 5 0 0 1-8-1.5"/><path d="M17 22v-4h-4"/><path d="M7 10v4h4"/><path d="m7 14 1.5-1.6a5 5 0 0 1 8 1.5"/>'),
+  vink: SVG_ICOON('<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>'),
+  let: SVG_ICOON('<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>'),
+};
+
 function backupIndicatorHTML() {
   // Herinnert eraan regelmatig een back-up te maken: klikken maakt er direct een.
   if (!state.personen.length) return "";
@@ -2062,30 +2104,30 @@ function backupIndicatorHTML() {
   // waarschuwing probeert opnieuw te synchroniseren.
   if (onlineBackupBeschikbaar()) {
     if (state.onlineBackupStatus === "bezig") {
-      return `<span class="backup-indicator backup-indicator-ok">☁ Synchroniseren…</span>`;
+      return `<span class="backup-indicator backup-indicator-ok">${BACKUP_ICOON.wolkSync}Synchroniseren…</span>`;
     }
     if (state.onlineBackupStatus === "fout") {
-      return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="De laatste online back-up is mislukt. Klik om het opnieuw te proberen.">☁ ⚠ Online back-up mislukt</button>`;
+      return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="De laatste online back-up is mislukt. Klik om het opnieuw te proberen.">${BACKUP_ICOON.wolkLet}Online back-up mislukt</button>`;
     }
     if (state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0)) {
       // Het lokale .json-bestand blijft het enige vangnet dat los van de API-sleutel
       // staat — daarom ook met online back-up aan een maandelijkse herinnering.
       const lokaalVerouderd = !state.laatsteBackupOp || (Date.now() - state.laatsteBackupOp > 30 * 86400000);
       if (lokaalVerouderd) {
-        return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Alles staat versleuteld online, maar het laatste lokale back-upbestand is ouder dan een maand (of er is er nog geen). Klik om er nu een te maken — dat bestand is je vangnet als de API-sleutel ooit kwijt is.">☁ ✓ online · ⚠ maak ook een lokale back-up</button>`;
+        return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Alles staat versleuteld online, maar het laatste lokale back-upbestand is ouder dan een maand (of er is er nog geen). Klik om er nu een te maken, dat bestand is je vangnet als de API-sleutel ooit kwijt is.">${BACKUP_ICOON.let}Online actueel, maak ook een lokale back-up</button>`;
       }
-      return `<button class="backup-indicator backup-indicator-ok" id="btnBackupNu" title="Alle wijzigingen staan versleuteld online. Klik om daarnaast een lokaal back-upbestand (.json) te maken.">☁ ✓ Online back-up actueel</button>`;
+      return `<button class="backup-indicator backup-indicator-ok" id="btnBackupNu" title="Alle wijzigingen staan versleuteld online. Klik om daarnaast een lokaal back-upbestand (.json) te maken.">${BACKUP_ICOON.wolkVink}Online back-up actueel</button>`;
     }
-    return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="Er zijn wijzigingen die nog niet online staan. Klik om nu te synchroniseren.">☁ Wijzigingen nog niet online</button>`;
+    return `<button class="backup-indicator backup-indicator-nodig" id="btnOnlineBackupRetry" title="Er zijn wijzigingen die nog niet online staan. Klik om nu te synchroniseren.">${BACKUP_ICOON.wolkLet}Wijzigingen nog niet online</button>`;
   }
   if (!state.laatsteBackupOp) {
-    return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Er is nog nooit een back-up gemaakt. Klik om nu een back-up (.json) te downloaden.">\u26A0 Nog geen back-up gemaakt</button>`;
+    return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Er is nog nooit een back-up gemaakt. Klik om nu een back-up (.json) te downloaden.">${BACKUP_ICOON.let}Nog geen back-up gemaakt</button>`;
   }
   const wanneer = fmtRelatiefMoment(state.laatsteBackupOp);
   if (state.laatsteWijzigingOp && state.laatsteWijzigingOp > state.laatsteBackupOp) {
-    return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Er zijn wijzigingen die nog niet in een back-up staan. Klik om nu een back-up (.json) te downloaden.">\u26A0 Wijzigingen sinds laatste back-up (${esc(wanneer)})</button>`;
+    return `<button class="backup-indicator backup-indicator-nodig" id="btnBackupNu" title="Er zijn wijzigingen die nog niet in een back-up staan. Klik om nu een back-up (.json) te downloaden.">${BACKUP_ICOON.let}Wijzigingen sinds laatste back-up<span class="backup-wanneer">(${esc(wanneer)})</span></button>`;
   }
-  return `<button class="backup-indicator backup-indicator-ok" id="btnBackupNu" title="Alle wijzigingen staan in de back-up van ${esc(wanneer)}. Klik om toch een nieuwe te maken.">\u2713 Back-up actueel (${esc(wanneer)})</button>`;
+  return `<button class="backup-indicator backup-indicator-ok" id="btnBackupNu" title="Alle wijzigingen staan in de back-up van ${esc(wanneer)}. Klik om toch een nieuwe te maken.">${BACKUP_ICOON.vink}Back-up actueel<span class="backup-wanneer">(${esc(wanneer)})</span></button>`;
 }
 
 function menuItemHTML(id, icoon, kleur, achtergrond, label) {
@@ -2112,13 +2154,14 @@ function handleidingModalHTML() {
           <li><a href="#hl-gezinshoofd">Gezinnen en gezinshoofd</a></li>
           <li><a href="#hl-loggen">Contactmoment loggen, bewerken en verwijderen</a></li>
           <li><a href="#hl-schema">Terugkeerschema en de kleurbalk/het bolletje</a></li>
-          <li><a href="#hl-bijzonder">Inplannen — (Bijzonder) contactmoment</a></li>
+          <li><a href="#hl-bijzonder">Inplannen: (bijzonder) contactmoment</a></li>
           <li><a href="#hl-afspraak">Datum afspraak voorstellen en berichtsjablonen</a></li>
-          <li><a href="#hl-afspraakplanner">AfspraakPlanner: planrondes — zelf een tijdslot laten kiezen</a></li>
+          <li><a href="#hl-afspraakplanner">AfspraakPlanner: planrondes, zelf een tijdslot laten kiezen</a></li>
           <li><a href="#hl-momenten">Bijzondere momenten</a></li>
           <li><a href="#hl-weergaves">Sorteren en weergaves</a></li>
           <li><a href="#hl-markeren">Markeren</a></li>
           <li><a href="#hl-notitie">Algemene notitie</a></li>
+          <li><a href="#hl-overdracht">Overdrachtskaart</a></li>
           <li><a href="#hl-scipio">Scipio-koppeling</a></li>
           <li><a href="#hl-beveiliging">Pin-beveiliging en versleuteling</a></li>
           <li><a href="#hl-systeem">Menu's, gegevens en instellingen</a></li>
@@ -2128,14 +2171,14 @@ function handleidingModalHTML() {
         <p><strong>De export maken in Scipio:</strong></p>
         ${SCIPIO_UITLEG_HTML}
         <p>Je uploadt een Excel-export (bijv. uit Scipio). De app laat je zelf het tabblad en de rij met
-        kolomnamen aanwijzen \u2014 handig als er een titel- of filterregel boven de echte koppen staat. Daarna
+        kolomnamen aanwijzen, handig als er een titel- of filterregel boven de echte koppen staat. Daarna
         koppel je kolommen aan velden (Regnr. en Naam zijn verplicht). <strong>Regnr.</strong> is het kenmerk
         waarmee personen bij een volgende import worden herkend. Na de import zie je een rapport met wie
-        nieuw is en wie niet meer voorkwam \u2014 die laatste groep verdwijnt niet automatisch. Per persoon staat
+        nieuw is en wie niet meer voorkwam, die laatste groep verdwijnt niet automatisch. Per persoon staat
         het schuifje <strong>Behouden</strong> standaard aan; zet het uit voor wie je uit de lijst wilt halen (met
         "Alles behouden" / "Alles verwijderen" doe je dat in één keer). Er gebeurt pas iets als je op
         <strong>Bijwerken</strong> klikt; daarna ga je direct naar het overzicht. Valt daarmee een heel gezin weg,
-        dan gaan ook de contactmomenten en notities van dat gezin verloren \u2014 het rapport waarschuwt je daarvoor
+        dan gaan ook de contactmomenten en notities van dat gezin verloren, het rapport waarschuwt je daarvoor
         en biedt een knop om eerst een <strong>overdrachtskaart</strong> te maken. Laat je ze staan, dan worden gezinnen waarvan
         <em>niemand</em> meer in de import voorkomt in alle overzichten <strong>lichter</strong> getoond: ze blijven
         vindbaar en je raakt niets kwijt, maar ze vragen niet meer om aandacht bij je planning. Wijs je er met de
@@ -2147,12 +2190,12 @@ function handleidingModalHTML() {
         schema's en notities gelden voor het hele gezin, niet per los persoon.</p>
         <p><strong>Verhuizingen:</strong> omdat een gezin op adres wordt herkend, zou het dossier bij een verhuizing
         achterblijven op het oude adres. Daarom kijkt de app bij een import ook naar het <strong>regnr van het
-        gezinshoofd</strong> \u2014 dat verandert niet als een gezin verhuist. Herkent hij zo'n verhuizing, dan komt
+        gezinshoofd</strong>, dat verandert niet als een gezin verhuist. Herkent hij zo'n verhuizing, dan komt
         het gezin in het importrapport onder "Verhuisd" te staan met het schuifje <strong>Meeverhuizen</strong>
         (standaard aan), zodat de contactgeschiedenis bij het gezin blijft. Het dossier verhuist mee zodra je op
         Bijwerken klikt; zet het schuifje uit als je dat niet wilt. Verhuist een gezin naar een adres waar al een
         dossier ligt, dan vraagt de app eerst of dat overschreven mag worden. Gaat een kind op zichzelf wonen, dan is
-        dat gewoon een nieuw gezin op een nieuw adres \u2014 dat wordt niet als verhuizing gezien.</p>
+        dat gewoon een nieuw gezin op een nieuw adres, dat wordt niet als verhuizing gezien.</p>
 
         <h4 id="hl-loggen">Contactmoment loggen, bewerken en verwijderen</h4>
         <p>In een gezinsdossier log je een contactmoment met datum, tijd (standaard 19:30), soort bezoek
@@ -2160,7 +2203,7 @@ function handleidingModalHTML() {
         gedeelte. Eerdere momenten kun je aanpassen via "Bewerken" (bijv. bij een typefout) of verwijderen.</p>
         <p><strong>Snel invullen na een eerste import:</strong> is er nog geen contactmoment bekend, dan
         toont de <strong>tabelweergave</strong> in de kolom "Laatste contact" een leeg datumveld. Vul daar
-        de datum van het laatste huisbezoek in — die wordt als huisbezoek in het dossier gezet (met de
+        de datum van het laatste huisbezoek in, die wordt als huisbezoek in het dossier gezet (met de
         notitie "Contactmoment gelogd via tabelweergave") en telt direct mee voor status en volgend contact. Sorteer op
         laatste contact om alle lege rijen bovenaan te krijgen. Een al gevulde datum pas je aan via het
         dossier, niet in de tabel.</p>
@@ -2173,7 +2216,7 @@ function handleidingModalHTML() {
         alle gezinnen op Automatisch zetten. Wil je voor een gezin afwijken, dan kies je in het
         gezinsdossier een handmatig schema: 2x per jaar, 1x per jaar, om het jaar, of een aangepast aantal
         maanden. <strong>Belangrijk:</strong> alleen een contactmoment van het soort "Huisbezoek" telt mee als
-        basis voor dit schema \u2014 een doop-, huwelijks- of ziekenhuisbezoek verschuift het reguliere
+        basis voor dit schema, een doop-, huwelijks- of ziekenhuisbezoek verschuift het reguliere
         bezoekmoment dus niet naar voren. Wel geldt: een huwelijks- of doopbezoek na het laatste huisbezoek
         schuift het volgende huisbezoek een jaar op, tenzij het reguliere schema toch al een latere datum
         aangaf (dan geldt die latere datum). Op elke kaart zie je een gekleurde balk (status: rood/oranje/groen,
@@ -2181,14 +2224,14 @@ function handleidingModalHTML() {
         jaar, blauw = aangepast).</p>
         <p><strong>Bezoeken per jaar:</strong> bovenin, naast het aantal gezinnen en personen, staat hoeveel
         huisbezoeken je per jaar nodig hebt om alle gezinnen volgens hun schema te bezoeken. Een gezin op
-        2x per jaar telt 2, op 1x per jaar telt 1 en om het jaar telt \u00bd \u2014 het totaal over twee jaar
+        2x per jaar telt 2, op 1x per jaar telt 1 en om het jaar telt \u00bd, het totaal over twee jaar
         gedeeld door twee, naar boven afgerond. Zo weet je hoeveel bezoekavonden je minimaal vrij moet
         houden. Gezinnen die niet meer in de laatste import voorkomen tellen niet mee.</p>
 
-        <h4 id="hl-bijzonder">Inplannen — (Bijzonder) contactmoment</h4>
+        <h4 id="hl-bijzonder">Inplannen: (bijzonder) contactmoment</h4>
         <p>Voor iets buiten het gewone ritme, zoals een ziekenhuisopname: plan een datum, eventueel een tijd,
         een soort en een notitie in bij het gezin. Dit staat los van het reguliere schema. Het moment komt
-        daarna in <strong>Bijzondere momenten</strong> te staan en als label (📅 datum, tijd en soort) op de
+        daarna in <strong>Bijzondere momenten</strong> te staan en als label (kalendericoon met datum, tijd en soort) op de
         gezinskaart in de lijst- en planbordweergave; die kaart kleurt lichtgroen zolang het moment nog komt
         en lichtgeel zodra de datum verstreken is en je het nog moet loggen. Zodra je het afhandelt met
         "Gedaan (log contact)" komt het als een gewoon contactmoment in de geschiedenis; "Verwijderen"
@@ -2201,34 +2244,34 @@ function handleidingModalHTML() {
         <span class="mono">[naam]</span> wordt ingevuld zodra je een sjabloon kiest of een gezin opent,
         <span class="mono">[datum]</span> en <span class="mono">[tijd]</span> pas bij het versturen. De standaardtekst
         draagt het voorbehoud van Jakobus: "Zou [datum] om [tijd] uur <strong>D.V.</strong> schikken?". Je beheert
-        je eigen sjablonen via ⚙ → Instellingen — handig als je verschillende contacten anders aanspreekt,
+        je eigen sjablonen via ⚙ → Instellingen, handig als je verschillende contacten anders aanspreekt,
         want je kunt er zoveel maken als je wilt en per afspraak kiezen welke je gebruikt. Ook "Mail sturen"
         bovenin het gezinsdossier gebruikt dezelfde instelling voor waar de mail naartoe gaat: het
         standaard mailprogramma van je apparaat (mailto), of direct een nieuw bericht in Outlook op het
-        web (Microsoft 365) — instelbaar via ⚙ → Instellingen → E-mail.
+        web (Microsoft 365), instelbaar via ⚙ → Instellingen → E-mail.
         Voor de WhatsApp-knoppen is er een vergelijkbare instelling (⚙ → Instellingen → WhatsApp):
         <strong>WhatsApp Web</strong> opent steeds hetzelfde tabblad (zodat WhatsApp je niet bij elke
-        klik in het vorige tabblad afmeldt), of kies <strong>de WhatsApp-app op deze computer</strong> —
+        klik in het vorige tabblad afmeldt), of kies <strong>de WhatsApp-app op deze computer</strong>;
         dan opent het bericht direct in de app, helemaal zonder tabbladen.</p>
 
-        <h4 id="hl-afspraakplanner">AfspraakPlanner: planrondes — zelf een tijdslot laten kiezen</h4>
+        <h4 id="hl-afspraakplanner">AfspraakPlanner: planrondes, zelf een tijdslot laten kiezen</h4>
         <p>Wil je niet zelf een datum voorstellen, maar gezinnen laten kiezen uit dezelfde
         tijdslots? Dat gaat via een <strong>planronde</strong>: een set tijdslots waaruit elk
         toegevoegd gezin er zelf één kiest via een persoonlijke link. Je maakt eerst een planronde
-        aan en voegt daarna gezinnen toe — in één keer of verspreid over dagen, precies zoals het
+        aan en voegt daarna gezinnen toe, in één keer of verspreid over dagen, precies zoals het
         uitkomt.</p>
         <p><strong>Planronde aanmaken:</strong> klik in de Planningweergave op
         <strong>"Planrondes"</strong> en dan op <strong>"+ Nieuwe planronde"</strong>. Vul een
-        omschrijving en de tijdslots in (de eindtijd is optioneel — laat die leeg als alleen de
+        omschrijving en de tijdslots in (de eindtijd is optioneel, laat die leeg als alleen de
         starttijd vaststaat). Vul je veel tijdslots in hetzelfde ritme in? Gebruik
         <strong>"Wekelijks herhalen"</strong>: vul één tijdslot in (bijv. dinsdag 20:00), kies het
         aantal weken en de app vult de rest automatisch aan.</p>
         <p><strong>Gezinnen toevoegen:</strong> klik in de Planningweergave op
         <strong>"Selecteren"</strong>, klik de gezinnen aan en kies onderin
-        <strong>"Toevoegen aan planronde"</strong> — daar kies je een bestaande planronde of maak
+        <strong>"Toevoegen aan planronde"</strong>, daar kies je een bestaande planronde of maak
         je er direct een nieuwe. Toevoegen kan ook per gezin op de detailpagina van een planronde.
         Elk toegevoegd gezin krijgt een eigen link die je met één klik als mail of WhatsApp-bericht
-        verstuurt (met een eigen sjabloon, plekhouder <span class="mono">[link]</span> — zie
+        verstuurt (met een eigen sjabloon, plekhouder <span class="mono">[link]</span>, zie
         hierboven), of die je met <strong>"Kopieer link"</strong> kopieert om zelf ergens te
         plakken. Het gemeentelid kiest zelf een moment via die link; kiest iemand een tijdslot,
         dan is dat voor de anderen niet meer beschikbaar. Per ongeluk het verkeerde gezin
@@ -2238,23 +2281,23 @@ function handleidingModalHTML() {
         planronde de voortgang (hoeveel gezinnen al gekozen hebben en hoeveel tijdslots nog vrij
         zijn); klik op een planronde voor de details. Zodra een gezin een tijdslot kiest, komt die
         afspraak bij het vernieuwen van de status <strong>automatisch</strong> als gepland bijzonder
-        contactmoment in het gezinsdossier te staan, zodat hij ook in Bijzondere momenten verschijnt
-        — je hoeft daar dus niets voor te doen. Handel je hem daar af of verwijder je hem, dan komt
+        contactmoment in het gezinsdossier te staan, zodat hij ook in Bijzondere momenten verschijnt.
+        Je hoeft daar dus niets voor te doen. Handel je hem daar af of verwijder je hem, dan komt
         hij niet terug. Op de gezinskaarten in de
-        lijst- en planbordweergave zie je een label zodra een gezin in een planronde zit (⏳); zodra
-        het een tijdslot gekozen heeft, staat de afspraak er als gepland moment (📅) — hetzelfde
+        lijst- en planbordweergave zie je een label "in planronde" zodra een gezin in een planronde zit; zodra
+        het een tijdslot gekozen heeft, staat de afspraak er als gepland moment met kalendericoon, hetzelfde
         label dat een zelf ingepland moment krijgt.</p>
         <p>Op de detailpagina kun je een planronde ook <strong>uitbreiden</strong> met extra
         tijdslots (direct kiesbaar via de al verstuurde links). Nog vrije tijdslots kun je
         <strong>intrekken</strong> als je toch niet meer kunt; een al gekozen tijdslot intrekken kan
-        bewust niet — dat regel je persoonlijk met het gezin. Tijdslots waarvan de starttijd
+        bewust niet, dat regel je persoonlijk met het gezin. Tijdslots waarvan de starttijd
         verstreken is, zijn automatisch niet meer kiesbaar en tonen als <em>verlopen</em>. Voor
         gezinnen die nog niet gekozen hebben kun je de uitnodiging opnieuw versturen.
         De app ververst de status van planrondes automatisch: na het ontgrendelen, bij het
         herladen en daarna elke 10 minuten; handmatig kan het met <strong>"↻ Alles vernieuwen"</strong>
         op de Planrondes-pagina. De gezinskaarten kleuren mee: licht blauw zolang een gezin nog kan
         kiezen, licht groen zodra een tijdslot gekozen is, licht geel vanaf de dag na het gekozen
-        moment — en weer wit zodra je daarna een contactmoment logt (of automatisch na 14 dagen),
+        moment, en weer wit zodra je daarna een contactmoment logt (of automatisch na 14 dagen),
         als er niets meer te kiezen valt, of als je de planronde verwijdert.
         <strong>Belangrijk om te weten:</strong> de AfspraakPlanner-koppeling is de enige plek in de
         app die met het internet communiceert, en er gaan nooit leesbare namen of adressen over de
@@ -2263,10 +2306,10 @@ function handleidingModalHTML() {
         <h4 id="hl-momenten">Bijzondere momenten</h4>
         <p>Een apart overzicht met alles wat een kaartje of belletje waard is:</p>
         <ul>
-          <li><strong>Verjaardagen</strong> \u2014 vanaf een instelbare leeftijd (standaard 70), elk jaar opnieuw.</li>
-          <li><strong>Huwelijksjubilea</strong> \u2014 in instelbare jaren (standaard 25, 30, 40, 45, 50, 55, 60). Verschijnt
+          <li><strong>Verjaardagen:</strong> vanaf een instelbare leeftijd (standaard 70), elk jaar opnieuw.</li>
+          <li><strong>Huwelijksjubilea:</strong> in instelbare jaren (standaard 25, 30, 40, 45, 50, 55, 60). Verschijnt
           alleen als er een partner in het gezin zit en de burgerlijke staat niet op weduwschap/scheiding wijst.</li>
-          <li><strong>Gepland</strong> \u2014 de bijzondere contactmomenten die je zelf hebt ingepland.</li>
+          <li><strong>Gepland:</strong> de bijzondere contactmomenten die je zelf hebt ingepland.</li>
         </ul>
         <p>Je opent het overzicht met het kalendericoon rechtsboven (of via \u2630 \u2192 Bijzondere momenten).
         Je filtert op "komende 90 dagen" of "alles", en er verschijnt een rood bolletje op het kalendericoon
@@ -2277,10 +2320,10 @@ function handleidingModalHTML() {
         en een weergave: Lijst (kaarten in twee kolommen; op een smal scherm één), Tabel (met sorteerbare,
         sleepbare kolommen) of Planning (een kanban-bord met kolommen Achterstallig / Komende maand /
         Dit kwartaal / Komend halfjaar / Verder vooruit). In de tabelweergave kies je via de
-        kolommenknop (<strong>▥</strong>, naast de weergaveknoppen) zelf welke gegevens je ziet —
+        kolommenknop (<strong>▥</strong>, naast de weergaveknoppen) zelf welke gegevens je ziet:
         naast de standaardkolommen ook
         leeftijd, postcode, wijk/sectie, telefoon, mobiel en e-mail; je keuze wordt onthouden.</p>
-        <p>Met de tellers bovenaan filter je het overzicht — in elke weergave. Naast de statusfilters is er
+        <p>Met de tellers bovenaan filter je het overzicht, in elke weergave. Naast de statusfilters is er
         de teller "70+ jaar" (het getal volgt de leeftijdsgrens uit de instellingen): die toont alle gezinnen
         waarvan het gezinshoofd de leeftijdsgrens heeft bereikt.</p>
 
@@ -2290,8 +2333,17 @@ function handleidingModalHTML() {
         in \u00e9\u00e9n klik alle gemarkeerde gezinnen bij elkaar, in elke weergave.</p>
 
         <h4 id="hl-notitie">Algemene notitie</h4>
-        <p>Een vrij tekstveld per gezin, niet gekoppeld aan een datum \u2014 bijvoorbeeld "wil geen contact". Staat
+        <p>Een vrij tekstveld per gezin, niet gekoppeld aan een datum, bijvoorbeeld "wil geen contact". Staat
         een gezin hiermee gemarkeerd, dan zie je een geel "opmerking"-label op de kaart.</p>
+
+        <h4 id="hl-overdracht">Overdrachtskaart</h4>
+        <p>Bij een wisseling van ouderling maak je per gezin een nette, afdrukbare samenvatting: in het
+        gezinsdossier, tab Gezin, bij <strong>Overdrachtskaart</strong> op <strong>Maken</strong>. Op de kaart staan de
+        gezinssamenstelling, de status en het terugkeerschema, de opmerking en alle contactmomenten met datum,
+        soort en gelezen gedeelte. De inhoud van je notities bij de contactmomenten staat er bewust niet op.
+        Klik op <strong>Opslaan als PDF</strong> en kies in het printvenster <strong>"Opslaan als PDF"</strong> als
+        bestemming; dan heb je een pdf-bestand dat je kunt overdragen. De kaart blijft altijd licht, ook als de app
+        op donker staat.</p>
 
         <h4 id="hl-scipio">Scipio-koppeling</h4>
         <p>Bij elk gezinslid staat een "Scipio"-link die rechtstreeks naar de persoonskaart in Scipio gaat
@@ -2302,38 +2354,38 @@ function handleidingModalHTML() {
         opnieuw invoeren. Met het slot-icoon rechtsboven vergrendel je eerder. De gegevens staan bovendien <strong>versleuteld</strong> in de browseropslag
         (AES-256; de sleutel wordt van de pin afgeleid en de pin zelf wordt nergens bewaard). Vanaf het
         slotscherm kun je zonder pin wel de verjaardagen en huwelijksjubilea uit "Bijzondere momenten"
-        bekijken \u2014 die namen en datums staan daarvoor bewust onversleuteld in een klein hulplijstje;
+        bekijken, die namen en datums staan daarvoor bewust onversleuteld in een klein hulplijstje;
         geplande momenten en gezinsdossiers blijven verborgen tot je volledig ontgrendelt. Vergeet je de
         pin, dan zijn de versleutelde gegevens definitief onleesbaar; de enige weg terug is alles wissen en
-        je back-up (.json) terugzetten \u2014 zorg dus voor een actuele back-up.
+        je back-up (.json) terugzetten, zorg dus voor een actuele back-up.
         <strong>Goed om te weten:</strong> een korte cijferpin houdt een nieuwsgierige meekijker buiten,
         maar is voor een vastberaden aanvaller te raden. Gebruik de app daarom nog steeds op een apparaat
         dat zelf goed beveiligd is (eigen account, schermvergrendeling, versleutelde schijf), of kies een
-        langere pin \u2014 alle tekens zijn toegestaan.</p>
+        langere pin, alle tekens zijn toegestaan.</p>
 
         <h4 id="hl-systeem">Menu's, gegevens en instellingen</h4>
         <p>Rechtsboven staan naast de back-upstatus vier iconen: het <strong>kalendericoon</strong> opent
         Bijzondere momenten, <strong>\u2630</strong> bevat de onderdelen van de app (Bijzondere momenten,
-        Planrondes en \u2014 als die functie aanstaat \u2014 Bijbelgedeelten), <strong>\u2699</strong> bevat het
+        Planrondes en, als die functie aanstaat, Bijbelgedeelten), <strong>\u2699</strong> bevat het
         beheer (Instellingen, gegevens en hulp) en het <strong>slotje</strong> vergrendelt de app direct.
         Met het logo linksboven ga je terug naar het hoofdscherm.</p>
         <p><strong>Nieuwe Excel-import</strong> ververst de basisgegevens. <strong>Exporteer naar Excel</strong> maakt
         een volledig exportbestand inclusief contactstatus. <strong>Back-up maken/terugzetten</strong> (.json) is je
         vangnet, want alle gegevens staan alleen lokaal in deze browser op deze computer; sinds versie 3
-        gaan ook de instellingen (mijlpalen en automatisch schema) mee in de back-up — alleen de pin niet,
+        gaan ook de instellingen (mijlpalen en automatisch schema) mee in de back-up, alleen de pin niet,
         die stel je op een nieuw apparaat opnieuw in. De back-up is bewust <strong>niet</strong> versleuteld:
         zo kun je er ook bij een vergeten pin altijd mee verder. Bewaar het bestand dus op een veilige plek
         (bijvoorbeeld een versleutelde schijf of wachtwoordkluis). De back-up is ook de manier om je
         gegevens mee te nemen naar een andere computer, browser of naar de online versie. Rechtsboven in de balk zie je
         de back-upstatus: groen betekent dat alles in de laatste back-up staat, oranje dat er wijzigingen
-        zijn van na de laatste back-up (of dat er nog nooit een is gemaakt) — klik erop om direct een
+        zijn van na de laatste back-up (of dat er nog nooit een is gemaakt), klik erop om direct een
         back-up te maken. Standaard wordt die gedownload; via Instellingen → Back-up opslaan kun je
         in plaats daarvan zelf een locatie kiezen (Chrome/Edge). Bewaar je back-up bij voorkeur niet
         alléén op dit apparaat: gaat je laptop stuk, kwijt of gestolen, dan is een back-up op diezelfde
-        schijf net zo kwetsbaar — kies daarom bijvoorbeeld een map die met OneDrive synchroniseert, een
+        schijf net zo kwetsbaar, kies daarom bijvoorbeeld een map die met OneDrive synchroniseert, een
         externe schijf of USB-stick. <strong>Instellingen</strong> bevat verder onder meer de
         regels voor het automatische terugkeerschema, de <strong>Weergave</strong> (Automatisch, Licht of
-        Donker \u2014 Automatisch volgt je computer of telefoon; de keuze geldt per apparaat) en
+        Donker, Automatisch volgt je computer of telefoon; de keuze geldt per apparaat) en
         <strong>Beveiliging</strong>, waar je je pin wijzigt. <strong>Debug</strong> toont technische logs als er iets
         misgaat.</p>
 
@@ -2357,7 +2409,7 @@ function instellingenPaginaHTML() {
     ${paginaSluitKnopHTML("btnInstellingenTerug")}
     <h2 style="font-size:22px;margin:0 0 4px;">Instellingen</h2>
     <p style="color:var(--text-soft);font-size:13px;margin-bottom:4px;">
-      Wijzigingen worden direct opgeslagen — er is geen aparte opslaan-knop.
+      Wijzigingen worden direct opgeslagen, er is geen aparte opslaan-knop.
     </p>
 
     <div class="instellingen-grid">
@@ -2365,7 +2417,7 @@ function instellingenPaginaHTML() {
         <h4>Automatisch terugkeerschema</h4>
         <p class="instellingen-uitleg">
           Gezinnen met schema "Automatisch" krijgen hun bezoekinterval op basis van de leeftijd van het
-          gezinshoofd en de gezinssamenstelling. Elke ouderling werkt anders — stel hieronder je eigen
+          gezinshoofd en de gezinssamenstelling. Elke ouderling werkt anders, stel hieronder je eigen
           regels in. Boven de leeftijdsgrens zonder partner maar met huisgenoten geldt het stel-interval;
           is de geboortedatum onbekend, dan geldt het interval van onder de grens.
         </p>
@@ -2420,7 +2472,7 @@ function instellingenPaginaHTML() {
           <h4>WhatsApp</h4>
           <p class="instellingen-uitleg">
             Hoe de "WhatsApp"-knoppen openen. WhatsApp Web gebruikt steeds hetzelfde tabblad;
-            heb je de WhatsApp-app op deze computer, dan opent die direct — zonder tabbladen.
+            heb je de WhatsApp-app op deze computer, dan opent die direct, zonder tabbladen.
           </p>
           <div class="schema-grid">
             <div class="schema-opt ${state.whatsappMethode === "web" ? "active" : ""}" data-whatsappmethode="web">WhatsApp Web (browser)</div>
@@ -2433,7 +2485,7 @@ function instellingenPaginaHTML() {
           <p class="instellingen-uitleg">
             Wat er gebeurt als je op "Back-up maken" klikt. Bewaar je back-up bij voorkeur niet alleen
             op dit apparaat: gaat je laptop stuk, kwijt of gestolen, dan is een back-up op diezelfde
-            schijf net zo kwetsbaar. "Zelf een locatie kiezen" werkt alleen in Chrome en Edge — in
+            schijf net zo kwetsbaar. "Zelf een locatie kiezen" werkt alleen in Chrome en Edge, in
             andere browsers wordt de back-up dan alsnog gewoon gedownload.
           </p>
           <div class="schema-grid">
@@ -2459,7 +2511,7 @@ function instellingenPaginaHTML() {
           <p class="instellingen-uitleg">
             Voor de planrondes in de Planningweergave: gemeenteleden kiezen daar zelf een
             tijdslot. Alleen regnr en tijdslot gaan naar deze server, nooit namen of adressen.
-            Je persoonlijke API-sleutel vraag je op bij Ruben van der Kolk —
+            Je persoonlijke API-sleutel vraag je op bij Ruben van der Kolk,
             <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>. Vul hem hier in en deel hem
             verder met niemand (net zoals je pin).
           </p>
@@ -2468,7 +2520,7 @@ function instellingenPaginaHTML() {
             <input type="password" id="instAfspraakplannerSleutel" autocomplete="off" value="${esc(state.afspraakplannerApiSleutel)}" />
           </div>
           <p class="instellingen-waarschuwing">
-            ⚠ Deze API-sleutel gaat <strong>niet</strong> mee in de back-up — die is bewust
+            ⚠ Deze API-sleutel gaat <strong>niet</strong> mee in de back-up, die is bewust
             onversleuteld. Vul de sleutel op een nieuw apparaat opnieuw in.
           </p>
           <div class="field-row">
@@ -2478,7 +2530,7 @@ function instellingenPaginaHTML() {
           ${state.afspraakplannerApiSleutel ? `
           <div class="field-row">
             <label>Standaard starttijd voor tijdslots in planrondes</label>
-            <input type="time" id="instPlanrondeTijd" value="${esc(state.planrondeStandaardTijd)}" style="max-width:120px;" />
+            <input ${TIJDVELD_ATTR} id="instPlanrondeTijd" value="${esc(state.planrondeStandaardTijd)}" style="max-width:120px;" />
           </div>` : ""}
         </section>
       </div>
@@ -2488,7 +2540,7 @@ function instellingenPaginaHTML() {
         <p class="instellingen-uitleg">
           Voor de mail/WhatsApp-tekst bij "Datum afspraak voorstellen" en bij een AfspraakPlanner-uitnodiging.
           Gebruik <span class="mono">[naam]</span>, <span class="mono">[datum]</span> en
-          <span class="mono">[tijd]</span> als plekhouders — die vult de app automatisch in. Voor een
+          <span class="mono">[tijd]</span> als plekhouders, die vult de app automatisch in. Voor een
           AfspraakPlanner-uitnodiging (waarbij de ontvanger zelf een moment kiest) gebruik je in plaats
           van datum/tijd de plekhouder <span class="mono">[link]</span>. Schrijf je verschillende
           contacten anders aan? Maak dan gerust meerdere sjablonen; je kiest per keer welke je gebruikt.
@@ -2519,7 +2571,7 @@ function instellingenPaginaHTML() {
               Bewaart na elke wijziging automatisch een back-up op de AfspraakPlanner-server, en
               haalt bij het opstarten de nieuwste versie op als een ander apparaat recenter was.
               De back-up wordt op dit apparaat versleuteld met een sleutel afgeleid van je
-              API-sleutel — de server (en de beheerder) kan de inhoud niet lezen. Handmatige
+              API-sleutel, de server (en de beheerder) kan de inhoud niet lezen. Handmatige
               lokale back-ups blijven daarnaast gewoon mogelijk via ⚙ → Back-up maken.
             </p>
             <div class="schema-grid">
@@ -2529,20 +2581,20 @@ function instellingenPaginaHTML() {
             ${state.onlineBackupActief ? `
               <p class="instellingen-uitleg" style="margin-top:10px;">
                 ${state.onlineBackupStatus === "bezig" ? "Bezig met synchroniseren…"
-                  : state.onlineBackupStatus === "fout" ? `<span style="color:var(--red);">Laatste synchronisatie is mislukt — kijk bij Debug voor details.</span>`
+                  : state.onlineBackupStatus === "fout" ? `<span style="color:var(--red);">Laatste synchronisatie is mislukt, kijk bij Debug voor details.</span>`
                   : state.onlineBackupGesyncdTot && state.onlineBackupGesyncdTot >= (state.laatsteWijzigingOp || 0) ? "✓ Alle wijzigingen staan online."
                   : "Er zijn wijzigingen die nog niet online staan."}
               </p>
               <p class="instellingen-uitleg" style="margin-top:6px;">
                 ${state.onlineBackupMeta
-                  ? `Op de server — laatste versie: <strong>${state.onlineBackupMeta.laatste ? esc(fmtServerMoment(state.onlineBackupMeta.laatste.updated_at)) : "nog geen"}</strong>
+                  ? `Op de server, laatste versie: <strong>${state.onlineBackupMeta.laatste ? esc(fmtServerMoment(state.onlineBackupMeta.laatste.updated_at)) : "nog geen"}</strong>
                      · dagelijks herstelpunt: <strong>${state.onlineBackupMeta.vorige ? esc(fmtServerMoment(state.onlineBackupMeta.vorige.updated_at)) : "nog geen"}</strong>`
                   : "Versies op de server worden opgehaald…"}
               </p>
               <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 <button class="btn-sm" id="btnOnlineBackupNu" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""}>Nu synchroniseren</button>
                 <button class="btn-sm" id="btnHerstelLaatste" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""} title="Vervangt de gegevens op dit apparaat door de laatste versie op de server">Laatste serverversie terugzetten</button>
-                <button class="btn-sm" id="btnHerstelVorige" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""} title="Vervangt de gegevens op dit apparaat door het dagelijkse herstelpunt (de versie van vóór vandaag) — handig als er vandaag iets is misgegaan">Dagelijks herstelpunt terugzetten</button>
+                <button class="btn-sm" id="btnHerstelVorige" ${state.onlineBackupStatus === "bezig" ? "disabled" : ""} title="Vervangt de gegevens op dit apparaat door het dagelijkse herstelpunt (de versie van vóór vandaag), handig als er vandaag iets is misgegaan">Dagelijks herstelpunt terugzetten</button>
               </div>
             ` : ""}
           </div>` : ""}
@@ -2609,6 +2661,99 @@ function instellingenMenuItemsHTML() {
     <div class="sidebar-versie">ContactPlanner v${esc(APP_VERSIE)} \u00b7 \u00a9 R.J.J. van der Kolk</div>`;
 }
 
+// Tijdvelden altijd in 24-uursnotatie. Een <input type="time"> volgt de taalinstelling van de
+// browser en toont bij bijv. Engels (VS) AM/PM; daarom een gewoon tekstveld dat de invoer
+// netjes maakt: "1930", "19.30" of "19u30" wordt "19:30", en "9" wordt "09:00".
+const tijdveldAttr = (hulptekst = "uu:mm") => `type="text" class="tijd-24" inputmode="numeric" placeholder="${hulptekst}" maxlength="5" autocomplete="off" spellcheck="false"`;
+const TIJDVELD_ATTR = tijdveldAttr();
+
+function normaliseerTijd(invoer) {
+  const t = String(invoer || "").trim().replace(/[.,hu]/gi, ":");
+  if (!t) return "";
+  let m = t.match(/^(\d{1,2})(?::(\d{1,2}))?$/) || t.match(/^(\d{1,2})(\d{2})$/);
+  if (!m) return null;
+  const uur = parseInt(m[1], 10), min = parseInt(m[2] || "0", 10);
+  if (uur > 23 || min > 59) return null;
+  return `${String(uur).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+// In de capture-fase, dus vóór de eigen change-handlers van de velden: die krijgen zo altijd
+// een nette "uu:mm" (of een leeg veld) binnen.
+document.addEventListener("change", (e) => {
+  if (!e.target.matches || !e.target.matches("input.tijd-24")) return;
+  const netjes = normaliseerTijd(e.target.value);
+  if (!("titel" in e.target.dataset)) e.target.dataset.titel = e.target.title || "";
+  e.target.classList.toggle("tijd-ongeldig", netjes === null);
+  e.target.title = netjes === null ? "Vul een tijd in als uu:mm, bijvoorbeeld 19:30" : e.target.dataset.titel;
+  if (netjes !== null) e.target.value = netjes;
+  else e.stopPropagation(); // een ongeldige tijd niet doorgeven: dan wordt hij ook nergens opgeslagen
+}, true);
+
+// Datumvelden altijd als dd/mm/jjjj. Ook <input type="date"> volgt de taalinstelling van de
+// browser (bij Engels (VS) mm/dd/jjjj). Daarom een tekstveld voor weergave en invoer, met een
+// kalenderknop die de datumkiezer van de browser opent. Daarachter staat het oorspronkelijke
+// datumveld (verborgen): dat houdt de id/data-attributen en de ISO-waarde, en krijgt een
+// change-event zodra de datum verandert, zodat de bestaande handlers niets merken.
+function isoNaarDatumTekst(iso) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+function datumTekstNaarIso(tekst) {
+  const t = String(tekst || "").trim();
+  if (!t) return "";
+  let m = t.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2}|\d{4})$/) || t.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (!m) return null;
+  let jaar = parseInt(m[3], 10);
+  if (m[3].length === 2) jaar += jaar <= (new Date().getFullYear() % 100) + 1 ? 2000 : 1900;
+  const maand = parseInt(m[2], 10), dag = parseInt(m[1], 10);
+  const d = new Date(jaar, maand - 1, dag);
+  if (d.getFullYear() !== jaar || d.getMonth() !== maand - 1 || d.getDate() !== dag) return null;
+  return toISO(jaar, maand, dag);
+}
+
+function datumVeldHTML(attrs, iso, opties = {}) {
+  return `<span class="datum-veld ${opties.klasse || ""}"${opties.titel ? ` title="${esc(opties.titel)}"` : ""}>`
+    + `<input type="text" class="datum-tekst" inputmode="numeric" placeholder="dd/mm/jjjj" maxlength="10" autocomplete="off" spellcheck="false" value="${isoNaarDatumTekst(iso)}" />`
+    + `<button type="button" class="datum-kies" tabindex="-1" title="Kies een datum" aria-label="Kies een datum">${DOSSIER_ICOON.kalender}</button>`
+    + `<input type="date" class="datum-verborgen" tabindex="-1" aria-hidden="true" ${attrs} value="${esc(iso || "")}" />`
+    + `</span>`;
+}
+
+document.addEventListener("change", (e) => {
+  if (!e.target.matches) return;
+  if (e.target.matches("input.datum-tekst")) {
+    const verborgen = e.target.closest(".datum-veld").querySelector(".datum-verborgen");
+    let iso = datumTekstNaarIso(e.target.value);
+    if (iso && ((verborgen.max && iso > verborgen.max) || (verborgen.min && iso < verborgen.min))) iso = null;
+    e.target.classList.toggle("datum-ongeldig", iso === null);
+    e.target.title = iso === null ? "Vul een geldige datum in als dd/mm/jjjj" : "";
+    if (iso === null) return;
+    e.target.value = isoNaarDatumTekst(iso);
+    if (verborgen.value !== iso) {
+      verborgen.value = iso;
+      verborgen.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  } else if (e.target.matches("input.datum-verborgen")) {
+    // gekozen in de datumkiezer (of hierboven doorgegeven): tekstveld bijwerken
+    const tekst = e.target.closest(".datum-veld").querySelector(".datum-tekst");
+    tekst.value = isoNaarDatumTekst(e.target.value);
+    tekst.classList.remove("datum-ongeldig");
+  }
+}, true);
+
+// Klikken in een datumveld: de kalenderknop opent de kiezer. Kliks gaan niet door naar
+// bijvoorbeeld een tabelrij die bij een klik het gezinsdossier opent.
+document.addEventListener("click", (e) => {
+  const veld = e.target.closest && e.target.closest(".datum-veld");
+  if (!veld) return;
+  e.stopPropagation();
+  if (e.target.closest(".datum-kies")) {
+    const verborgen = veld.querySelector(".datum-verborgen");
+    try { verborgen.showPicker(); } catch (fout) { verborgen.focus(); }
+  }
+}, true);
+
 // Klik buiten de menu's of Escape sluit een open menu. Eén keer geregistreerd (niet per
 // render); een klik op het andere menu-icoon valt binnen .topbar-menu en wisselt dus direct.
 document.addEventListener("mousedown", (e) => {
@@ -2647,7 +2792,7 @@ function topbarHTML() {
     <div class="topbar-actions">
       ${opslagIndicatorHTML()}
       ${backupIndicatorHTML()}
-      ${state.personen.length ? `<button class="btn-ghost btn-sm btn-icoon" id="btnMijlpalenOpen" title="Bijzondere momenten${heeftDringendeMijlpaal() ? " \u2014 er is binnen 14 dagen een bijzonder moment" : ""}" aria-label="Bijzondere momenten">${ICOON_BIJZONDERE_MOMENTEN}${heeftDringendeMijlpaal() ? `<span class="dringend-dot icoon-badge"></span>` : ""}</button>` : ""}
+      ${state.personen.length ? `<button class="btn-ghost btn-sm btn-icoon" id="btnMijlpalenOpen" title="Bijzondere momenten${heeftDringendeMijlpaal() ? ": er is binnen 14 dagen een bijzonder moment" : ""}" aria-label="Bijzondere momenten">${ICOON_BIJZONDERE_MOMENTEN}${heeftDringendeMijlpaal() ? `<span class="dringend-dot icoon-badge"></span>` : ""}</button>` : ""}
       ${navigatieMenuItemsHTML() ? topbarMenuHTML("navigatie", SVG_ICOON('<path d="M4 6h16M4 12h16M4 18h16"/>'), "Menu", navigatieMenuItemsHTML()) : ""}
       ${topbarMenuHTML("instellingen", ICOON_TANDWIEL, "Instellingen en beheer", instellingenMenuItemsHTML())}
       <button class="btn-ghost btn-sm btn-icoon" id="btnVergrendelNu" title="Nu vergrendelen" aria-label="Nu vergrendelen">${SVG_ICOON('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')}</button>
@@ -2917,9 +3062,9 @@ function afspraakplannerPaginaHTML() {
         </div>
         ${state.afspraakplannerTijdslots.map((t, i) => `
           <div class="tijdslot-rij">
-            <input type="date" data-tijdslot-index="${i}" data-tijdslot-veld="datum" value="${esc(t.datum)}" />
-            <input type="time" data-tijdslot-index="${i}" data-tijdslot-veld="start" value="${esc(t.start)}" />
-            <input type="time" data-tijdslot-index="${i}" data-tijdslot-veld="eind" value="${esc(t.eind)}" title="Eindtijd (optioneel) — laat leeg als alleen de starttijd vaststaat" />
+            ${datumVeldHTML(`data-tijdslot-index="${i}" data-tijdslot-veld="datum"`, t.datum)}
+            <input ${tijdveldAttr("van")} data-tijdslot-index="${i}" data-tijdslot-veld="start" value="${esc(t.start)}" />
+            <input ${tijdveldAttr("tot")} data-tijdslot-index="${i}" data-tijdslot-veld="eind" value="${esc(t.eind)}" title="Eindtijd (optioneel), laat leeg als alleen de starttijd vaststaat" />
             <button class="btn-ghost btn-sm btn-danger" data-tijdslot-verwijder="${i}" ${state.afspraakplannerTijdslots.length <= 1 ? `disabled title="Minimaal één tijdslot nodig"` : ""}>✕</button>
           </div>
         `).join("")}
@@ -2933,7 +3078,7 @@ function afspraakplannerPaginaHTML() {
         </span>
       </div>
       <p style="font-size:11.5px;color:var(--text-soft);margin:6px 0 0;">
-        Tip: vul één tijdslot in (bijv. dinsdag 20:00) en klik op "Wekelijks herhalen" — de app vult
+        Tip: vul één tijdslot in (bijv. dinsdag 20:00) en klik op "Wekelijks herhalen", de app vult
         dan dezelfde dag en tijd voor de opgegeven weken in.
       </p>`;
 
@@ -2944,7 +3089,7 @@ function afspraakplannerPaginaHTML() {
       ${geenSleutel ? `
       <div class="instellingen-waarschuwing" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px;">
         <span style="flex:1;min-width:220px;">⚠ Er is nog geen API-sleutel ingesteld, dus een planronde aanmaken kan nog niet.
-        Vul de sleutel eerst in bij Instellingen → AfspraakPlanner (op te vragen bij Ruben van der Kolk —
+        Vul de sleutel eerst in bij Instellingen → AfspraakPlanner (op te vragen bij Ruben van der Kolk,
         <a href="mailto:ruben@vdkolk.nu">ruben@vdkolk.nu</a>). Je selectie blijft gewoon staan.</span>
         <button class="btn-sm" id="btnNaarInstellingen">Naar Instellingen</button>
       </div>` : ""}
@@ -2959,7 +3104,7 @@ function afspraakplannerPaginaHTML() {
       <div class="field-row">
         <label>Aan welke planronde toevoegen?</label>
         <select id="planrondeDoelSelect">
-          <option value="nieuw" ${!naarBestaand ? "selected" : ""}>— een nieuwe planronde —</option>
+          <option value="nieuw" ${!naarBestaand ? "selected" : ""}>Een nieuwe planronde</option>
           ${bestaande.map((a) => `<option value="${esc(a.id)}" ${String(state.planrondeDoelId) === String(a.id) ? "selected" : ""}>${esc(a.omschrijving || `Planronde #${a.id}`)} (uitgezet op ${esc(fmtDatum(a.aangemaaktOp))})</option>`).join("")}
         </select>
       </div>` : ""}
@@ -2975,7 +3120,7 @@ function afspraakplannerPaginaHTML() {
         `).join("")}
       </div>` : `
       <p style="font-size:12.5px;color:var(--text-soft);margin:0 0 12px;">
-        Er zijn nog geen gezinnen geselecteerd — dat hoeft ook niet: maak eerst de planronde aan en
+        Er zijn nog geen gezinnen geselecteerd, dat hoeft ook niet: maak eerst de planronde aan en
         voeg gezinnen later toe (via de Planningweergave of de pagina Planrondes).
       </p>`}
 
@@ -2999,7 +3144,7 @@ function planrondeDoelSamenvattingHTML(a) {
     const eerstvolgend = vrij.slice().sort((x, y) => String(x.start_tijd).localeCompare(String(y.start_tijd)))[0];
     inhoud = vrij.length
       ? `${vrij.length} van de ${slots.length} tijdslots nog vrij · eerstvolgend: ${esc(fmtSlotTijd(eerstvolgend.start_tijd, eerstvolgend.eind_tijd))}`
-      : `⚠ Geen vrije tijdslots meer — voeg eerst tijdslots toe via de pagina Planrondes, anders valt er niets te kiezen.`;
+      : `⚠ Geen vrije tijdslots meer, voeg eerst tijdslots toe via de pagina Planrondes, anders valt er niets te kiezen.`;
   } else {
     inhoud = "De status van deze planronde is nog niet opgehaald; na het toevoegen zie je direct de actuele stand.";
   }
@@ -3055,7 +3200,7 @@ const SCIPIO_UITLEG_HTML = `
     <li>Klik op het Excel-icoon onderin om de importselectie te downloaden, en lees dat bestand hier in.</li>
   </ol>
   <p style="font-size:12.5px;color:var(--text-soft);margin:8px 0 0;">
-    De importselectie staat al voor je klaar in Scipio \u2014 je hoeft zelf niets meer samen te stellen.
+    De importselectie staat al voor je klaar in Scipio, je hoeft zelf niets meer samen te stellen.
   </p>
   <img class="uitleg-afbeelding" src="img/scipio-importselectie.png" alt="Scipio: scherm Zoekopdracht openen, met de zoekopdracht &quot;Importselectie - ContactPlanner&quot; in de lijst" loading="lazy" />`;
 
@@ -3066,7 +3211,7 @@ function uploadHTML() {
       <img class="upload-logo" src="icons/icon-192.png" alt="ContactPlanner" />
       <div class="upload-title">Waarmee wil je beginnen?</div>
       <p class="upload-desc">
-        Alles wat je in de app invoert \u2014 contactmomenten, schema's, notities \u2014 blijft versleuteld
+        Alles wat je in de app invoert (contactmomenten, schema's, notities) blijft versleuteld
         bewaard op deze computer. Kies hieronder hoe je de gegevens binnenhaalt.
       </p>
       <input id="fileFirstUpload" type="file" accept=".xlsx,.xls" style="display:none" />
@@ -3086,15 +3231,15 @@ function uploadHTML() {
         <div class="setup-optie">
           <div class="setup-icoon" style="background:var(--amber-bg);color:var(--amber);">\u21ba</div>
           <strong>Back-up terugzetten</strong>
-          <p>Zet een eerder gemaakt back-upbestand (.json) terug \u2014 bijvoorbeeld bij een verhuizing
+          <p>Zet een eerder gemaakt back-upbestand (.json) terug, bijvoorbeeld bij een verhuizing
           naar een andere computer of browser.</p>
           <button class="btn-primary" id="btnFirstBackup">Kies back-upbestand</button>
         </div>
         <div class="setup-optie">
           <div class="setup-icoon" style="background:var(--blue-bg);color:var(--blue);">\u2601</div>
           <strong>API-sleutel koppelen</strong>
-          <p>Vul je persoonlijke API-sleutel in en haal — als dat voor jouw sleutel is
-          ingeschakeld — direct de laatste versie van je gegevens op.</p>
+          <p>Vul je persoonlijke API-sleutel in en haal (als dat voor jouw sleutel is
+          ingeschakeld) direct de laatste versie van je gegevens op.</p>
           ${state.setupApiOpen ? `
             <div class="field-row" style="text-align:left;">
               <label>API-sleutel</label>
@@ -3144,7 +3289,7 @@ function sheetPrepHTML() {
     <p style="color:var(--text-soft);font-size:13px;margin-bottom:10px;">
       Soms staat er een titel-, filter- of lege regel boven de echte kolomkoppen, of staan de gegevens
       op een ander tabblad. Kies hieronder het juiste tabblad (indien van toepassing) en klik op de rij
-      met de kolomnamen \u2014 bijvoorbeeld de rij met "Naam", "Regnr.", "Adres" enzovoort. We hebben er
+      met de kolomnamen, bijvoorbeeld de rij met "Naam", "Regnr.", "Adres" enzovoort. We hebben er
       zelf alvast \u00e9\u00e9n gemarkeerd als beste gok; controleer of die groene rij ook echt \u00e1l je
       velden bevat, en klik anders op de juiste rij.
     </p>
@@ -3164,13 +3309,13 @@ function sheetPrepHTML() {
         <thead><tr><th>Rij</th><th>Gevulde cellen</th><th>Herkende velden</th><th>Score</th></tr></thead>
         <tbody>
           ${(state.headerRowDiagnostiek || []).map((d) => `<tr class="${d.rij - 1 === state.headerRowIndex ? "gekozen-header-rij" : ""}">
-            <td>${d.rij}</td><td>${d.gevuld}</td><td>${esc(d.herkend.join(", ") || "\u2014")}</td><td>${d.score}</td>
+            <td>${d.rij}</td><td>${d.gevuld}</td><td>${esc(d.herkend.join(", ") || "-")}</td><td>${d.score}</td>
           </tr>`).join("")}
         </tbody>
       </table>
     </details>
     <div style="margin-top:16px;">
-      <button class="btn-primary" id="btnBevestigHeaderRij">\u2713 Dit is de juiste rij \u2014 doorgaan</button>
+      <button class="btn-primary" id="btnBevestigHeaderRij">\u2713 Dit is de juiste rij, doorgaan</button>
     </div>`;
 }
 
@@ -3179,7 +3324,7 @@ function mappingHTML() {
     <div class="map-row">
       <label>${esc(f.label)}${f.key === "regnr" || f.key === "naam" ? " *" : ""}</label>
       <select data-map-field="${f.key}">
-        <option value="">\u2014 geen \u2014</option>
+        <option value="">(geen)</option>
         ${state.rawHeaders.map((h) => `<option value="${esc(h)}" ${state.mapping[f.key] === h ? "selected" : ""}>${esc(h)}</option>`).join("")}
       </select>
     </div>`).join("");
@@ -3192,7 +3337,7 @@ function mappingHTML() {
     <button class="btn-ghost" id="btnMappingTerug">\u2190 Terug</button>
     <h2 style="font-size:23px;margin:12px 0 4px;">Koppel de kolommen</h2>
     <p style="color:var(--text-soft);font-size:13px;margin-bottom:8px;">
-      We hebben ${state.rawRows.length} rijen gevonden. Regnr. en Naam zijn verplicht \u2014 Regnr. is
+      We hebben ${state.rawRows.length} rijen gevonden. Regnr. en Naam zijn verplicht, Regnr. is
       het kenmerk waarmee we personen herkennen bij een volgende import. Niet-gekoppelde kolommen
       blijven bewaard als overige gegevens en komen terug bij export.
     </p>
@@ -3292,10 +3437,11 @@ function statsRowHTML() {
   const counts = telStatussen();
   const aantalFavorieten = computeGezinnen().filter((g) => getGezinsdata(g.gezinsKey).favoriet).length;
   const pillen = [
+    // Alle gezinnen en gemarkeerd voorop, dan de status van urgent naar rustig, daarna de overige filters.
     ["alle", computeGezinnen().length, "Alle gezinnen", "var(--text)"],
     ["favoriet", aantalFavorieten, "\u2605 Gemarkeerd", "var(--amber)"],
-    ["teLaat", counts.teLaat, "Te laat", "var(--red)"],
     ["nooit", counts.nooit, "Nog geen contact", "var(--red)"],
+    ["teLaat", counts.teLaat, "Te laat", "var(--red)"],
     ["binnenkort", counts.binnenkort, "Binnenkort", "var(--amber)"],
     ["opSchema", counts.opSchema, "Op schema", "var(--green)"],
     ["opmerking", counts.opmerking, "Opmerkingen", "var(--amber)"],
@@ -3309,11 +3455,11 @@ function statsRowHTML() {
 }
 
 const PLANNING_KOLOMMEN = [
-  { key: "achterstallig", label: "Achterstallig", kleur: "var(--red)" },
-  { key: "maand", label: "Komende maand", kleur: "var(--amber)" },
-  { key: "kwartaal", label: "Dit kwartaal", kleur: "var(--accent)" },
-  { key: "halfjaar", label: "Komend halfjaar", kleur: "var(--green)" },
-  { key: "later", label: "Verder vooruit", kleur: "var(--text-soft)" },
+  { key: "achterstallig", label: "Achterstallig", uitleg: "te laat of nog geen contact", kleur: "var(--red)" },
+  { key: "maand", label: "Komende maand", uitleg: "binnen 30 dagen", kleur: "var(--amber)" },
+  { key: "kwartaal", label: "Dit kwartaal", uitleg: "over 1 tot 3 maanden", kleur: "var(--accent)" },
+  { key: "halfjaar", label: "Komend halfjaar", uitleg: "over 3 tot 6 maanden", kleur: "var(--green)" },
+  { key: "later", label: "Verder vooruit", uitleg: "over meer dan 6 maanden", kleur: "var(--text-soft)" },
 ];
 
 function planningBucket(gd, gezin) {
@@ -3343,7 +3489,7 @@ function kanbanKaartHTML(gezin) {
     <div class="kanban-kaart${afspraakKaartKlasse(geplandeMomenten, apInfo)}${isVervallenGezin(gezin) ? " gezin-vervallen" : ""} ${selectieModus ? "kanban-kaart-selectiemodus" : ""} ${geselecteerd ? "kanban-kaart-geselecteerd" : ""}" ${selectieModus ? `data-select-gezin="${esc(gezin.gezinsKey)}"` : `data-open="${esc(gezin.gezinsKey)}"`}>
       ${selectieModus ? `<div class="kanban-select-vinkje">${geselecteerd ? "\u2713" : ""}</div>` : ""}
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
-      <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" style="top:4px;right:4px;font-size:16px;" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
+      <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" style="top:4px;right:4px;font-size:16px;" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd, klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
       <div style="display:flex;align-items:center;gap:7px;">
         <div class="status-dot" style="color:${schemaKleur(effectiefSchema(gd, gezin))};" title="Interval: ${esc(schemaLabel(gd, gezin))}"></div>
         <div class="kanban-naam" style="padding-right:16px;">${esc(gezin.gezinshoofd.naam || "Naamloos")}${gezinshoofdLft !== null ? ` <span style="font-weight:400;color:var(--text-soft);">(${gezinshoofdLft} jr)</span>` : ""}</div>
@@ -3371,8 +3517,14 @@ function planningHTML(lijst) {
   return `
     <div class="kanban-board">
       ${PLANNING_KOLOMMEN.map((k) => `
-        <div class="kanban-col">
-          <div class="kanban-col-header" style="color:${k.kleur};">${esc(k.label)} <span class="kanban-col-count">${buckets[k.key].length}</span></div>
+        <div class="kanban-col" style="--kolom:${k.kleur};">
+          <div class="kanban-col-header">
+            <div class="kanban-col-titel">
+              <span class="kanban-col-naam">${esc(k.label)}</span>
+              <span class="kanban-col-uitleg">${esc(k.uitleg)}</span>
+            </div>
+            <span class="kanban-col-count">${buckets[k.key].length}</span>
+          </div>
           <div class="kanban-col-body">
             ${buckets[k.key].length === 0 ? `<div class="kanban-leeg">Geen gezinnen</div>` : buckets[k.key].map((g) => kanbanKaartHTML(g)).join("")}
           </div>
@@ -3417,7 +3569,7 @@ function tabelCelHTML(k, g, gd, meta, next) {
     case "naam": return `<td class="td-clip">${esc(g.gezinshoofd.naam || "Naamloos")}</td>`;
     case "leeftijd": {
       const lft = berekenLeeftijd(g.gezinshoofd.geboortedatum);
-      return `<td class="mono">${lft !== null ? lft : "\u2014"}</td>`;
+      return `<td class="mono">${lft !== null ? lft : "-"}</td>`;
     }
     case "overigeLeden": {
       const overigeNamen = g.leden.filter((p) => p.regnr !== g.gezinshoofd.regnr).map((p) => p.roepnaam || p.naam).filter(Boolean);
@@ -3432,8 +3584,8 @@ function tabelCelHTML(k, g, gd, meta, next) {
     case "email": return clip(g.gezinshoofd.email);
     case "laatsteContact": return `<td class="mono">${gd.laatsteContact
       ? fmtDatum(gd.laatsteContact)
-      : `<input type="date" class="tabel-datum-invoer" data-laatste-contact-invoer="${esc(g.gezinsKey)}" max="${todayISO()}" title="Nog geen contactmoment bekend \u2014 vul hier de datum van het laatste huisbezoek in; die wordt als contactmoment in het dossier gezet" />`}</td>`;
-    case "volgendContact": return `<td class="mono">${next ? fmtDatum(next) : "\u2014"}</td>`;
+      : datumVeldHTML(`data-laatste-contact-invoer="${esc(g.gezinsKey)}" max="${todayISO()}"`, "", { klasse: "tabel-datum-invoer", titel: "Nog geen contactmoment bekend, vul hier de datum van het laatste huisbezoek in; die wordt als contactmoment in het dossier gezet" })}</td>`;
+    case "volgendContact": return `<td class="mono">${next ? fmtDatum(next) : "-"}</td>`;
     case "status": return `<td><span class="status-badge" style="color:${meta.color};background:${meta.bg};">${esc(meta.label)}</span></td>`;
     default: return "<td></td>";
   }
@@ -3620,6 +3772,7 @@ function attachSortenWeergaveEvents() {
 
 function openGezinDetail(gezinsKey) {
   state.selectedGezinsKey = gezinsKey;
+  state.detailNetGeopend = true;
   state.editingContact = false;
   state.detailTab = "gezin";
   state.noteDraft = { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" };
@@ -3659,7 +3812,7 @@ function famCardHTML(gezin) {
     <div class="fam-card${afspraakKaartKlasse(geplandeMomenten, apInfo)}${alleWeg ? " gezin-vervallen" : ""}" data-open="${esc(gezin.gezinsKey)}">
       <div class="status-bar" style="background:${meta.color};" title="${esc(meta.label)}: ${esc(meta.uitleg)}"></div>
       <div class="status-dot" style="color:${schemaKleur(effectiefSchema(gd, gezin))};" title="Interval: ${esc(schemaLabel(gd, gezin))}"></div>
-      <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
+      <button class="favoriet-ster ${gd.favoriet ? "actief" : ""}" data-toggle-favoriet="${esc(gezin.gezinsKey)}" title="${gd.favoriet ? "Gemarkeerd, klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button>
       <div style="flex:1;min-width:0;">
         <div class="fam-name">${esc(gezin.gezinshoofd.naam || "Naamloos gezin")}${gezinshoofdLft !== null ? ` <span style="font-weight:400;color:var(--text-soft);">(${gezinshoofdLft} jr)</span>` : ""}</div>
         <div class="fam-meta">
@@ -3681,26 +3834,380 @@ function famCardHTML(gezin) {
     </div>`;
 }
 
+// ---------------- gezinsdossier ----------------
+
+// Iconen voor het dossier: zelfde lijnstijl als de iconen in de topbalk.
+const DOSSIER_ICOON = {
+  mail: SVG_ICOON('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>'),
+  chat: SVG_ICOON('<path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.4A8.4 8.4 0 1 1 21 11.5z"/>'),
+  extern: SVG_ICOON('<path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>'),
+  telefoon: SVG_ICOON('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>'),
+  potlood: SVG_ICOON('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+  prullenbak: SVG_ICOON('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>'),
+  boek: SVG_ICOON('<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>'),
+  kruis: SVG_ICOON('<path d="M18 6 6 18M6 6l12 12"/>'),
+  vink: SVG_ICOON('<path d="M20 6 9 17l-5-5"/>'),
+  document: SVG_ICOON('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/>'),
+  klok: SVG_ICOON('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  pin: SVG_ICOON('<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>'),
+  kalender: SVG_ICOON('<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>'),
+  zandloper: SVG_ICOON('<path d="M6 2h12M6 22h12M7 2v4a5 5 0 0 0 10 0V2M7 22v-4a5 5 0 0 1 10 0v4"/>'),
+};
+
+// Kleur per soort contactmoment, voor de labels in de tijdlijn en bij geplande momenten.
+const SOORT_KLEUR = {
+  Huisbezoek: ["var(--accent)", "var(--accent-soft)"],
+  Doopbezoek: ["var(--blue)", "var(--blue-bg)"],
+  Huwelijksbezoek: ["var(--amber)", "var(--amber-bg)"],
+  Ziekenhuisbezoek: ["var(--red)", "var(--red-bg)"],
+  Belafspraak: ["var(--green)", "var(--green-bg)"],
+};
+
+function soortChipHTML(soort) {
+  const [kleur, bg] = SOORT_KLEUR[soort] || ["var(--text-soft)", "var(--grey-bg)"];
+  return `<span class="soort-chip" style="color:${kleur};background:${bg};">${esc(soort || "Huisbezoek")}</span>`;
+}
+
+// "Jan van der Veen" → "JV", "Maria van 't Hof" → "MH": eerste letter van voor- en achternaam,
+// tussenvoegsels overgeslagen.
+const TUSSENVOEGSELS = new Set(["van", "de", "der", "den", "het", "'t", "te", "ter", "ten", "in", "op", "aan", "la", "le"]);
+function initialen(naam) {
+  const delen = String(naam || "").trim().split(/\s+/).filter(Boolean);
+  if (!delen.length) return "?";
+  const kern = delen.filter((d, i) => i === 0 || !TUSSENVOEGSELS.has(d.toLowerCase()));
+  const eerste = kern[0][0];
+  const laatste = kern.length > 1 ? kern[kern.length - 1][0] : "";
+  return (eerste + laatste).toUpperCase();
+}
+
+function dagenTot(iso) {
+  if (!iso) return null;
+  return Math.round((new Date(iso + "T00:00:00") - new Date(todayISO() + "T00:00:00")) / 86400000);
+}
+
+// "over 12 dagen", "3 maanden geleden", "ruim 2 jaar geleden": dagen tot twee maanden, daarna
+// maanden, vanaf twee jaar in jaren.
+function relatieveDagenTekst(iso) {
+  const n = dagenTot(iso);
+  if (n === null) return "";
+  if (n === 0) return "vandaag";
+  if (n === 1) return "morgen";
+  if (n === -1) return "gisteren";
+  const a = Math.abs(n);
+  const duur = a < 60 ? `${a} dagen` : a < 730 ? `${Math.round(a / 30.44)} maanden` : `ruim ${Math.floor(a / 365.25)} jaar`;
+  return n > 0 ? `over ${duur}` : `${duur} geleden`;
+}
+
 function ledenlijstHTML(gezin) {
   return gezin.leden.map((p) => {
     const lft = berekenLeeftijd(p.geboortedatum);
     const isHoofd = p.regnr === gezin.gezinshoofd.regnr;
+    const meta = [p.gezinsrelatie, lft !== null ? `${lft} jr` : "", p.burgerlijkeStaat, p.kerkelijkeStaat].filter(Boolean).map(esc).join(" · ");
+    const contact = [p.email, p.mobiel].filter(Boolean).map(esc).join(" · ");
     return `
-    <div class="note-card" style="${isHoofd ? "border-color:var(--accent);" : ""}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div>
-          <strong>${esc(p.naam)}</strong>${p.roepnaam ? ` <span style="color:var(--text-soft);">(${esc(p.roepnaam)})</span>` : ""}
-          ${isHoofd ? `<span class="tag-grey" style="margin-left:4px;">gezinshoofd</span>` : ""}
-          ${p._nietInLaatsteImport ? `<span class="tag-grey">niet in laatste import</span>` : ""}
+    <div class="lid-rij${isHoofd ? " lid-rij-hoofd" : ""}">
+      <div class="lid-avatar">${esc(initialen(p.naam))}</div>
+      <div class="lid-info">
+        <div class="lid-naam">
+          ${esc(p.naam)}${p.roepnaam && !String(p.naam || "").startsWith(p.roepnaam) ? ` <span class="lid-roepnaam">(${esc(p.roepnaam)})</span>` : ""}
+          ${isHoofd ? `<span class="lid-label">gezinshoofd</span>` : ""}
+          ${p._nietInLaatsteImport ? `<span class="lid-label lid-label-grijs">niet in laatste import</span>` : ""}
         </div>
-        ${scipioUrl(p.regnr) ? `<a class="btn btn-sm" href="${scipioUrl(p.regnr)}" target="_blank" rel="noopener">Scipio</a>` : ""}
+        <div class="lid-meta">${meta}</div>
+        ${contact ? `<div class="lid-meta">${contact}</div>` : ""}
       </div>
-      <div style="font-size:12.5px;color:var(--text-soft);margin-top:4px;">
-        ${esc(p.gezinsrelatie || "\u2014")}${lft !== null ? ` \u00b7 ${lft} jr` : ""}${p.burgerlijkeStaat ? ` \u00b7 ${esc(p.burgerlijkeStaat)}` : ""}${p.kerkelijkeStaat ? ` \u00b7 ${esc(p.kerkelijkeStaat)}` : ""}
-      </div>
-      ${p.email || p.mobiel ? `<div style="font-size:12.5px;color:var(--text-soft);margin-top:2px;">${esc(p.email)}${p.email && p.mobiel ? " \u00b7 " : ""}${esc(p.mobiel)}</div>` : ""}
+      ${scipioUrl(p.regnr) ? `<a class="btn-ghost btn-icoon lid-scipio" href="${scipioUrl(p.regnr)}" target="_blank" rel="noopener" title="${esc(p.naam)} openen in Scipio" aria-label="${esc(p.naam)} openen in Scipio">${DOSSIER_ICOON.extern}</a>` : ""}
     </div>`;
   }).join("");
+}
+
+function dossierKopHTML(gezin, gd) {
+  const hoofd = gezin.gezinshoofd;
+  const lft = berekenLeeftijd(hoofd.geboortedatum);
+  const meta = STATUS_META[berekenStatus(gd, gezin)];
+  const adres = [gezin.adres, [gezin.postcode, gezin.plaats].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const telefoons = [hoofd.telefoon, hoofd.mobiel].filter(Boolean);
+  return `
+    <div class="dossier-kop">
+      <div class="dossier-kop-rij">
+        <div class="dossier-avatar" style="color:${meta.color};background:${meta.bg};">${esc(initialen(hoofd.naam))}</div>
+        <div class="dossier-titel">
+          <h2>${esc(hoofd.naam)}<button class="favoriet-ster-detail ${gd.favoriet ? "actief" : ""}" id="btnToggleFavorietDetail" title="${gd.favoriet ? "Gemarkeerd, klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "★" : "☆"}</button></h2>
+          <div class="dossier-sub">
+            <span class="status-chip" style="color:${meta.color};background:${meta.bg};" title="${esc(meta.uitleg)}">${esc(meta.label)}</span>
+            <span>${gezin.leden.length} perso${gezin.leden.length === 1 ? "on" : "nen"}${lft !== null ? ` · gezinshoofd ${lft} jr` : ""}</span>
+          </div>
+        </div>
+        <div class="dossier-kop-acties">
+          <button class="btn-ghost btn-icoon${state.editingContact ? " active" : ""}" id="btnToggleEdit" title="Gegevens gezinshoofd bewerken" aria-label="Gegevens gezinshoofd bewerken">${DOSSIER_ICOON.potlood}</button>
+          <button class="btn-ghost btn-icoon" id="btnSluitDetail" title="Sluiten" aria-label="Sluiten">${DOSSIER_ICOON.kruis}</button>
+        </div>
+      </div>
+      <div class="dossier-contact">
+        ${adres ? `<span class="dossier-contact-regel">${DOSSIER_ICOON.pin}${kaartUrl(gezin) ? `<a href="${kaartUrl(gezin)}" target="_blank" rel="noopener" title="Bekijk dit adres op Google Maps">${esc(adres)}</a>` : `<span>${esc(adres)}</span>`}</span>` : ""}
+        ${telefoons.length ? `<span class="dossier-contact-regel">${DOSSIER_ICOON.telefoon}${telefoons.map((t) => `<a href="tel:${esc(String(t).replace(/[^\d+]/g, ""))}">${esc(t)}</a>`).join('<span class="dossier-contact-scheiding">·</span>')}</span>` : ""}
+      </div>
+      <div class="dossier-acties">
+        ${hoofd.email ? `<a class="btn btn-sm dossier-actie" href="${mailUrl(hoofd.email, "Contact")}" target="_blank" rel="noopener">${DOSSIER_ICOON.mail}Mail</a>` : ""}
+        ${hoofd.mobiel ? `<a class="btn btn-sm dossier-actie" href="${whatsappUrl(whatsappNummer(hoofd.mobiel), "")}"${whatsappTargetAttr()}>${DOSSIER_ICOON.chat}WhatsApp</a>` : ""}
+        ${scipioUrl(hoofd.regnr) ? `<a class="btn btn-sm dossier-actie" href="${scipioUrl(hoofd.regnr)}" target="_blank" rel="noopener">${DOSSIER_ICOON.extern}Scipio</a>` : ""}
+      </div>
+    </div>`;
+}
+
+function dossierKerncijfersHTML(gezin, gd) {
+  const next = berekenVolgendContact(gd, gezin);
+  const n = dagenTot(next);
+  const teLaat = n !== null && n < 0 ? relatieveDagenTekst(next).replace(" geleden", "") + " te laat" : "";
+  const volgendSub = next ? (teLaat || relatieveDagenTekst(next)) : "nog niet te berekenen";
+  const tegel = (label, waarde, sub, klasse = "") => `
+    <div class="kerncijfer ${klasse}">
+      <div class="kerncijfer-label">${label}</div>
+      <div class="kerncijfer-waarde">${waarde}</div>
+      <div class="kerncijfer-sub">${sub}</div>
+    </div>`;
+  return `
+    <div class="dossier-kerncijfers">
+      ${tegel("Laatste huisbezoek", gd.laatsteContact ? fmtDatum(gd.laatsteContact) : "Nog geen", gd.laatsteContact ? esc(relatieveDagenTekst(gd.laatsteContact)) : "nog niets gelogd")}
+      ${tegel("Volgend contact", next ? fmtDatum(next) : "Onbekend", esc(volgendSub), n !== null && n < 0 ? "kerncijfer-te-laat" : "")}
+      ${tegel("Schema", esc(basisSchemaLabel(effectiefSchema(gd, gezin), gd)), gd.schema === "auto" ? "automatisch" : "handmatig gekozen")}
+    </div>`;
+}
+
+function dossierGezinTabHTML(gezin, gd) {
+  const schemaOpties = [["auto", "Automatisch"], ["2x", "2x per jaar"], ["1x", "1x per jaar"], ["0.5x", "Om het jaar"], ["aangepast", "Aangepast"]];
+  return `
+    <section class="dossier-kaart">
+      <div class="dossier-kaart-kop"><h3>Gezinsleden</h3><span class="teller">${gezin.leden.length}</span></div>
+      <div class="leden-lijst">${ledenlijstHTML(gezin)}</div>
+    </section>
+
+    <section class="dossier-kaart">
+      <div class="dossier-kaart-kop"><h3>Notitie</h3></div>
+      <p class="dossier-hint">Niet gekoppeld aan een datum, bijvoorbeeld "wil geen contact" of andere blijvende aandachtspunten.</p>
+      <textarea class="notitie-veld" data-gezinsfield="algemeneNotitie" placeholder="Bijv. wil geen contact…">${esc(gd.algemeneNotitie)}</textarea>
+    </section>
+
+    <section class="dossier-kaart">
+      <div class="dossier-kaart-kop"><h3>Terugkeerschema</h3><span class="dossier-kaart-kop-hint">voor het hele gezin</span></div>
+      <div class="keuze-chips">
+        ${schemaOpties.map(([val, label]) => `<button type="button" class="keuze-chip ${gd.schema === val ? "active" : ""}" data-schema="${val}">${label}</button>`).join("")}
+      </div>
+      ${gd.schema === "auto" ? `
+        <p class="dossier-hint" style="margin-top:10px;">
+          Op basis van leeftijd en gezinssamenstelling is dat nu <strong>${esc(basisSchemaLabel(bepaalAutoSchema(gezin)))}</strong>.
+          De regels pas je aan via ⚙ → Instellingen.
+        </p>` : ""}
+      ${gd.schema === "aangepast" ? `
+        <div class="field-row" style="margin-top:12px;">
+          <label>Aantal maanden tussen contactmomenten</label>
+          <input type="number" min="1" data-gezinsfield="customMaanden" value="${esc(gd.customMaanden)}" />
+        </div>` : ""}
+      <div class="field-row" style="margin:12px 0 0;">
+        <label>Volgend contact handmatig vastzetten (optioneel)</label>
+        ${datumVeldHTML(`data-gezinsfield="volgendContactOverride"`, gd.volgendContactOverride)}
+      </div>
+    </section>
+
+    <section class="dossier-kaart dossier-kaart-rij">
+      <div class="dossier-kaart-icoon">${DOSSIER_ICOON.document}</div>
+      <div class="dossier-kaart-tekst">
+        <h3>Overdrachtskaart</h3>
+        <p class="dossier-hint">Een nette samenvatting voor een wisseling van ouderling: gezinssamenstelling, status en
+        alle contactmomenten. De inhoud van je notities blijft er bewust buiten.</p>
+      </div>
+      <button class="btn-sm" id="btnOverdrachtskaart">Maken</button>
+    </section>`;
+}
+
+function dossierLoggenTabHTML(gd) {
+  // Nieuwste bovenaan; de historie zelf staat op invoervolgorde.
+  const momenten = (gd.historie || []).slice().sort((a, b) => `${b.datum} ${b.tijd || ""}`.localeCompare(`${a.datum} ${a.tijd || ""}`));
+  return `
+    <section class="dossier-kaart dossier-formulier${state.bewerkNotitieId ? " dossier-formulier-bewerken" : ""}">
+      <div class="dossier-kaart-kop"><h3>${state.bewerkNotitieId ? "Contactmoment bewerken" : "Contactmoment loggen"}</h3></div>
+      <p class="dossier-hint">Geldt voor het hele gezin, je spreekt immers in één keer iedereen.</p>
+      <div class="field-grid2">
+        <div class="field-row"><label>Datum</label>${datumVeldHTML(`id="noteDatum"`, state.noteDraft.datum)}</div>
+        <div class="field-row"><label>Tijd</label><input ${TIJDVELD_ATTR} id="noteTijd" value="${esc(state.noteDraft.tijd)}" /></div>
+      </div>
+      <div class="field-row"><label>Soort bezoek</label>
+        <select id="noteSoort">
+          ${SOORTEN_BEZOEK.map((s) => `<option value="${esc(s)}" ${state.noteDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field-row"><label>Notitie</label><textarea id="noteNotitie" placeholder="Korte notitie over het gesprek…">${esc(state.noteDraft.notitie)}</textarea></div>
+      <div class="field-row"><label>Gelezen gedeelte</label><input id="noteGelezen" placeholder="Bijv. Psalm 23" value="${esc(state.noteDraft.gelezen)}" /></div>
+      <div class="dossier-formulier-acties">
+        <button class="btn-primary" id="btnLogContact">${state.bewerkNotitieId ? "Wijziging opslaan" : "Contactmoment opslaan"}</button>
+        ${state.bewerkNotitieId ? `<button class="btn-ghost" id="btnAnnuleerBewerkNotitie">Annuleren</button>` : ""}
+      </div>
+    </section>
+
+    <div class="dossier-sectie-kop"><h3>Eerdere contactmomenten</h3><span class="teller">${momenten.length}</span></div>
+    ${momenten.length ? `
+    <ol class="tijdlijn">
+      ${momenten.map((n) => {
+        const [kleur] = SOORT_KLEUR[n.soort] || ["var(--text-soft)"];
+        return `
+        <li class="tijdlijn-item${state.bewerkNotitieId === n.id ? " actief" : ""}">
+          <span class="tijdlijn-punt" style="background:${kleur};"></span>
+          <div class="tijdlijn-inhoud">
+            <div class="tijdlijn-kop">
+              <span class="tijdlijn-datum">${fmtDatum(n.datum)}${n.tijd ? ` <span class="tijdlijn-tijd">${esc(n.tijd)}</span>` : ""}</span>
+              ${soortChipHTML(n.soort)}
+              <span class="tijdlijn-acties">
+                <button class="btn-ghost btn-icoon btn-icoon-klein" data-bewerk-note="${esc(n.id)}" title="Bewerken" aria-label="Bewerken">${DOSSIER_ICOON.potlood}</button>
+                <button class="btn-ghost btn-icoon btn-icoon-klein btn-danger" data-verwijder-note="${esc(n.id)}" title="Verwijderen" aria-label="Verwijderen">${DOSSIER_ICOON.prullenbak}</button>
+              </span>
+            </div>
+            ${n.notitie ? `<p class="tijdlijn-notitie">${esc(n.notitie)}</p>` : ""}
+            ${n.gelezen ? `<div class="tijdlijn-gelezen">${DOSSIER_ICOON.boek}${esc(n.gelezen)}</div>` : ""}
+          </div>
+        </li>`;
+      }).join("")}
+    </ol>` : `<div class="dossier-leeg">Nog geen contactmomenten gelogd.</div>`}`;
+}
+
+function geplandItemHTML(g) {
+  const d = new Date((g.datum || todayISO()) + "T00:00:00");
+  const verstreken = g.datum && g.datum < todayISO();
+  return `
+    <div class="gepland-item${verstreken ? " gepland-item-verstreken" : ""}">
+      <div class="datum-blok">
+        <span class="datum-blok-maand">${esc(d.toLocaleDateString("nl-NL", { month: "short" }).replace(".", ""))}</span>
+        <span class="datum-blok-dag">${d.getDate()}</span>
+      </div>
+      <div class="gepland-info">
+        <div class="gepland-kop">
+          ${soortChipHTML(g.soort)}
+          ${g.tijd ? `<span class="gepland-tijd">${DOSSIER_ICOON.klok}${esc(g.tijd)}</span>` : ""}
+          <span class="gepland-relatief">${verstreken ? "verstreken, nog loggen" : esc(relatieveDagenTekst(g.datum))}</span>
+        </div>
+        ${g.betreft ? `<div class="gepland-regel"><strong>Betreft:</strong> ${esc(g.betreft)}</div>` : ""}
+        ${g.notitie ? `<div class="gepland-regel">${esc(g.notitie)}</div>` : ""}
+      </div>
+      <div class="gepland-acties">
+        <button class="btn-sm btn-primary" data-gepland-gedaan="${esc(g.id)}" title="Gedaan: dit moment als contactmoment loggen">${DOSSIER_ICOON.vink}Gedaan</button>
+        <button class="btn-ghost btn-icoon btn-icoon-klein btn-danger" data-gepland-verwijder="${esc(g.id)}" title="Verwijderen" aria-label="Verwijderen">${DOSSIER_ICOON.prullenbak}</button>
+      </div>
+    </div>`;
+}
+
+function dossierPlannenTabHTML(gezin, gd) {
+  const hoofd = gezin.gezinshoofd;
+  return `
+    ${(gd.gepland || []).length ? `
+      <div class="dossier-sectie-kop" style="margin-top:0;"><h3>Gepland</h3><span class="teller">${gd.gepland.length}</span></div>
+      <div class="gepland-lijst">${gd.gepland.map(geplandItemHTML).join("")}</div>` : ""}
+
+    <section class="dossier-kaart dossier-formulier">
+      <div class="dossier-kaart-kop"><h3>(Bijzonder) contactmoment inplannen</h3></div>
+      <p class="dossier-hint">Voor iets buiten het gewone ritme, bijvoorbeeld een ziekenhuisopname. Staat los van het terugkeerschema.</p>
+      <div class="field-grid2">
+        <div class="field-row"><label>Datum</label>${datumVeldHTML(`id="geplandDatum"`, state.geplandDraft.datum)}</div>
+        <div class="field-row"><label>Tijd (optioneel)</label><input ${TIJDVELD_ATTR} id="geplandTijd" value="${esc(state.geplandDraft.tijd)}" /></div>
+      </div>
+      <div class="field-grid2">
+        <div class="field-row"><label>Soort</label>
+          <select id="geplandSoort">
+            ${SOORTEN_GEPLAND.map((s) => `<option value="${esc(s)}" ${state.geplandDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field-row"><label>Betreft (optioneel)</label><input id="geplandBetreft" placeholder="Bijv. Piet" value="${esc(state.geplandDraft.betreft)}" /></div>
+      </div>
+      <div class="field-row"><label>Notitie</label><textarea id="geplandNotitie" placeholder="Bijv. wordt geopereerd, graag even langsgaan…">${esc(state.geplandDraft.notitie)}</textarea></div>
+      <div class="dossier-formulier-acties"><button class="btn-primary" id="btnPlanGepland">Inplannen</button></div>
+    </section>
+
+    <section class="dossier-kaart dossier-formulier">
+      <div class="dossier-kaart-kop"><h3>Datum afspraak voorstellen</h3></div>
+      <p class="dossier-hint">
+        Vul een datum en tijd in en pas de tekst zo nodig aan; <span class="plekhouder">[datum]</span> en
+        <span class="plekhouder">[tijd]</span> worden bij het openen vervangen. Sjablonen beheer je via ⚙ → Instellingen.
+      </p>
+      <div class="field-row">
+        <label>Sjabloon</label>
+        <select id="afspraakSjabloonSelect">
+          ${state.afspraakSjablonen.map((s) => `<option value="${esc(s.id)}" ${state.afspraakSjabloonId === s.id ? "selected" : ""}>${esc(s.naam)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field-grid2">
+        <div class="field-row"><label>Datum</label>${datumVeldHTML(`id="afspraakDatum"`, state.afspraakDraft.datum)}</div>
+        <div class="field-row"><label>Tijd</label><input ${TIJDVELD_ATTR} id="afspraakTijd" value="${esc(state.afspraakDraft.tijd)}" /></div>
+      </div>
+      <div class="field-row"><label>Onderwerp (voor e-mail)</label><input id="afspraakOnderwerp" value="${esc(state.afspraakDraft.onderwerp)}" /></div>
+      <div class="field-row"><label>Bericht</label><textarea id="afspraakTekst" style="min-height:130px;">${esc(state.afspraakDraft.tekst)}</textarea></div>
+      <div class="dossier-formulier-acties">
+        <button class="btn-primary" id="btnAfspraakMail" ${hoofd.email ? "" : "disabled title=\"Geen e-mailadres bekend\""}>${DOSSIER_ICOON.mail}Open in e-mail</button>
+        <button class="btn-primary" id="btnAfspraakWhatsapp" ${hoofd.mobiel ? "" : "disabled title=\"Geen mobiel nummer bekend\""}>${DOSSIER_ICOON.chat}Open in WhatsApp</button>
+      </div>
+    </section>`;
+}
+
+function detailHTML() {
+  const gezin = state.selectedGezinsKey ? findGezin(state.selectedGezinsKey) : null;
+  if (!gezin) return "";
+  const hoofd = gezin.gezinshoofd;
+  const gd = getGezinsdata(gezin.gezinsKey);
+  // De inschuif-animatie alleen bij het openen; render() tekent bij elke wijziging alles opnieuw.
+  const animeer = state.detailNetGeopend;
+  state.detailNetGeopend = false;
+
+  const contactVelden = state.editingContact ? `
+    <section class="dossier-kaart dossier-formulier">
+      <div class="dossier-kaart-kop"><h3>Gegevens gezinshoofd</h3><span class="dossier-kaart-kop-hint">worden direct opgeslagen</span></div>
+      <div class="field-grid2">
+        <div class="field-row"><label>Naam gezinshoofd</label><input data-field="naam" value="${esc(hoofd.naam)}" /></div>
+        <div class="field-row"><label>Roepnaam</label><input data-field="roepnaam" value="${esc(hoofd.roepnaam)}" /></div>
+      </div>
+      <div class="field-row"><label>Adres</label><input data-field="adres" value="${esc(hoofd.adres)}" /></div>
+      <div class="field-grid2">
+        <div class="field-row"><label>Postcode</label><input data-field="postcode" value="${esc(hoofd.postcode)}" /></div>
+        <div class="field-row"><label>Plaatsnaam</label><input data-field="plaats" value="${esc(hoofd.plaats)}" /></div>
+      </div>
+      <div class="field-grid2">
+        <div class="field-row"><label>E-mail</label><input data-field="email" value="${esc(hoofd.email)}" /></div>
+        <div class="field-row"><label>Telefoon</label><input data-field="telefoon" value="${esc(hoofd.telefoon)}" /></div>
+      </div>
+      <div class="field-row"><label>Mobiel</label><input data-field="mobiel" value="${esc(hoofd.mobiel)}" /></div>
+      <div class="field-grid2">
+        <div class="field-row"><label>Geboortedatum (gezinshoofd)</label>${datumVeldHTML(`data-field="geboortedatum"`, hoofd.geboortedatum)}</div>
+        <div class="field-row"><label>Huwelijksdatum</label>${datumVeldHTML(`data-field="trouwdatum"`, hoofd.trouwdatum)}</div>
+      </div>
+    </section>` : "";
+
+  const aantalMomenten = (gd.historie || []).length;
+  const aantalGepland = (gd.gepland || []).length;
+  const tab = (key, label, teller) => `
+    <button type="button" class="detail-tab ${state.detailTab === key ? "actief" : ""}" data-detail-tab="${key}">
+      ${label}${teller ? `<span class="detail-tab-teller">${teller}</span>` : ""}
+    </button>`;
+
+  return `
+  <div class="detail-overlay${animeer ? " detail-animeer" : ""}" id="detailOverlay">
+    <div class="detail-panel" id="detailPanel" data-gezin="${esc(gezin.gezinsKey)}">
+      ${dossierKopHTML(gezin, gd)}
+      <div class="dossier-body">
+        ${contactVelden}
+        ${dossierKerncijfersHTML(gezin, gd)}
+
+        <div class="detail-tabs">
+          ${tab("gezin", "Gezin")}
+          ${tab("loggen", "Loggen", aantalMomenten)}
+          ${tab("plannen", "Plannen", aantalGepland)}
+        </div>
+
+        ${state.detailTab === "gezin" ? dossierGezinTabHTML(gezin, gd) : ""}
+        ${state.detailTab === "loggen" ? dossierLoggenTabHTML(gd) : ""}
+        ${state.detailTab === "plannen" ? dossierPlannenTabHTML(gezin, gd) : ""}
+
+        <div class="dossier-voet">
+          <button class="btn-ghost btn-sm btn-danger" id="btnVerwijderGezin">${DOSSIER_ICOON.prullenbak}Dit hele gezin verwijderen</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 // ---------------- overdrachtskaart ----------------
@@ -3708,8 +4215,8 @@ function ledenlijstHTML(gezin) {
 // Afdrukbare samenvatting van één gezin, bedoeld voor een wisseling van ouderling: wie het
 // gezin is, hoe het ervoor staat, en welke contactmomenten er zijn geweest. Bewust zónder de
 // inhoud van de notities — alleen datum, soort en gelezen gedeelte — zodat vertrouwelijke
-// gespreksinhoud niet ongemerkt meeverhuist. Opslaan gaat via het printvenster ("Bewaar als
-// pdf"), zodat er geen pdf-bibliotheek bij de app hoeft.
+// gespreksinhoud niet ongemerkt meeverhuist. Opslaan gaat via het printvenster ("Opslaan als
+// PDF"), zodat er geen pdf-bibliotheek bij de app hoeft.
 function overdrachtskaartHTML() {
   if (!state.overdrachtGezinsKey) return "";
   const gezin = findGezin(state.overdrachtGezinsKey);
@@ -3750,8 +4257,8 @@ function overdrachtskaartHTML() {
           <div class="ok-status">
             <div class="ok-badge" style="color:${meta.color};background:${meta.bg};">${esc(meta.label)}</div>
             ${kpi("Terugkeerschema", esc(basisSchemaLabel(effectiefSchema(gd, gezin), gd)))}
-            ${kpi("Laatste contact", gd.laatsteContact ? `<span class="mono">${fmtDatum(gd.laatsteContact)}</span>` : "—")}
-            ${kpi("Volgend contact", next ? `<span class="mono">${fmtDatum(next)}</span>` : "—")}
+            ${kpi("Laatste contact", gd.laatsteContact ? `<span class="mono">${fmtDatum(gd.laatsteContact)}</span>` : "Nog geen")}
+            ${kpi("Volgend contact", next ? `<span class="mono">${fmtDatum(next)}</span>` : "Onbekend")}
           </div>
 
           <h2 class="ok-sectie">Gezinssamenstelling <span class="ok-telling">${gezin.leden.length}</span></h2>
@@ -3762,7 +4269,7 @@ function overdrachtskaartHTML() {
               return `
               <div class="ok-lid">
                 <div class="ok-lid-naam">${esc(p.naam)}${p.roepnaam ? ` <span class="ok-lid-roep">(${esc(p.roepnaam)})</span>` : ""}${isHoofd ? ` <span class="ok-lid-tag">gezinshoofd</span>` : ""}</div>
-                <div class="ok-lid-meta">${esc(p.gezinsrelatie || "—")}${lft !== null ? ` · ${lft} jaar` : ""}</div>
+                <div class="ok-lid-meta">${[p.gezinsrelatie, lft !== null ? `${lft} jaar` : ""].filter(Boolean).map(esc).join(" · ")}</div>
               </div>`;
             }).join("")}
           </div>
@@ -3780,7 +4287,7 @@ function overdrachtskaartHTML() {
                   <tr>
                     <td class="mono">${fmtDatum(n.datum)}</td>
                     <td>${esc(n.soort || "Huisbezoek")}</td>
-                    <td>${n.gelezen ? esc(n.gelezen) : '<span class="ok-leeg">—</span>'}</td>
+                    <td>${n.gelezen ? esc(n.gelezen) : '<span class="ok-leeg">-</span>'}</td>
                   </tr>`).join("")}
               </tbody>
             </table>
@@ -3788,7 +4295,7 @@ function overdrachtskaartHTML() {
           ` : `<p class="ok-leeg-blok">Er zijn nog geen contactmomenten gelogd voor dit gezin.</p>`}
 
           <div class="ok-voet">
-            <span><strong>ContactPlanner</strong> — planner voor huisbezoek. Alle gegevens blijven versleuteld op het apparaat van de ouderling zelf.</span>
+            <span><strong>ContactPlanner</strong>, planner voor huisbezoek. Alle gegevens blijven versleuteld op het apparaat van de ouderling zelf.</span>
             <span class="ok-voet-url">${esc(location.origin + location.pathname)}</span>
           </div>
         </div>
@@ -3797,225 +4304,8 @@ function overdrachtskaartHTML() {
       <div class="ok-acties">
         <button class="btn-primary" id="btnOverdrachtPrint">Opslaan als PDF</button>
         <button class="btn-ghost" id="btnOverdrachtSluiten">Sluiten</button>
-        <span class="ok-hint">Kies in het printvenster <strong>"Bewaar als pdf"</strong> als bestemming.</span>
+        <span class="ok-hint">Kies in het printvenster <strong>"Opslaan als PDF"</strong> als bestemming.</span>
       </div>
-    </div>
-  </div>`;
-}
-
-function detailHTML() {
-  const gezin = state.selectedGezinsKey ? findGezin(state.selectedGezinsKey) : null;
-  if (!gezin) return "";
-  const hoofd = gezin.gezinshoofd;
-  const gd = getGezinsdata(gezin.gezinsKey);
-  const lft = berekenLeeftijd(hoofd.geboortedatum);
-  const next = berekenVolgendContact(gd, gezin);
-
-  const contactVelden = state.editingContact ? `
-    <div class="field-grid2">
-      <div class="field-row"><label>Naam gezinshoofd</label><input data-field="naam" value="${esc(hoofd.naam)}" /></div>
-      <div class="field-row"><label>Roepnaam</label><input data-field="roepnaam" value="${esc(hoofd.roepnaam)}" /></div>
-    </div>
-    <div class="field-row"><label>Adres</label><input data-field="adres" value="${esc(hoofd.adres)}" /></div>
-    <div class="field-grid2">
-      <div class="field-row"><label>Postcode</label><input data-field="postcode" value="${esc(hoofd.postcode)}" /></div>
-      <div class="field-row"><label>Plaatsnaam</label><input data-field="plaats" value="${esc(hoofd.plaats)}" /></div>
-    </div>
-    <div class="field-grid2">
-      <div class="field-row"><label>E-mail</label><input data-field="email" value="${esc(hoofd.email)}" /></div>
-      <div class="field-row"><label>Telefoon</label><input data-field="telefoon" value="${esc(hoofd.telefoon)}" /></div>
-    </div>
-    <div class="field-row"><label>Mobiel</label><input data-field="mobiel" value="${esc(hoofd.mobiel)}" /></div>
-    <div class="field-grid2">
-      <div class="field-row"><label>Geboortedatum (gezinshoofd)</label><input type="date" data-field="geboortedatum" value="${esc(hoofd.geboortedatum)}" /></div>
-      <div class="field-row"><label>Huwelijksdatum</label><input type="date" data-field="trouwdatum" value="${esc(hoofd.trouwdatum)}" /></div>
-    </div>
-  ` : "";
-
-  return `
-  <div class="detail-overlay" id="detailOverlay">
-    <div class="detail-panel" id="detailPanel">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div>
-          <h2 style="font-size:22px;margin:0;">${esc(hoofd.naam)} <button class="favoriet-ster-detail ${gd.favoriet ? "actief" : ""}" id="btnToggleFavorietDetail" title="${gd.favoriet ? "Gemarkeerd \u2014 klik om te verwijderen" : "Markeer"}">${gd.favoriet ? "\u2605" : "\u2606"}</button></h2>
-          <div style="color:var(--text-soft);font-size:12.5px;margin-top:3px;">
-            ${gezin.leden.length} perso${gezin.leden.length === 1 ? "on" : "nen"} op dit adres${lft !== null ? ` \u00b7 gezinshoofd ${lft} jr` : ""}
-          </div>
-          <div class="detail-adres">
-            <span>${esc(gezin.adres)}${gezin.postcode ? `, ${esc(gezin.postcode)}` : ""}${gezin.plaats ? ` ${esc(gezin.plaats)}` : ""}</span>
-            ${kaartUrl(gezin) ? `<a class="kaart-link" href="${kaartUrl(gezin)}" target="_blank" rel="noopener" title="Bekijk dit adres op Google Maps" aria-label="Bekijk dit adres op Google Maps">${KAART_ICOON}</a>` : ""}
-          </div>
-          ${hoofd.telefoon ? `<div style="color:var(--text-soft);font-size:12.5px;margin-top:1px;">${esc(hoofd.telefoon)}</div>` : ""}
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-ghost btn-sm" id="btnToggleEdit" title="Gegevens gezinshoofd bewerken">Bewerken</button>
-          <button class="btn-ghost btn-sm" id="btnSluitDetail">\u2715</button>
-        </div>
-      </div>
-
-      <div class="quick-actions">
-        ${hoofd.email ? `<a class="btn" href="${mailUrl(hoofd.email, "Contact")}" target="_blank" rel="noopener">Mail sturen</a>` : ""}
-        ${hoofd.mobiel ? `<a class="btn" href="${whatsappUrl(whatsappNummer(hoofd.mobiel), "")}"${whatsappTargetAttr()}>WhatsApp</a>` : ""}
-        ${scipioUrl(hoofd.regnr) ? `<a class="btn" href="${scipioUrl(hoofd.regnr)}" target="_blank" rel="noopener">Scipio</a>` : ""}
-      </div>
-
-      ${contactVelden}
-
-      <div class="detail-tabs">
-        <button type="button" class="detail-tab ${state.detailTab === "gezin" ? "actief" : ""}" data-detail-tab="gezin">Gezin</button>
-        <button type="button" class="detail-tab ${state.detailTab === "loggen" ? "actief" : ""}" data-detail-tab="loggen">Loggen</button>
-        <button type="button" class="detail-tab ${state.detailTab === "plannen" ? "actief" : ""}" data-detail-tab="plannen">Plannen</button>
-      </div>
-
-      ${state.detailTab === "gezin" ? `
-      <h3 style="font-size:16px;margin-bottom:8px;">Gezinsleden (${gezin.leden.length})</h3>
-      ${ledenlijstHTML(gezin)}
-
-      <hr class="divider" />
-      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Algemene notitie</label>
-      <p style="font-size:12px;color:var(--text-soft);margin-top:2px;margin-bottom:6px;">
-        Niet gekoppeld aan een datum \u2014 bijvoorbeeld "wil geen contact" of andere blijvende aandachtspunten.
-      </p>
-      <div class="field-row">
-        <textarea data-gezinsfield="algemeneNotitie" placeholder="Bijv. wil geen contact\u2026" style="min-height:70px;">${esc(gd.algemeneNotitie)}</textarea>
-      </div>
-
-      <hr class="divider" />
-      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Terugkeerschema (voor het hele gezin)</label>
-      <div class="schema-grid" style="margin-top:6px;">
-        <div class="schema-opt schema-opt-breed ${gd.schema === "auto" ? "active" : ""}" data-schema="auto">Automatisch — op basis van leeftijd en gezinssamenstelling</div>
-        ${[["2x", "2x per jaar"], ["1x", "1x per jaar"], ["0.5x", "Om het jaar"], ["aangepast", "Aangepast"]].map(([val, label]) => `
-          <div class="schema-opt ${gd.schema === val ? "active" : ""}" data-schema="${val}">${label}</div>
-        `).join("")}
-      </div>
-      ${gd.schema === "auto" ? `
-        <div style="font-size:12px;color:var(--text-soft);margin-top:6px;">
-          Voor dit gezin betekent dat nu: <strong>${esc(basisSchemaLabel(bepaalAutoSchema(gezin)))}</strong>
-          (leeftijdsgrens en intervallen aanpassen kan via ⚙ → Instellingen).
-        </div>` : ""}
-      ${gd.schema === "aangepast" ? `
-        <div class="field-row" style="margin-top:8px;">
-          <label>Aantal maanden tussen contactmomenten</label>
-          <input type="number" min="1" data-gezinsfield="customMaanden" value="${esc(gd.customMaanden)}" />
-        </div>` : ""}
-
-      <div class="field-row" style="margin-top:10px;">
-        <label>Volgend contact handmatig plannen (optioneel)</label>
-        <input type="date" data-gezinsfield="volgendContactOverride" value="${esc(gd.volgendContactOverride)}" />
-      </div>
-
-      <div style="font-size:12.5px;color:var(--text-soft);margin-top:4px;">
-        Laatste contact: <strong class="mono">${gd.laatsteContact ? fmtDatum(gd.laatsteContact) : "nog geen"}</strong>
-        \u00b7 Berekend volgend contact: <strong class="mono">${next ? fmtDatum(next) : "\u2014"}</strong>
-      </div>
-
-      <hr class="divider" />
-      <label style="font-size:11.5px;font-weight:600;color:var(--text-soft);">Overdracht</label>
-      <p style="font-size:12px;color:var(--text-soft);margin-top:2px;margin-bottom:8px;">
-        Een nette samenvatting om bij een wisseling van ouderling over te dragen: gezinssamenstelling, status en alle
-        contactmomenten met datum, soort en gelezen gedeelte. De inhoud van je notities blijft er bewust buiten.
-      </p>
-      <button id="btnOverdrachtskaart">Overdrachtskaart maken</button>
-      ` : ""}
-
-      ${state.detailTab === "loggen" ? `
-      <div class="sectie-prominent">
-        <h3 style="font-size:16px;margin-bottom:8px;">${state.bewerkNotitieId ? "Contactmoment bewerken" : "Contactmoment loggen"}</h3>
-        <p style="font-size:12px;color:var(--text-soft);margin-top:-4px;margin-bottom:10px;">Geldt voor het hele gezin \u2014 je spreekt immers in \u00e9\u00e9n keer iedereen.</p>
-        <div class="field-grid2">
-          <div class="field-row"><label>Datum</label><input type="date" id="noteDatum" value="${esc(state.noteDraft.datum)}" /></div>
-          <div class="field-row"><label>Tijd</label><input type="time" id="noteTijd" value="${esc(state.noteDraft.tijd)}" /></div>
-        </div>
-        <div class="field-row"><label>Soort bezoek</label>
-          <select id="noteSoort">
-            ${SOORTEN_BEZOEK.map((s) => `<option value="${esc(s)}" ${state.noteDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
-          </select>
-        </div>
-        <div class="field-row"><label>Notitie</label><textarea id="noteNotitie" placeholder="Korte notitie over het gesprek\u2026">${esc(state.noteDraft.notitie)}</textarea></div>
-        <div class="field-row"><label>Gelezen gedeelte</label><input id="noteGelezen" placeholder="Bijv. Psalm 23" value="${esc(state.noteDraft.gelezen)}" /></div>
-        <div class="quick-actions">
-          <button class="btn-primary" id="btnLogContact">${state.bewerkNotitieId ? "Wijziging opslaan" : "Contactmoment opslaan"}</button>
-          ${state.bewerkNotitieId ? `<button class="btn-ghost" id="btnAnnuleerBewerkNotitie">Annuleren</button>` : ""}
-        </div>
-      </div>
-
-      <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:8px;">Eerdere contactmomenten</h3>
-      ${(gd.historie || []).length === 0 ? `<p style="color:var(--text-soft);font-size:13px;">Nog niets gelogd.</p>` : ""}
-      ${(gd.historie || []).map((n) => `
-        <div class="note-card ${state.bewerkNotitieId === n.id ? "note-card-actief" : ""}">
-          <div style="display:flex;justify-content:space-between;">
-            <span class="note-date">${fmtDatum(n.datum)}${n.tijd ? ` ${esc(n.tijd)}` : ""}${n.soort ? ` <span class="tag-grey">${esc(n.soort)}</span>` : ""}</span>
-            <span style="display:flex;gap:4px;">
-              <button class="btn-ghost btn-sm" data-bewerk-note="${esc(n.id)}">Bewerken</button>
-              <button class="btn-ghost btn-sm btn-danger" data-verwijder-note="${esc(n.id)}">Verwijderen</button>
-            </span>
-          </div>
-          ${n.notitie ? `<div style="font-size:13px;margin-top:6px;">${esc(n.notitie)}</div>` : ""}
-          ${n.gelezen ? `<div style="font-size:12px;color:var(--text-soft);margin-top:4px;">Gelezen: ${esc(n.gelezen)}</div>` : ""}
-        </div>`).join("")}
-      ` : ""}
-
-      ${state.detailTab === "plannen" ? `
-      <h3 style="font-size:16px;margin-bottom:4px;">Inplannen \u2014 (Bijzonder) contactmoment</h3>
-      <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
-        Voor iets buiten het gewone ritme \u2014 bijvoorbeeld een ziekenhuisopname. Staat los van het reguliere schema hierboven.
-      </p>
-      <div class="field-grid2">
-        <div class="field-row"><label>Datum</label><input type="date" id="geplandDatum" value="${esc(state.geplandDraft.datum)}" /></div>
-        <div class="field-row"><label>Tijd (optioneel)</label><input type="time" id="geplandTijd" value="${esc(state.geplandDraft.tijd)}" /></div>
-      </div>
-      <div class="field-row"><label>Soort</label>
-        <select id="geplandSoort">
-          ${SOORTEN_GEPLAND.map((s) => `<option value="${esc(s)}" ${state.geplandDraft.soort === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field-row"><label>Betreft (optioneel)</label><input id="geplandBetreft" placeholder="Bijv. Piet" value="${esc(state.geplandDraft.betreft)}" /></div>
-      <div class="field-row"><label>Notitie</label><textarea id="geplandNotitie" placeholder="Bijv. wordt geopereerd, graag even langsgaan\u2026">${esc(state.geplandDraft.notitie)}</textarea></div>
-      <button class="btn-primary" id="btnPlanGepland">Inplannen</button>
-
-      ${(gd.gepland || []).length ? `
-        <div style="margin-top:12px;">
-          ${gd.gepland.map((g) => `
-            <div class="note-card">
-              <div style="display:flex;justify-content:space-between;">
-                <span class="note-date">${fmtDatum(g.datum)}${g.tijd ? ` ${esc(g.tijd)}` : ""} <span class="tag-grey">${esc(g.soort)}</span></span>
-                <span style="display:flex;gap:4px;">
-                  <button class="btn-sm btn-primary" data-gepland-gedaan="${esc(g.id)}">Gedaan (log contact)</button>
-                  <button class="btn-ghost btn-sm btn-danger" data-gepland-verwijder="${esc(g.id)}">Verwijderen</button>
-                </span>
-              </div>
-              ${g.betreft ? `<div style="font-size:12.5px;margin-top:5px;"><strong>Betreft:</strong> ${esc(g.betreft)}</div>` : ""}
-              ${g.notitie ? `<div style="font-size:13px;margin-top:4px;">${esc(g.notitie)}</div>` : ""}
-            </div>`).join("")}
-        </div>` : ""}
-
-      <hr class="divider" />
-      <h3 style="font-size:16px;margin-bottom:4px;">Datum afspraak voorstellen</h3>
-      <p style="font-size:12px;color:var(--text-soft);margin-top:0;margin-bottom:10px;">
-        Vul een datum/tijd in en pas de tekst zo nodig aan. <span class="mono">[datum]</span> en <span class="mono">[tijd]</span>
-        worden bij het openen automatisch vervangen. Sjablonen beheer je via ⚙ → Instellingen.
-      </p>
-      <div class="field-row">
-        <label>Sjabloon</label>
-        <select id="afspraakSjabloonSelect">
-          ${state.afspraakSjablonen.map((s) => `<option value="${esc(s.id)}" ${state.afspraakSjabloonId === s.id ? "selected" : ""}>${esc(s.naam)}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field-grid2">
-        <div class="field-row"><label>Datum</label><input type="date" id="afspraakDatum" value="${esc(state.afspraakDraft.datum)}" /></div>
-        <div class="field-row"><label>Tijd</label><input type="time" id="afspraakTijd" value="${esc(state.afspraakDraft.tijd)}" /></div>
-      </div>
-      <div class="field-row"><label>Onderwerp (voor e-mail)</label><input id="afspraakOnderwerp" value="${esc(state.afspraakDraft.onderwerp)}" /></div>
-      <div class="field-row"><label>Bericht</label><textarea id="afspraakTekst" style="min-height:130px;">${esc(state.afspraakDraft.tekst)}</textarea></div>
-      <div class="quick-actions">
-        <button class="btn-primary" id="btnAfspraakMail" ${hoofd.email ? "" : "disabled title=\"Geen e-mailadres bekend\""}>Open in e-mail</button>
-        <button class="btn-primary" id="btnAfspraakWhatsapp" ${hoofd.mobiel ? "" : "disabled title=\"Geen mobiel nummer bekend\""}>Open in WhatsApp</button>
-      </div>
-      ` : ""}
-
-      <hr class="divider" />
-      <button class="btn-ghost btn-danger" id="btnVerwijderGezin">Dit hele gezin verwijderen</button>
     </div>
   </div>`;
 }
@@ -4029,7 +4319,7 @@ function beperkteTopbarHTML() {
       <img class="brand-logo" src="icons/icon-192.png" alt="ContactPlanner" />
       <div>
         <div class="brand-title">ContactPlanner</div>
-        <div class="brand-sub">Vergrendeld \u2014 alleen bijzondere momenten zichtbaar</div>
+        <div class="brand-sub">Vergrendeld: alleen bijzondere momenten zichtbaar</div>
       </div>
     </div>
     <div class="topbar-actions">
@@ -4503,7 +4793,7 @@ function attachEvents() {
   if ($("#btnToggleEdit")) $("#btnToggleEdit").addEventListener("click", () => { state.editingContact = !state.editingContact; render(); });
   if ($("#btnToggleFavorietDetail")) $("#btnToggleFavorietDetail").addEventListener("click", () => toggleFavoriet(state.selectedGezinsKey));
   if ($("#btnVerwijderGezin")) $("#btnVerwijderGezin").addEventListener("click", () => verwijderGezin(state.selectedGezinsKey));
-  $$("[data-detail-tab]").forEach((el) => el.addEventListener("click", () => { state.detailTab = el.dataset.detailTab; render(); }));
+  $$("[data-detail-tab]").forEach((el) => el.addEventListener("click", () => { state.detailTab = el.dataset.detailTab; state.dossierTabGewisseld = true; render(); }));
 
   // overdrachtskaart: openen vanuit de tab Gezin, opslaan gaat via het printvenster
   if ($("#btnOverdrachtskaart")) $("#btnOverdrachtskaart").addEventListener("click", () => { state.overdrachtGezinsKey = state.selectedGezinsKey; render(); });
@@ -4541,8 +4831,8 @@ function attachEvents() {
 
   if ($("#btnLogContact")) $("#btnLogContact").addEventListener("click", () => logGezinContact(state.selectedGezinsKey));
   if ($("#btnAnnuleerBewerkNotitie")) $("#btnAnnuleerBewerkNotitie").addEventListener("click", annuleerBewerkNotitie);
-  $$("[data-bewerk-note]").forEach((el) => el.addEventListener("click", (e) => bewerkHistorieItem(state.selectedGezinsKey, e.target.dataset.bewerkNote)));
-  $$("[data-verwijder-note]").forEach((el) => el.addEventListener("click", (e) => verwijderHistorieItem(state.selectedGezinsKey, e.target.dataset.verwijderNote)));
+  $$("[data-bewerk-note]").forEach((el) => el.addEventListener("click", (e) => bewerkHistorieItem(state.selectedGezinsKey, e.currentTarget.dataset.bewerkNote)));
+  $$("[data-verwijder-note]").forEach((el) => el.addEventListener("click", (e) => verwijderHistorieItem(state.selectedGezinsKey, e.currentTarget.dataset.verwijderNote)));
 
   // afspraak-sjabloon: waarden bijhouden zonder de hele detail opnieuw te tekenen
   if ($("#afspraakDatum")) $("#afspraakDatum").addEventListener("change", (e) => { state.afspraakDraft.datum = e.target.value; });
@@ -4941,10 +5231,10 @@ async function koppelViaApiSleutel() {
       const cryptoSleutel = await onlineBackupSleutel(b64NaarBytes(vol.blob.zout));
       data = await ontsleutelJSON(cryptoSleutel, { iv: vol.blob.iv, data: vol.blob.data });
     } catch (e) {
-      throw new Error("De online back-up kon niet ontsleuteld worden — hij is met een andere (oudere) API-sleutel gemaakt.");
+      throw new Error("De online back-up kon niet ontsleuteld worden, hij is met een andere (oudere) API-sleutel gemaakt.");
     }
     const gelukt = await pasBackupToe(data);
-    if (!gelukt) throw new Error("De back-up kon niet lokaal opgeslagen worden — kijk bij Debug voor details.");
+    if (!gelukt) throw new Error("De back-up kon niet lokaal opgeslagen worden, kijk bij Debug voor details.");
     state.onlineBackupActief = true;
     state.onlineBackupGesyncdTot = vol.laatste_wijziging_op || null;
     state.onlineBackupStatus = "ok";
@@ -5168,7 +5458,7 @@ function uitnodigingsKnoppenHTML(regnr, link) {
   return [
     p && p.email ? `<a class="btn btn-sm" href="${mailUrl(p.email, ingevuld.onderwerp, tekst)}" target="_blank" rel="noopener">Mail</a>` : "",
     mobielClean ? `<a class="btn btn-sm" href="${whatsappUrl(mobielClean, tekst)}"${whatsappTargetAttr()}>WhatsApp</a>` : "",
-    `<button class="btn btn-sm" data-kopieer-link="${esc(link)}" title="Kopieer de uitnodigingslink — om zelf in een bericht te plakken">Kopieer link</button>`,
+    `<button class="btn btn-sm" data-kopieer-link="${esc(link)}" title="Kopieer de uitnodigingslink, om zelf in een bericht te plakken">Kopieer link</button>`,
   ].filter(Boolean).join("");
 }
 
@@ -5236,8 +5526,8 @@ function geplandBadgesHTML(momenten) {
     const herkomst = m.viaAfspraakplanner
       ? "Het gezin koos dit tijdslot zelf via AfspraakPlanner"
       : "Zelf ingepland in het gezinsdossier";
-    const titel = `Gepland bijzonder contactmoment — ${herkomst}${m.verstreken ? ". De datum is verstreken; log het moment of verwijder het." : ""}`;
-    return `<span class="tag-afspraak tag-afspraak-gekozen" title="${esc(titel)}">📅 ${esc(fmtDatum(m.datum))}${m.tijd ? ` ${esc(m.tijd)}` : ""} · ${esc(m.soort)}</span>`;
+    const titel = `Gepland bijzonder contactmoment: ${herkomst}${m.verstreken ? ". De datum is verstreken; log het moment of verwijder het." : ""}`;
+    return `<span class="tag-afspraak tag-afspraak-gekozen" title="${esc(titel)}">${DOSSIER_ICOON.kalender}${esc(fmtDatum(m.datum))}${m.tijd ? ` ${esc(m.tijd)}` : ""} · ${esc(m.soort)}</span>`;
   }).join("");
 }
 
@@ -5247,7 +5537,7 @@ function geplandBadgesHTML(momenten) {
 function afspraakBadgeHTML(info, momenten) {
   if (!info) return "";
   if (!info.gekozen) {
-    return `<span class="tag-afspraak" title="Dit gezin zit in een planronde en kan nog een tijdslot kiezen; vernieuw de status via de Planrondes-pagina">⏳ in planronde</span>`;
+    return `<span class="tag-afspraak" title="Dit gezin zit in een planronde en kan nog een tijdslot kiezen; vernieuw de status via de Planrondes-pagina">${DOSSIER_ICOON.zandloper}in planronde</span>`;
   }
   if (momenten.some((m) => m.viaAfspraakplanner && m.datum === info.datum)) return "";
   return `<span class="tag-afspraak tag-afspraak-gekozen" title="Dit gezin heeft via AfspraakPlanner een tijdslot gekozen">✓ gekozen: ${esc(info.tekst)}</span>`;
@@ -5321,7 +5611,7 @@ function planrondesPaginaHTML() {
         ${aanvragen.length ? `<button class="btn-sm" id="btnAanvragenVerversen" ${state.aanvragenVerversenBezig ? "disabled" : ""}>${state.aanvragenVerversenBezig ? "Bezig…" : "↻ Alles vernieuwen"}</button>` : ""}
       </div>
       ${aanvragen.length === 0
-        ? `<div class="empty-state">Nog geen planrondes. Klik op "+ Nieuwe planronde" om tijdslots aan te bieden — gezinnen toevoegen kan daarna altijd.</div>`
+        ? `<div class="empty-state">Nog geen planrondes. Klik op "+ Nieuwe planronde" om tijdslots aan te bieden, gezinnen toevoegen kan daarna altijd.</div>`
         : rijen}
   </div>`;
 }
@@ -5346,11 +5636,11 @@ function planrondeDetailHTML(a) {
           <span class="aanvraag-slot mono">✓ ${esc(fmtSlotTijd(slot.start_tijd, slot.eind_tijd))}</span>
           ${overgenomen
             ? `<span class="tag-grey" title="Deze afspraak staat als gepland bijzonder contactmoment in het gezinsdossier">✓ in planning</span>`
-            : `<span class="tag-grey" title="Deze afspraak wordt automatisch als gepland bijzonder contactmoment in het gezinsdossier gezet bij het vernieuwen van de status. Blijft dit staan, dan is het gezinshoofd niet terug te vinden in de huidige lijst — plan het dan handmatig in via het gezinsdossier.">nog niet in de planning</span>`}
+            : `<span class="tag-grey" title="Deze afspraak wordt automatisch als gepland bijzonder contactmoment in het gezinsdossier gezet bij het vernieuwen van de status. Blijft dit staan, dan is het gezinshoofd niet terug te vinden in de huidige lijst, plan het dan handmatig in via het gezinsdossier.">nog niet in de planning</span>`}
         ` : `
           <span class="aanvraag-nog-niet">nog niet gekozen</span>
           <span style="display:flex;gap:4px;">${uitnodigingsKnoppenHTML(d.regnr, d.link)}</span>
-          <button class="btn-ghost btn-sm btn-danger" data-deelnemer-verwijder-aanvraag="${esc(a.id)}" data-deelnemer-verwijder-regnr="${esc(d.regnr)}" title="Dit gezin uit de planronde halen — de verstuurde link vervalt dan" ${bezig ? "disabled" : ""}>✕</button>
+          <button class="btn-ghost btn-sm btn-danger" data-deelnemer-verwijder-aanvraag="${esc(a.id)}" data-deelnemer-verwijder-regnr="${esc(d.regnr)}" title="Dit gezin uit de planronde halen, de verstuurde link vervalt dan" ${bezig ? "disabled" : ""}>✕</button>
         `}
       </div>`;
   }).join("");
@@ -5389,7 +5679,7 @@ function planrondeDetailHTML(a) {
         </span>
       </div>
       ${fout ? `<p style="color:var(--red);font-size:12.5px;margin:10px 0 0;">${esc(fout)}</p>` : ""}
-      ${!a.status ? `<p style="font-size:12.5px;color:var(--text-soft);margin:10px 0 0;">De status is nog niet opgehaald — klik op "↻ Status vernieuwen" voor de actuele stand.</p>` : ""}
+      ${!a.status ? `<p style="font-size:12.5px;color:var(--text-soft);margin:10px 0 0;">De status is nog niet opgehaald, klik op "↻ Status vernieuwen" voor de actuele stand.</p>` : ""}
 
       <div class="planronde-grid">
         <div>
@@ -5401,10 +5691,10 @@ function planrondeDetailHTML(a) {
               ${state.afspraakSjablonen.map((s) => `<option value="${esc(s.id)}" ${state.afspraakplannerSjabloonId === s.id ? "selected" : ""}>${esc(s.naam)}</option>`).join("")}
             </select>
           </div>` : ""}
-          ${deelnemerRijen || `<p style="font-size:12.5px;color:var(--text-soft);margin:4px 0 8px;">Nog geen gezinnen in deze planronde — voeg ze hieronder toe, of via "Selecteren" in de Planningweergave.</p>`}
+          ${deelnemerRijen || `<p style="font-size:12.5px;color:var(--text-soft);margin:4px 0 8px;">Nog geen gezinnen in deze planronde, voeg ze hieronder toe, of via "Selecteren" in de Planningweergave.</p>`}
           <div class="aanvraag-uitbreiden-rij" style="margin-top:8px;">
             <select data-aanvraag-gezindraft="${esc(a.id)}" style="flex:1;min-width:0;">
-              <option value="">— kies een gezin —</option>
+              <option value="">Kies een gezin\u2026</option>
               ${kandidaten.map((g) => `<option value="${esc(g.gezinsKey)}" ${state.aanvraagGezinDraft[a.id] === g.gezinsKey ? "selected" : ""}>${esc(g.gezinshoofd.naam || "Naamloos")}${g.adres ? ` (${esc(g.adres)})` : ""}</option>`).join("")}
             </select>
             <button class="btn-sm" data-gezin-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Gezin</button>
@@ -5414,9 +5704,9 @@ function planrondeDetailHTML(a) {
           <div class="aanvraag-subkop">Tijdslots${a.status ? ` (${(a.status.tijdslots || []).length})` : ""}</div>
           ${slotRijen || (a.status ? `<p style="font-size:12.5px;color:var(--text-soft);margin:4px 0 8px;">Geen tijdslots.</p>` : `<p style="font-size:12.5px;color:var(--text-soft);margin:4px 0 8px;">Tijdslots verschijnen hier zodra de status is opgehaald.</p>`)}
           <div class="aanvraag-uitbreiden-rij" style="margin-top:8px;">
-            <input type="date" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="datum" value="${esc(slotDraft.datum)}" />
-            <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="start" value="${esc(slotDraft.start)}" />
-            <input type="time" data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="eind" value="${esc(slotDraft.eind)}" title="Eindtijd (optioneel)" />
+            ${datumVeldHTML(`data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="datum"`, slotDraft.datum)}
+            <input ${tijdveldAttr("van")} data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="start" value="${esc(slotDraft.start)}" />
+            <input ${tijdveldAttr("tot")} data-aanvraag-slotdraft="${esc(a.id)}" data-slotdraft-veld="eind" value="${esc(slotDraft.eind)}" title="Eindtijd (optioneel)" />
             <button class="btn-sm" data-slot-toevoegen="${esc(a.id)}" ${bezig ? "disabled" : ""}>+ Tijdslot</button>
           </div>
         </div>
@@ -5512,57 +5802,72 @@ function plantAutoVergrendel(overMs) {
   }, Math.max(0, overMs));
 }
 
+// Privacy-uitleg onder de kaart van het slotscherm.
 const PRIVACY_MELDING_HTML = `
-  <div class="privacy-notice">
-    <span class="privacy-icoon">\u{1F512}</span>
-    <span><strong>Privacy is belangrijk.</strong> Alle gegevens blijven lokaal op uw computer en worden
-    daar versleuteld opgeslagen (AES-256, sleutel afgeleid van uw pin). Er gaan geen leesbare namen of
-    adressen naar internet: de optionele AfspraakPlanner-koppeling wisselt uitsluitend
-    registratienummers, tijdslots en versleutelde gegevens uit met de eigen afsprakenserver.</span>
-  </div>`;
+  <p class="slot-privacy">
+    ${SVG_ICOON('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>')}
+    <span><strong>Privacy voorop.</strong> Alle gegevens blijven lokaal op dit apparaat en staan daar versleuteld
+    (AES-256, sleutel afgeleid van je pin). Er gaan geen leesbare namen of adressen naar internet: de optionele
+    AfspraakPlanner-koppeling wisselt alleen registratienummers, tijdslots en versleutelde gegevens uit met de
+    eigen afsprakenserver.</span>
+  </p>`;
+
+const SLOT_ICOON = SVG_ICOON('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/><path d="M12 15v2"/>');
+const PIJL_RECHTS = SVG_ICOON('<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>');
+
+function slotFoutHTML() {
+  return state.pinFout ? `<div class="slot-fout" role="alert">${BACKUP_ICOON.let}<span>${esc(state.pinFout)}</span></div>` : "";
+}
+
+function slotSchermHTML(inhoud) {
+  return `
+    <div class="slot-scherm">
+      <div class="slot-achtergrond" aria-hidden="true"></div>
+      <div class="slot-kaart">
+        <div class="slot-beeld">
+          <span class="slot-halo" aria-hidden="true"></span>
+          <span class="slot-logo"><img src="icons/icon-512.png" alt="ContactPlanner" /></span>
+          <span class="slot-badge" title="Vergrendeld">${SLOT_ICOON}</span>
+        </div>
+        <div class="slot-naam">ContactPlanner</div>
+        ${inhoud}
+      </div>
+      ${PRIVACY_MELDING_HTML}
+    </div>`;
+}
 
 function lockScreenHTML() {
   if (state.lockMode === "instellen") {
-    return `
-    <div class="upload-wrap">
-      <div class="upload-card">
-        <img class="upload-logo" src="icons/icon-192.png" alt="ContactPlanner" />
-        <div class="upload-title">Stel een pin in</div>
-        <p class="upload-desc">
-          Deze contactplanner bevat gevoelige pastorale gegevens. Stel een pin in (minimaal 4 tekens) om
-          toegang te beveiligen; de gegevens worden bovendien met deze pin versleuteld opgeslagen.
-          Na het invoeren heb je \u00e9\u00e9n uur toegang; daarna is de pin opnieuw nodig.
-          Vergeet je de pin, dan is de enige weg terug alle lokale gegevens wissen en je back-up (.json)
-          terugzetten \u2014 zorg dus dat je die hebt.
-        </p>
-        ${PRIVACY_MELDING_HTML}
-        <div class="field-row"><label>Nieuwe pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw1" /></div>
-        <div class="field-row"><label>Herhaal pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw2" /></div>
-        ${state.pinFout ? `<p style="color:var(--red);font-size:13px;">${esc(state.pinFout)}</p>` : ""}
-        <button class="btn-primary" id="btnPinInstellen">Pin instellen en beginnen</button>
-      </div>
-    </div>`;
+    return slotSchermHTML(`
+      <h1 class="slot-titel">Stel een pin in</h1>
+      <p class="slot-tekst">ContactPlanner bevat gevoelige pastorale gegevens. Met je pin beveilig je de toegang, en de gegevens worden ermee versleuteld opgeslagen.</p>
+      <ul class="slot-punten">
+        <li>${DOSSIER_ICOON.vink}<span>Minimaal 4 tekens; alle tekens zijn toegestaan.</span></li>
+        <li>${DOSSIER_ICOON.klok}<span>Na het invoeren heb je \u00e9\u00e9n uur toegang.</span></li>
+        <li class="slot-punt-let">${BACKUP_ICOON.let}<span>Pin vergeten? Dan is de enige weg terug alles wissen en je back-up (.json) terugzetten. Zorg dus dat je die hebt.</span></li>
+      </ul>
+      <label class="slot-label" for="pinNieuw1">Nieuwe pin</label>
+      <input type="text" class="slot-pin invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw1" />
+      <label class="slot-label" for="pinNieuw2">Herhaal pin</label>
+      <input type="text" class="slot-pin invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinNieuw2" />
+      ${slotFoutHTML()}
+      <button class="btn-primary slot-knop" id="btnPinInstellen">Pin instellen en beginnen${PIJL_RECHTS}</button>`);
   }
-  return `
-    <div class="upload-wrap">
-      <div class="upload-card">
-        <img class="upload-logo" src="icons/icon-192.png" alt="ContactPlanner" />
-        <div class="upload-title">Vergrendeld</div>
-        <p class="upload-desc">Voer je pin in om verder te gaan. Na het invoeren heb je weer \u00e9\u00e9n uur toegang.</p>
-        ${PRIVACY_MELDING_HTML}
-        <div class="field-row"><label>Pin</label><input type="text" class="invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinInvoer" /></div>
-        ${state.pinFout ? `<p style="color:var(--red);font-size:13px;">${esc(state.pinFout)}</p>` : ""}
-        <button class="btn-primary" id="btnPinInvoeren">Ontgrendelen</button>
-        <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;">
-          <button class="btn-ghost" id="btnMijlpalenZonderPin" style="font-size:12.5px;">Bekijk bijzondere momenten zonder te ontgrendelen${heeftDringendeMijlpaal(true) ? ` <span class="dringend-dot" title="Er is binnen 14 dagen een bijzonder moment"></span>` : ""}</button>
-          <button class="btn-ghost" id="btnPinVergeten" style="font-size:12.5px;">Pin vergeten? Alle lokale gegevens wissen</button>
-        </div>
-      </div>
-    </div>`;
+  return slotSchermHTML(`
+    <h1 class="slot-titel">Welkom terug</h1>
+    <p class="slot-tekst">Voer je pin in om verder te gaan. Daarna heb je weer \u00e9\u00e9n uur toegang.</p>
+    <input type="text" class="slot-pin invoer-geheim" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" id="pinInvoer" placeholder="Pin" aria-label="Pin" />
+    ${slotFoutHTML()}
+    <button class="btn-primary slot-knop" id="btnPinInvoeren">Ontgrendelen${PIJL_RECHTS}</button>
+    <div class="slot-scheiding"><span>of</span></div>
+    <button class="slot-knop-tweede" id="btnMijlpalenZonderPin">${ICOON_BIJZONDERE_MOMENTEN}Bijzondere momenten bekijken${heeftDringendeMijlpaal(true) ? ` <span class="dringend-dot" title="Er is binnen 14 dagen een bijzonder moment"></span>` : ""}</button>
+    <button class="slot-link" id="btnPinVergeten">Pin vergeten? Alle lokale gegevens wissen</button>`);
 }
 
 function attachLockEvents() {
   const $ = (sel) => document.querySelector(sel);
+  const pinVeld = $("#pinInvoer") || $("#pinNieuw1");
+  if (pinVeld) pinVeld.focus();
   if ($("#btnPinInstellen")) $("#btnPinInstellen").addEventListener("click", async () => {
     const p1 = $("#pinNieuw1").value, p2 = $("#pinNieuw2").value;
     if (p1.length < 4) { state.pinFout = "De pin moet minimaal 4 tekens lang zijn."; render(); return; }
@@ -5676,7 +5981,7 @@ function vergrendelNu() {
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   if (!window.indexedDB) {
     logDebug("fout", "IndexedDB is niet beschikbaar in deze browser/omgeving.");
-    toonFoutBanner("Deze browser staat geen lokale opslag toe. Wijzigingen kunnen NIET bewaard worden \u2014 probeer een andere browser (Edge of Chrome) of browserinstelling.");
+    toonFoutBanner("Deze browser staat geen lokale opslag toe. Wijzigingen kunnen NIET bewaard worden, probeer een andere browser (Edge of Chrome) of browserinstelling.");
     state.stage = "upload";
     state.vergrendeld = false;
     render();
@@ -5795,7 +6100,7 @@ function vergrendelNu() {
     }
   } catch (e) {
     logDebug("fout", "Kon lokale gegevens niet laden: " + e.message);
-    toonFoutBanner("Kon lokale opslag niet openen. Wijzigingen kunnen mogelijk niet bewaard worden \u2014 klik op 'Debug' voor details.");
+    toonFoutBanner("Kon lokale opslag niet openen. Wijzigingen kunnen mogelijk niet bewaard worden, klik op 'Debug' voor details.");
     state.stage = "upload";
     state.vergrendeld = false;
   }
@@ -5807,7 +6112,7 @@ function vergrendelNu() {
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js")
-      .then(() => logDebug("info", "Service worker geregistreerd — de app werkt ook offline"))
+      .then(() => logDebug("info", "Service worker geregistreerd, de app werkt ook offline"))
       .catch((e) => logDebug("fout", "Service worker registreren mislukt: " + e.message));
   });
 }
