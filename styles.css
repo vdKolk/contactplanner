@@ -106,6 +106,7 @@ html, body {
 }
 .brand-title { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; }
 .brand-sub { font-size: 12px; color: var(--text-soft); margin-top: 1px; }
+.jaarteller { font-variant-numeric: tabular-nums; cursor: help; }
 .topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 6px 0; }
 /* Telefoon: back-upknop + vier iconen moeten samen op één regel passen. */
 @media (max-width: 600px) {
@@ -585,7 +586,7 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 /* Geplande momenten met een datumblokje */
 .gepland-lijst { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .gepland-item {
-  display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 14px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--rond); padding: 12px 14px; box-shadow: var(--schaduw-s);
 }
 .gepland-item-verstreken { background: var(--amber-bg); border-color: transparent; }
@@ -604,6 +605,10 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; 
 .gepland-regel { font-size: 12.5px; color: var(--text-soft); margin-top: 4px; }
 .gepland-acties { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .gepland-acties .btn-primary svg { width: 14px; height: 14px; }
+.gepland-item-actief { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.gepland-verzet { display: flex; align-items: center; gap: 5px; color: var(--amber); font-weight: 600; }
+.gepland-verzet svg { width: 13px; height: 13px; flex-shrink: 0; }
+.gepland-verzet-moment { white-space: nowrap; }
 
 .dossier-voet { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; justify-content: center; }
 .dossier-voet .btn-danger { opacity: .75; }
@@ -1057,4 +1062,140 @@ input.datum-ongeldig { border-color: var(--red) !important; box-shadow: 0 0 0 3p
 @media (max-width: 480px) {
   .slot-scherm { justify-content: flex-start; padding-top: 28px; }
   .slot-kaart { padding: 22px 20px 18px; border-radius: 20px; }
+}
+
+/* ---------------- Bijbelgedeelten ---------------- */
+.pagina-titel { font-size: 24px; font-weight: 750; letter-spacing: -0.02em; margin: 0 0 4px; }
+.pagina-intro { color: var(--text-soft); font-size: 13.5px; margin: 0; }
+.bijbel-kop { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.bijbel-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.bijbel-filters .search-box { min-width: 240px; }
+.filter-teller { font-size: 11px; font-weight: 650; color: var(--text-soft); margin-left: 2px; }
+.view-toggle button.active .filter-teller { color: var(--accent); }
+.bijbel-aantal { font-size: 12px; color: var(--text-soft); margin: 0 0 16px; }
+
+.bijbel-groep { margin-bottom: 26px; }
+.bijbel-groep-kop { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 10px; }
+.bijbel-groep-kop h2 { font-size: 17px; font-weight: 750; letter-spacing: -0.015em; margin: 0; }
+.bijbel-groep-testament { font-size: 12px; color: var(--text-soft); }
+.bijbel-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+
+.bijbel-kaart {
+  display: flex; flex-direction: column; gap: 6px; padding: 15px 17px 14px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--rond); box-shadow: var(--schaduw-s);
+  transition: border-color .12s, box-shadow .15s, transform .15s;
+}
+.bijbel-kaart:hover, .bijbel-kaart:focus-visible { border-color: var(--border-hover); box-shadow: var(--schaduw-m); transform: translateY(-1px); outline: none; }
+.bijbel-kaart-kop { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bijbel-ref { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bijbel-vers { font-size: 12.5px; font-weight: 500; color: var(--text-soft); white-space: nowrap; }
+.bijbel-titel { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; margin: 2px 0 0; line-height: 1.35; }
+.bijbel-samenvatting {
+  font-size: 13px; line-height: 1.55; color: var(--text-soft); margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line;
+}
+.bijbel-themas { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.thema-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--grey-bg); color: var(--text-soft); }
+.testament-chip {
+  flex-shrink: 0; font-size: 10px; font-weight: 750; letter-spacing: .04em; padding: 2px 6px; border-radius: 5px;
+}
+.testament-OT { background: var(--amber-bg); color: var(--amber); }
+.testament-NT { background: var(--blue-bg); color: var(--blue); }
+
+.bijbel-weergave button { display: inline-flex; align-items: center; padding: 5px 9px; }
+.bijbel-weergave svg { width: 15px; height: 15px; }
+
+/* Lijstweergave: één regel per gedeelte, als een rustige tabel zonder kopregel. */
+.bijbel-rijen {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--rond);
+  box-shadow: var(--schaduw-s); overflow: hidden;
+}
+.bijbel-rij {
+  display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr) auto; align-items: center; gap: 16px;
+  padding: 10px 16px; cursor: pointer; border-top: 1px solid var(--border); transition: background .12s;
+}
+.bijbel-rij:first-child { border-top: none; }
+.bijbel-rij:hover, .bijbel-rij:focus-visible { background: var(--grey-bg); outline: none; }
+.bijbel-rij:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.bijbel-rij-ref { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bijbel-rij-tekst { display: flex; align-items: baseline; gap: 10px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.bijbel-rij-titel { font-size: 14px; font-weight: 650; flex-shrink: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.bijbel-rij-samenvatting { font-size: 13px; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bijbel-rij-themas { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: nowrap; max-width: 260px; overflow: hidden; }
+.testament-leeg { width: 25px; visibility: hidden; }
+
+.bijbel-leeg {
+  text-align: center; padding: 48px 20px; border: 1px dashed var(--border-hover); border-radius: 16px; background: var(--surface);
+}
+.bijbel-leeg h3 { margin: 12px 0 6px; font-size: 17px; }
+.bijbel-leeg p { color: var(--text-soft); font-size: 13.5px; max-width: 420px; margin: 0 auto 16px; line-height: 1.55; }
+.bijbel-leeg-klein { padding: 28px 20px; }
+.bijbel-leeg-klein p { margin: 0 auto; }
+.bijbel-leeg-icoon { width: 52px; height: 52px; margin: 0 auto; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
+.bijbel-leeg-icoon svg { width: 26px; height: 26px; }
+
+/* Zijpaneel met editor */
+.bijbel-paneel { width: min(680px, 100%); background: var(--surface); }
+.bijbel-paneel-kop {
+  position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px 12px 28px; background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+}
+.bijbel-paneel-label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-soft); min-width: 0; }
+.bijbel-herkend-niet { font-weight: 500; }
+.bijbel-opslagstatus { font-size: 12px; color: var(--text-soft); margin-right: 6px; white-space: nowrap; }
+.bijbel-paneel-kop .dossier-kop-acties { margin: 0; align-items: center; }
+.bijbel-paneel-body { padding: 22px 28px 40px; }
+.bijbel-ref-velden { display: flex; align-items: baseline; gap: 10px; }
+.bijbel-paneel input[data-bijbel-veld] {
+  border: none; background: transparent; color: var(--text); font-family: inherit; padding: 4px 6px; margin-left: -6px;
+  border-radius: 8px; transition: background .12s, box-shadow .12s;
+}
+.bijbel-paneel input[data-bijbel-veld]:hover { background: var(--grey-bg); }
+.bijbel-paneel input[data-bijbel-veld]:focus { outline: none; background: var(--surface); box-shadow: 0 0 0 2px var(--accent-soft), inset 0 0 0 1px var(--accent); }
+.bijbel-veld-gedeelte { flex: 0 1 55%; min-width: 0; font-size: 15px; font-weight: 700; color: var(--accent) !important; }
+.bijbel-veld-tekst { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--text-soft) !important; }
+.bijbel-veld-titel { display: block; width: calc(100% + 6px); font-size: 26px; font-weight: 750; letter-spacing: -0.025em; line-height: 1.25; margin-top: 4px !important; }
+.bijbel-veld-thema-wrap { display: flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--text-soft); }
+.bijbel-veld-thema-wrap > svg { width: 15px; height: 15px; flex-shrink: 0; }
+.bijbel-veld-thema { flex: 1; min-width: 0; font-size: 13.5px; color: var(--text-soft) !important; margin-left: 0 !important; }
+
+.editor { margin-top: 18px; border-top: 1px solid var(--border); }
+.editor-balk {
+  position: sticky; top: 53px; z-index: 2; display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 8px 0; background: var(--surface);
+}
+.editor-knop { border: none; background: transparent; padding: 6px 7px; border-radius: 8px; color: var(--text-soft); }
+.editor-knop:hover { background: var(--grey-bg); color: var(--text); }
+.editor-knop.active { background: var(--accent-soft); color: var(--accent); }
+.editor-knop svg { width: 17px; height: 17px; }
+.editor-scheiding { width: 1px; height: 20px; background: var(--border); margin: 0 5px; }
+.editor-inhoud {
+  min-height: 45vh; padding: 8px 2px 20px; outline: none;
+  font-size: 15.5px; line-height: 1.75; color: var(--text); overflow-wrap: break-word;
+}
+.editor-inhoud:empty::before { content: attr(data-placeholder); color: var(--text-soft); opacity: .7; pointer-events: none; }
+.editor-inhoud p { margin: 0 0 .85em; }
+.editor-inhoud h3 { font-size: 18px; font-weight: 750; letter-spacing: -0.015em; margin: 1.2em 0 .4em; line-height: 1.35; }
+.editor-inhoud ul, .editor-inhoud ol { margin: 0 0 .85em; padding-left: 1.4em; }
+.editor-inhoud li { margin-bottom: .25em; }
+.editor-inhoud blockquote {
+  margin: 0 0 .85em; padding: 4px 0 4px 16px; border-left: 3px solid var(--accent);
+  color: var(--text-soft); font-style: italic;
+}
+.bijbel-voet { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-soft); }
+
+@media (max-width: 600px) {
+  .bijbel-raster { grid-template-columns: 1fr; }
+  .bijbel-rij { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 11px 14px; }
+  .bijbel-rij-tekst { flex-direction: column; gap: 2px; white-space: normal; }
+  .bijbel-rij-titel { max-width: 100%; white-space: nowrap; }
+  .bijbel-rij-samenvatting { white-space: nowrap; width: 100%; }
+  .bijbel-rij-themas { justify-content: flex-start; max-width: none; flex-wrap: wrap; }
+  .bijbel-rij-themas:empty { display: none; }
+  .bijbel-filters .search-box { flex-basis: 100%; }
+  .bijbel-paneel-kop { padding: 12px 14px 10px 16px; }
+  .bijbel-paneel-body { padding: 16px 16px 32px; }
+  .bijbel-opslagstatus { display: none; }
+  .bijbel-veld-titel { font-size: 22px; }
 }
