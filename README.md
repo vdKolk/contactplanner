@@ -70,12 +70,17 @@ Daar horen twee verantwoordelijkheden bij:
   huisbezoeken er per jaar nodig zijn om iedereen volgens schema te bezoeken: 2× per jaar
   telt 2, 1× per jaar telt 1, om het jaar telt ½ (het totaal over twee jaar gedeeld door
   twee, naar boven afgerond). Zo weet je hoeveel bezoekavonden je minimaal vrij moet houden.
-  Gezinnen die niet meer in de laatste import voorkomen tellen niet mee.
+  Gezinnen die niet meer in de laatste import voorkomen tellen niet mee. Erbij staat hoeveel
+  huisbezoeken je dit kalenderjaar al hebt gelogd en hoeveel er nog gepland staan, bijvoorbeeld
+  "12 bezocht 3 gepland | 27 per jaar".
 - **Weergaven**: lijst, twee kolommen, sorteerbare tabel en een planbord (achterstallig /
   komende maand / dit kwartaal / komend halfjaar / verder vooruit).
 - **Bijzondere momenten**: verjaardagen vanaf een instelbare leeftijd, huwelijksjubilea in
   instelbare jaren en zelf ingeplande bijzondere bezoeken. Te openen via het kalendericoon
   rechtsboven, dat een rood attentiestipje krijgt zodra er binnen 14 dagen iets aankomt.
+- **Geplande momenten verzetten**: met het potloodje pas je de datum, tijd of gegevens van een
+  gepland moment aan. Bij een afspraak uit AfspraakPlanner blijft het oorspronkelijke tijdslot
+  daar staan; het dossier toont dan "Verzet, was …" met het oude tijdstip.
 - **Datum afspraak voorstellen**: e-mail- of WhatsApp-bericht met invulbaar sjabloon (de
   standaardtekst draagt het voorbehoud *D.V.*), en een Scipio-link per persoon.
 - **AfspraakPlanner-koppeling**: zet vanuit het planbord een aanvraag uit waarbij gezinnen
@@ -83,6 +88,10 @@ Daar horen twee verantwoordelijkheden bij:
   (☰ → Planrondes, of de knop in de planningweergave) volg je wie al gekozen heeft; een gekozen
   tijdslot komt automatisch als gepland contactmoment in het gezinsdossier en in Bijzondere
   momenten.
+- **Bijbelgedeelten** (extra functie per API-sleutel): eigen naslag van besproken gedeelten,
+  gegroepeerd per bijbelboek in bijbelvolgorde, te filteren op Oude/Nieuwe Testament en
+  bijbelboek, als kaarten of als compacte lijst. Openen gaat in een editor met eenvoudige opmaak (vet, cursief, tussenkop, lijsten,
+  citaat) die automatisch bewaart.
 - **Pin-beveiliging met versleuteling**: de gegevens worden met een van de pin afgeleide
   sleutel versleuteld opgeslagen; na ontgrendelen een uur toegang, of eerder vergrendelen met
   het slot-icoon rechtsboven. De pin wijzig je via ⚙ → Instellingen → Beveiliging.

@@ -12,7 +12,7 @@
 
 const DB_NAME = "huisbezoekPlannerDB";
 const DB_VERSION = 4;
-const APP_VERSIE = "1.10.4"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
+const APP_VERSIE = "1.10.5"; // bestaansjaar.maand.releasenr — staat los van CACHE_VERSIE in sw.js
 
 // Vul per release een entry toe onder het nieuwe APP_VERSIE-nummer om gebruikers na het bijwerken
 // eenmalig een "nieuwe versie"-melding te tonen. Ontbreekt een entry voor de nieuwe versie, dan
@@ -184,6 +184,14 @@ const VERSIE_NOTITIES = {
       "De back-upstatus rechtsboven heeft nette iconen in plaats van losse tekens",
       "Het slotscherm is vernieuwd, met het ContactPlanner-logo als middelpunt",
       "De handleiding heeft een eigen stuk over de overdrachtskaart",
+    ],
+  },
+  "1.10.5": {
+    nieuw: [
+      "Bovenin zie je hoeveel huisbezoeken je dit jaar al hebt gedaan en hoeveel er nog gepland staan, naast het aantal bezoeken dat je schema per jaar vraagt, bijvoorbeeld \"13 bezocht 2 gepland | 27 per jaar\"",
+      "Een gepland moment kun je nu aanpassen met het potloodje: een andere datum of tijd, de soort of de notitie. Ook momenten uit de AfspraakPlanner kun je verzetten; je ziet dan \"Verzet, was ...\" met het oorspronkelijke moment",
+      "Bijbelgedeelten is vernieuwd: per bijbelboek in bijbelvolgorde, te filteren op Oude of Nieuwe Testament en op bijbelboek, te bekijken als kaarten of als compacte lijst",
+      "Een bijbelgedeelte opent rechts in een editor: alles is direct aan te passen, de samenvatting heeft eenvoudige opmaak (vet, cursief, tussenkop, lijsten, citaat) en wijzigingen worden automatisch bewaard",
     ],
   },
 };
@@ -748,6 +756,23 @@ function bezoekenPerJaar(gezinnen) {
     .reduce((som, g) => som + 12 / intervalMaanden(getGezinsdata(g.gezinsKey), g), 0);
 }
 
+// Hoeveel huisbezoeken er dit kalenderjaar al zijn gelogd. Zelfde regel als het schema: alleen
+// "Huisbezoek" telt (en oude contactmomenten zonder soort). Bezoeken bij gezinnen die inmiddels
+// uit de wijk zijn tellen wel mee: die zijn gewoon gedaan.
+function huisbezoekenDitJaar(gezinnen) {
+  const jaar = todayISO().slice(0, 4);
+  return gezinnen.reduce((som, g) => som + (getGezinsdata(g.gezinsKey).historie || [])
+    .filter((h) => (!h.soort || h.soort === "Huisbezoek") && String(h.datum || "").startsWith(jaar)).length, 0);
+}
+
+// Hoeveel huisbezoeken er dit kalenderjaar nog gepland staan (nog niet gelogd), inclusief
+// tijdslots die gezinnen via AfspraakPlanner kozen: die staan als gepland huisbezoek in het dossier.
+function geplandeHuisbezoekenDitJaar(gezinnen) {
+  const jaar = todayISO().slice(0, 4);
+  return gezinnen.reduce((som, g) => som + (getGezinsdata(g.gezinsKey).gepland || [])
+    .filter((m) => m.soort === "Huisbezoek" && String(m.datum || "").startsWith(jaar)).length, 0);
+}
+
 function berekenVolgendContact(gd, gezin) {
   if (gd.volgendContactOverride) return gd.volgendContactOverride;
   const regulier = gd.laatsteContact ? addMonths(gd.laatsteContact, intervalMaanden(gd, gezin)) : "";
@@ -1033,7 +1058,8 @@ async function veiligOpslaan(schrijfFn, context) {
 }
 
 window.addEventListener("beforeunload", (e) => {
-  if (opslagBezigTeller > 0 || state.saveState === "fout") {
+  if (bijbelBewaarTimer) bewaarBijbelStil(); // wachtende wijziging uit de bijbel-editor meteen bewaren
+  if (opslagBezigTeller > 0 || bijbelBewaarTimer || state.saveState === "fout") {
     e.preventDefault();
     e.returnValue = "";
   }
@@ -1066,6 +1092,7 @@ const state = {
   geplandDraft: { datum: "", tijd: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" },
   afspraakDraft: { onderwerp: "Huisbezoek inplannen", tekst: "", datum: "", tijd: "19:30" },
   afspraakSjablonen: [{ ...STANDAARD_AFSPRAAK_SJABLOON }, { ...STANDAARD_TIJDSLOT_SJABLOON }],
+  bewerkGeplandId: null, // id van het geplande moment dat in het formulier onder Plannen bewerkt wordt
   afspraakSjabloonId: STANDAARD_AFSPRAAK_SJABLOON.id,
   kleurModus: "auto", // auto | licht | donker — dag/nacht-modus; "auto" volgt het systeem. Apparaat-instelling, gaat niet mee in de back-up
   mailMethode: "outlook", // mailto | outlook — Outlook op het web is de standaard voor nieuwe gebruikers
@@ -1090,12 +1117,13 @@ const state = {
   bijbelgedeelten: [], // { id, gedeelte, tekst, titel, thema, samenvatting, aangemaaktOp }
   bijbelgedeeltenActief: false, // instelling: module aan/uit (alleen zinvol mét server-feature)
   bijbelZoek: "", // alleen in-memory
-  bijbelSortBy: "gedeelte", // gedeelte | tekst | titel | thema
-  bijbelSortDir: "asc",
-  bijbelDetailId: null, // item waarvan het detailvenster openstaat
-  bijbelFormOpen: false, // formulier-venster (nieuw of bewerken) open
-  bijbelBewerkId: null,
-  bijbelDraft: { gedeelte: "", tekst: "", titel: "", thema: "", samenvatting: "" },
+  bijbelSortBy: "bijbel", // bijbel | titel | thema | nieuwste
+  bijbelTestament: "alle", // alle | OT | NT
+  bijbelBoek: "", // index van het gekozen bijbelboek als filter ("" = alle)
+  bijbelWeergave: leesBijbelWeergave(), // kaarten | lijst — apparaat-voorkeur (localStorage)
+  bijbelDetailId: null, // gedeelte dat in de editor (zijpaneel) openstaat
+  bijbelNetGeopend: false, // inschuif-animatie alleen bij openen
+  bijbelFocusVeld: null, // veld dat na het openen de focus krijgt (bij een nieuw gedeelte)
   bijbelTerug: null, // stage om naar terug te keren vanaf de Bijbelgedeelten-pagina
   selectieModusPlanning: false,
   geselecteerdeGezinnen: [], // gezinsKeys, alleen in-memory
@@ -1838,9 +1866,72 @@ function handleBackupImport(e) {
 
 // ---------------- contactmoment loggen ----------------
 
+// "19:30–20:30" → "19:30"; een losse tijd blijft zoals hij is.
+function begintijd(tijd) {
+  const m = String(tijd || "").match(/^(\d{2}:\d{2})/);
+  return m ? m[1] : "";
+}
+
+// Een tijdvak (uit AfspraakPlanner) verzetten naar een nieuwe begintijd: de eindtijd schuift mee
+// met dezelfde duur. Een losse tijd wordt gewoon vervangen.
+function verzetTijdvak(oud, nieuweStart) {
+  const m = String(oud || "").match(/^(\d{2}):(\d{2})\s*[–-]\s*(\d{2}):(\d{2})$/);
+  if (!m || !nieuweStart) return nieuweStart;
+  const duur = (+m[3] * 60 + +m[4]) - (+m[1] * 60 + +m[2]);
+  const [u, mi] = nieuweStart.split(":").map(Number);
+  const eind = Math.min(23 * 60 + 59, u * 60 + mi + Math.max(0, duur));
+  return `${nieuweStart}–${String(Math.floor(eind / 60)).padStart(2, "0")}:${String(eind % 60).padStart(2, "0")}`;
+}
+
+function isAfspraakplannerMoment(g) {
+  return g.bron === "afspraakplanner" || /via AfspraakPlanner/.test(g.notitie || "");
+}
+
+function legeGeplandDraft() {
+  return { datum: "", tijd: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
+}
+
+function bewerkGeplandMoment(gezinsKey, id) {
+  const item = (getGezinsdata(gezinsKey).gepland || []).find((g) => g.id === id);
+  if (!item) return;
+  state.bewerkGeplandId = id;
+  state.geplandDraft = { datum: item.datum, tijd: begintijd(item.tijd), soort: item.soort, betreft: item.betreft || "", notitie: item.notitie || "" };
+  state.detailTab = "plannen";
+  render();
+  const formulier = document.getElementById("geplandFormulier");
+  if (formulier) formulier.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function annuleerBewerkGepland() {
+  state.bewerkGeplandId = null;
+  state.geplandDraft = legeGeplandDraft();
+  render();
+}
+
 async function plandGepland(gezinsKey) {
   if (!state.geplandDraft.datum) { alert("Kies eerst een datum."); return; }
   const gd = getGezinsdata(gezinsKey);
+  if (state.bewerkGeplandId) {
+    const oud = (gd.gepland || []).find((g) => g.id === state.bewerkGeplandId);
+    if (oud) {
+      // Tijdvak bewaren als de begintijd niet is aangepast; anders schuift de eindtijd mee.
+      const tijd = state.geplandDraft.tijd === begintijd(oud.tijd) ? oud.tijd : verzetTijdvak(oud.tijd, state.geplandDraft.tijd);
+      const bijgewerkt = { ...oud, datum: state.geplandDraft.datum, tijd, soort: state.geplandDraft.soort, betreft: state.geplandDraft.betreft, notitie: state.geplandDraft.notitie };
+      // Een moment uit AfspraakPlanner dat verzet wordt: het oorspronkelijke tijdstip onthouden,
+      // want het gezin ziet in AfspraakPlanner (en in de eigen agenda) nog het oude moment.
+      if (isAfspraakplannerMoment(oud)) {
+        const origineel = oud.oorspronkelijk || { datum: oud.datum, tijd: oud.tijd };
+        if (bijgewerkt.datum === origineel.datum && bijgewerkt.tijd === origineel.tijd) delete bijgewerkt.oorspronkelijk;
+        else bijgewerkt.oorspronkelijk = origineel;
+      }
+      const gepland = (gd.gepland || []).map((g) => (g.id === oud.id ? bijgewerkt : g)).sort((a, b) => a.datum.localeCompare(b.datum));
+      await updateGezinsdata(gezinsKey, { gepland });
+    }
+    state.bewerkGeplandId = null;
+    state.geplandDraft = legeGeplandDraft();
+    render();
+    return;
+  }
   const entry = {
     id: uid(),
     datum: state.geplandDraft.datum,
@@ -1851,11 +1942,12 @@ async function plandGepland(gezinsKey) {
   };
   const gepland = [...(gd.gepland || []), entry].sort((a, b) => a.datum.localeCompare(b.datum));
   await updateGezinsdata(gezinsKey, { gepland });
-  state.geplandDraft = { datum: "", tijd: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
+  state.geplandDraft = legeGeplandDraft();
   render();
 }
 
 async function verwijderGeplandMoment(gezinsKey, id) {
+  if (state.bewerkGeplandId === id) { state.bewerkGeplandId = null; state.geplandDraft = legeGeplandDraft(); }
   const gd = getGezinsdata(gezinsKey);
   const gepland = (gd.gepland || []).filter((g) => g.id !== id);
   await updateGezinsdata(gezinsKey, { gepland });
@@ -1866,9 +1958,9 @@ async function markeerGeplandGedaan(gezinsKey, id) {
   const item = (gd.gepland || []).find((g) => g.id === id);
   if (!item) return;
   const notitieMetBetreft = item.notitie + (item.betreft ? `${item.notitie ? ". " : ""}Betreft: ${item.betreft}` : "");
-  // Een tijd van "19:00–19:30" (uit AfspraakPlanner) past niet in het tijdveld van een
-  // contactmoment; alleen een enkele starttijd gaat mee.
-  const tijd = /^\d{2}:\d{2}$/.test(item.tijd || "") ? item.tijd : "";
+  // Een tijdvak als "19:00–19:30" (uit AfspraakPlanner) past niet in het tijdveld van een
+  // contactmoment; de begintijd gaat mee.
+  const tijd = begintijd(item.tijd);
   const nieuweHistorieEntry = { id: uid(), datum: item.datum, tijd, soort: item.soort, notitie: notitieMetBetreft, gelezen: "" };
   const historie = [nieuweHistorieEntry, ...(gd.historie || [])];
   const gepland = (gd.gepland || []).filter((g) => g.id !== id);
@@ -2042,6 +2134,50 @@ function telStatussen() {
   return c;
 }
 
+// Tekent render() alles opnieuw terwijl je in de bijbel-editor typt (bijvoorbeeld door de
+// online back-up), dan blijven de cursor en de scrollpositie op hun plek.
+function bewaarEditorStand() {
+  const paneel = document.querySelector(".bijbel-paneel");
+  if (!paneel) return null;
+  const actief = document.activeElement;
+  const stand = { scroll: paneel.scrollTop, veld: null, start: 0, eind: 0 };
+  if (actief && actief.dataset && actief.dataset.bijbelVeld) {
+    stand.veld = `[data-bijbel-veld="${actief.dataset.bijbelVeld}"]`;
+    stand.start = actief.selectionStart; stand.eind = actief.selectionEnd;
+  } else if (actief && actief.id === "bijbelEditor") {
+    stand.veld = "#bijbelEditor";
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      const r = sel.getRangeAt(0).cloneRange();
+      r.selectNodeContents(actief); r.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset);
+      stand.start = r.toString().length;
+    }
+  }
+  return stand;
+}
+
+function herstelEditorStand(stand) {
+  const paneel = document.querySelector(".bijbel-paneel");
+  if (!stand || !paneel) return;
+  paneel.scrollTop = stand.scroll;
+  const el = stand.veld && document.querySelector(stand.veld);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  if (el.id !== "bijbelEditor") { try { el.setSelectionRange(stand.start, stand.eind); } catch (e) { /* geen tekstveld */ } return; }
+  // Cursor terugzetten op dezelfde tekenpositie in de editor.
+  let over = stand.start;
+  const loper = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = loper.nextNode())) {
+    if (over <= n.textContent.length) {
+      const r = document.createRange(); r.setStart(n, over); r.collapse(true);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      return;
+    }
+    over -= n.textContent.length;
+  }
+}
+
 function render() {
   const root = document.getElementById("app");
   if (state.vergrendeld) {
@@ -2058,6 +2194,7 @@ function render() {
   const breed = state.stage === "dashboard";
   // render() vervangt alles; onthoud waar je in het gezinsdossier was, zodat het niet bij elke
   // wijziging (ster, tab, opslaan) terugspringt naar boven.
+  const editorStand = bewaarEditorStand();
   const oudPanel = document.getElementById("detailPanel");
   const oudeScroll = oudPanel && oudPanel.dataset.gezin === state.selectedGezinsKey ? oudPanel.scrollTop : 0;
   root.innerHTML = topbarHTML() + `<div class="main${breed ? " main-breed" : ""}">` + mainHTML() + "</div>" + detailHTML() + overdrachtskaartHTML() + debugModalHTML() + handleidingModalHTML() + bijbelModalHTML() + versieMeldingModalHTML();
@@ -2068,6 +2205,7 @@ function render() {
     panel.scrollTop = state.dossierTabGewisseld && tabs ? Math.min(oudeScroll, tabs.offsetTop - 8) : oudeScroll;
   }
   state.dossierTabGewisseld = false;
+  herstelEditorStand(editorStand);
   attachEvents();
 }
 
@@ -2163,6 +2301,7 @@ function handleidingModalHTML() {
           <li><a href="#hl-notitie">Algemene notitie</a></li>
           <li><a href="#hl-overdracht">Overdrachtskaart</a></li>
           <li><a href="#hl-scipio">Scipio-koppeling</a></li>
+          <li><a href="#hl-bijbelgedeelten">Bijbelgedeelten</a></li>
           <li><a href="#hl-beveiliging">Pin-beveiliging en versleuteling</a></li>
           <li><a href="#hl-systeem">Menu's, gegevens en instellingen</a></li>
         </ul>
@@ -2226,7 +2365,12 @@ function handleidingModalHTML() {
         huisbezoeken je per jaar nodig hebt om alle gezinnen volgens hun schema te bezoeken. Een gezin op
         2x per jaar telt 2, op 1x per jaar telt 1 en om het jaar telt \u00bd, het totaal over twee jaar
         gedeeld door twee, naar boven afgerond. Zo weet je hoeveel bezoekavonden je minimaal vrij moet
-        houden. Gezinnen die niet meer in de laatste import voorkomen tellen niet mee.</p>
+        houden. Gezinnen die niet meer in de laatste import voorkomen tellen niet mee. Daarvoor staat hoeveel
+        huisbezoeken je dit kalenderjaar al hebt gelogd en hoeveel er nog gepland staan (zelf ingepland of via
+        AfspraakPlanner gekozen), bijvoorbeeld "12 bezocht 3 gepland | 27 per jaar": 12 bezocht, 3 gepland en 27
+        nodig per jaar. Net als bij het schema
+        tellen alleen contactmomenten van het soort "Huisbezoek"; op 1 januari begint de telling weer bij nul.
+        Wijs het aan met de muis voor de volledige uitleg.</p>
 
         <h4 id="hl-bijzonder">Inplannen: (bijzonder) contactmoment</h4>
         <p>Voor iets buiten het gewone ritme, zoals een ziekenhuisopname: plan een datum, eventueel een tijd,
@@ -2234,8 +2378,14 @@ function handleidingModalHTML() {
         daarna in <strong>Bijzondere momenten</strong> te staan en als label (kalendericoon met datum, tijd en soort) op de
         gezinskaart in de lijst- en planbordweergave; die kaart kleurt lichtgroen zolang het moment nog komt
         en lichtgeel zodra de datum verstreken is en je het nog moet loggen. Zodra je het afhandelt met
-        "Gedaan (log contact)" komt het als een gewoon contactmoment in de geschiedenis; "Verwijderen"
-        gebruik je als het niet doorgaat.</p>
+        "Gedaan" komt het als een gewoon contactmoment in de geschiedenis; de prullenbak gebruik je als het
+        niet doorgaat.</p>
+        <p><strong>Verzetten:</strong> wordt een afspraak naar een andere dag of tijd verplaatst, klik dan bij het
+        geplande moment op het potloodje. Het formulier vult zich met de huidige gegevens; pas de datum of tijd
+        aan en kies "Wijziging opslaan". Bij een tijdvak (bijv. 19:30–20:30) schuift de eindtijd mee. Komt het
+        moment uit AfspraakPlanner, dan verandert alleen je eigen planning (verzetten gaat altijd in overleg met
+        het gezin): in AfspraakPlanner blijft het oorspronkelijke tijdslot staan. Bij het moment zie je daarom
+        "Verzet, was …" met het oude tijdstip.</p>
 
         <h4 id="hl-afspraak">Datum afspraak voorstellen en berichtsjablonen</h4>
         <p>Bij "Datum afspraak voorstellen" open je met één klik een mail of WhatsApp-bericht om iemand te
@@ -2348,6 +2498,20 @@ function handleidingModalHTML() {
         <h4 id="hl-scipio">Scipio-koppeling</h4>
         <p>Bij elk gezinslid staat een "Scipio"-link die rechtstreeks naar de persoonskaart in Scipio gaat
         (op basis van het Regnr.).</p>
+
+        <h4 id="hl-bijbelgedeelten">Bijbelgedeelten</h4>
+        <p>Als de functie voor je API-sleutel aanstaat (\u2699 \u2192 Instellingen \u2192 Extra functies), vind je onder
+        \u2630 \u2192 <strong>Bijbelgedeelten</strong> je eigen naslag van besproken gedeelten, gegroepeerd per bijbelboek in bijbelvolgorde. Met de knopjes naast
+        het sorteren wissel je tussen <strong>kaarten</strong> en een compacte <strong>lijst</strong> (één regel per
+        gedeelte); je keuze wordt op dit apparaat onthouden. Filter op <strong>Oude</strong> of <strong>Nieuwe Testament</strong>,
+        kies een <strong>bijbelboek</strong> (alleen boeken waar je iets bij hebt staan in de lijst), zoek over alle
+        velden, of sorteer op titel, thema of laatst toegevoegd. Het boek wordt herkend uit wat je invult, ook bij
+        afkortingen als "Ps 23", "Joh. 3" of "1 Kor 13"; wat niet herkend wordt komt onder "Overig".</p>
+        <p>Klik op een kaart of regel en het gedeelte opent rechts in een editor: gedeelte, vers, titel, thema's en de
+        samenvatting zijn direct aan te passen, en alles wordt automatisch bewaard. Met de balk boven de samenvatting
+        maak je tekst vet of cursief, zet je een tussenkop, een opsomming, een genummerde lijst of een citaat.
+        Geplakte tekst komt binnen zonder opmaak. Met <strong>+ Nieuw bijbelgedeelte</strong> opent een lege editor;
+        laat je die helemaal leeg, dan verdwijnt hij weer bij sluiten.</p>
 
         <h4 id="hl-beveiliging">Pin-beveiliging en versleuteling</h4>
         <p>De hele app is met een pin beveiligd; na het invoeren heb je een uur toegang, daarna moet je 'm
@@ -2602,8 +2766,9 @@ function instellingenPaginaHTML() {
           <div class="feature-kaart">
             <h4>Bijbelgedeelten</h4>
             <p class="instellingen-uitleg">
-              Je eigen naslag van besproken bijbelgedeelten, doorzoekbaar op alle velden.
-              Staat de functie aan, dan vind je het overzicht in het menu ☰ rechtsboven.
+              Je eigen naslag van besproken bijbelgedeelten: te filteren op testament en bijbelboek,
+              doorzoekbaar op alle velden, met een editor voor de samenvatting. Staat de functie aan,
+              dan vind je het overzicht in het menu ☰ rechtsboven.
             </p>
             <div class="schema-grid">
               <div class="schema-opt ${state.bijbelgedeeltenActief ? "active" : ""}" data-bijbelgedeelten="aan">Aan</div>
@@ -2778,6 +2943,13 @@ function topbarHTML() {
   const aantalPersonen = state.personen.length;
   // Naar boven afgerond: het is het minimum aantal bezoekdagen dat je per jaar vrij moet houden.
   const perJaar = Math.ceil(bezoekenPerJaar(gezinnen) - 1e-9);
+  const gedaan = huisbezoekenDitJaar(gezinnen);
+  const gepland = geplandeHuisbezoekenDitJaar(gezinnen);
+  const jaar = todayISO().slice(0, 4);
+  const bezoekenUitleg = `Dit jaar (${jaar}) ${gedaan === 1 ? "is er 1 huisbezoek" : `zijn er ${gedaan} huisbezoeken`} gelogd`
+    + (gepland ? ` en ${gepland === 1 ? "staat er nog 1" : `staan er nog ${gepland}`} gepland` : "") + ". "
+    + `Om alle gezinnen volgens hun schema te bezoeken zijn er ${perJaar} per jaar nodig: 2x per jaar telt 2, 1x per jaar telt 1, `
+    + `om het jaar telt \u00bd (het totaal over twee jaar gedeeld door twee). Gezinnen die niet meer in de wijk zitten tellen voor dat aantal niet mee.`;
   return `
   <div class="topbar">
     <div class="topbar-links">
@@ -2785,7 +2957,7 @@ function topbarHTML() {
         <img class="brand-logo" src="icons/icon-192.png" alt="ContactPlanner" />
         <div>
           <div class="brand-title">ContactPlanner</div>
-          <div class="brand-sub">${aantalGezinnen} gezin${aantalGezinnen === 1 ? "" : "nen"} \u00b7 ${aantalPersonen} perso${aantalPersonen === 1 ? "on" : "nen"} \u00b7 <span title="Benodigde huisbezoeken per jaar om alle gezinnen volgens hun schema te bezoeken: 2x per jaar telt 2, 1x per jaar telt 1, om het jaar telt \u00bd (het totaal over twee jaar gedeeld door twee). Gezinnen die niet meer in de wijk zitten tellen niet mee.">${perJaar} bezoek${perJaar === 1 ? "" : "en"} per jaar</span> \u00b7 ${cryptoRuntime.sleutel ? "lokaal versleuteld opgeslagen" : "lokaal opgeslagen"}</div>
+          <div class="brand-sub">${aantalGezinnen} gezin${aantalGezinnen === 1 ? "" : "nen"} \u00b7 ${aantalPersonen} perso${aantalPersonen === 1 ? "on" : "nen"} \u00b7 <span class="jaarteller" title="${esc(bezoekenUitleg)}">${gedaan} bezocht${gepland ? ` ${gepland} gepland` : ""} | ${perJaar} per jaar</span> \u00b7 ${cryptoRuntime.sleutel ? "lokaal versleuteld opgeslagen" : "lokaal opgeslagen"}</div>
         </div>
       </div>
     </div>
@@ -2837,8 +3009,9 @@ function releaseHistorieHTML() {
 }
 
 // ---------------- Bijbelgedeelten (server-feature "bijbelgedeelten") ----------------
-// Eigen naslag: per besproken bijbelgedeelte een titel, thema en samenvatting,
-// doorzoekbaar op alle velden. Volledig lokaal (kluis) en mee in de back-up.
+// Eigen naslag: per besproken bijbelgedeelte een titel, thema en samenvatting, doorzoekbaar op
+// alle velden en te filteren op testament en bijbelboek. Volledig lokaal (kluis) en mee in de
+// back-up. Lezen, toevoegen en bewerken gaan in een zijpaneel, net als het gezinsdossier.
 
 const BIJBEL_VELDEN = ["gedeelte", "tekst", "titel", "thema", "samenvatting"];
 
@@ -2846,147 +3019,383 @@ function leegBijbelDraft() {
   return { gedeelte: "", tekst: "", titel: "", thema: "", samenvatting: "" };
 }
 
-const BIJBEL_KOLOMMEN = [
-  { key: "gedeelte", label: "Bijbelgedeelte" },
-  { key: "tekst", label: "Bijbeltekst" },
+// De 66 boeken in bijbelvolgorde (namen als in de Statenvertaling), met gangbare schrijfwijzen
+// en afkortingen. Herkenning gaat op de genormaliseerde naam (kleine letters, zonder accenten
+// en punten); een afkorting moet minstens het begin van de naam of een alias zijn.
+const BIJBELBOEKEN = [
+  ["Genesis", "gen"], ["Exodus", "ex"], ["Leviticus", "lev"], ["Numeri", "num"], ["Deuteronomium", "deut", "dt"],
+  ["Jozua", "joz"], ["Richteren", "richt", "rechters", "re"], ["Ruth", "ru", "rut"], ["1 Samuël", "1 sam"], ["2 Samuël", "2 sam"],
+  ["1 Koningen", "1 kon"], ["2 Koningen", "2 kon"], ["1 Kronieken", "1 kron"], ["2 Kronieken", "2 kron"], ["Ezra", "ezr"],
+  ["Nehemia", "neh"], ["Esther", "est", "ester"], ["Job"], ["Psalmen", "psalm", "ps"], ["Spreuken", "spr"],
+  ["Prediker", "pred"], ["Hooglied", "hoogl", "hl"], ["Jesaja", "jes"], ["Jeremia", "jer"], ["Klaagliederen", "klaagl", "kl"],
+  ["Ezechiël", "ez", "ezech"], ["Daniël", "dan"], ["Hosea", "hos"], ["Joël"], ["Amos", "am"],
+  ["Obadja", "ob"], ["Jona"], ["Micha", "mi"], ["Nahum", "nah"], ["Habakuk", "hab"],
+  ["Zefanja", "zef"], ["Haggaï", "hag"], ["Zacharia", "zach"], ["Maleachi", "mal"],
+  ["Mattheüs", "matteus", "matth", "mat", "mt"], ["Markus", "marcus", "mark", "mk", "mc"], ["Lukas", "lucas", "luk", "lc", "lk"],
+  ["Johannes", "joh"], ["Handelingen", "hand", "hnd"], ["Romeinen", "rom"], ["1 Korinthe", "1 korintiers", "1 korinthiers", "1 kor"],
+  ["2 Korinthe", "2 korintiers", "2 korinthiers", "2 kor"], ["Galaten", "gal"], ["Efeze", "efeziers", "ef"], ["Filippenzen", "fil", "flp"],
+  ["Kolossenzen", "kol"], ["1 Thessalonicenzen", "1 tessalonicenzen", "1 thess", "1 tess", "1 th"], ["2 Thessalonicenzen", "2 tessalonicenzen", "2 thess", "2 tess", "2 th"],
+  ["1 Timotheüs", "1 timoteus", "1 tim"], ["2 Timotheüs", "2 timoteus", "2 tim"], ["Titus", "tit"], ["Filemon", "filem", "flm"],
+  ["Hebreeën", "hebr", "heb"], ["Jakobus", "jak"], ["1 Petrus", "1 petr", "1 pet"], ["2 Petrus", "2 petr", "2 pet"],
+  ["1 Johannes", "1 joh"], ["2 Johannes", "2 joh"], ["3 Johannes", "3 joh"], ["Judas", "jud"], ["Openbaring", "openb", "op", "apk"],
+].map(([naam, ...aliassen], index) => ({ index, naam, testament: index < 39 ? "OT" : "NT", sleutels: [naam, ...aliassen].map(normBoek) }));
+
+const TESTAMENT_NAAM = { OT: "Oude Testament", NT: "Nieuwe Testament" };
+
+function normBoek(s) {
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/\./g, " ").replace(/^(iii|ii|i)\s+/, (r) => ({ "i ": "1 ", "ii ": "2 ", "iii ": "3 " })[r.trim() + " "] || r)
+    .replace(/\s+/g, " ").trim();
+}
+
+// "Joh. 3:16" → { boek: Johannes, hoofdstuk: 3, vers: 16 }. Geen herkend boek → null.
+function herkenBijbelboek(gedeelte) {
+  const t = normBoek(gedeelte).replace(/^(\d)\s*(?=[a-z])/, "$1 ");
+  const m = t.match(/^((?:\d )?[a-z]+(?: [a-z]+)?)\s*(\d+)?(?:\s*[:,]\s*(\d+))?/);
+  if (!m) return null;
+  const naamDeel = m[1];
+  const kandidaten = [naamDeel, naamDeel.split(" ").slice(0, naamDeel.match(/^\d /) ? 2 : 1).join(" ")];
+  for (const naam of kandidaten) {
+    const exact = BIJBELBOEKEN.find((b) => b.sleutels.includes(naam));
+    if (exact) return { boek: exact, hoofdstuk: m[2] ? +m[2] : null, vers: m[3] ? +m[3] : null };
+    if (naam.replace(/^\d /, "").length >= 3) {
+      const begin = BIJBELBOEKEN.find((b) => b.sleutels.some((s) => s.startsWith(naam)));
+      if (begin) return { boek: begin, hoofdstuk: m[2] ? +m[2] : null, vers: m[3] ? +m[3] : null };
+    }
+  }
+  return null;
+}
+
+function themasVan(b) {
+  return String(b.thema || "").split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+}
+
+const BIJBEL_SORTERINGEN = [
+  { key: "bijbel", label: "Bijbelvolgorde" },
   { key: "titel", label: "Titel" },
   { key: "thema", label: "Thema" },
+  { key: "nieuwste", label: "Laatst toegevoegd" },
 ];
 
+function bijbelSorteerSleutel(b) {
+  const h = herkenBijbelboek(b.gedeelte);
+  return h ? [h.boek.index, h.hoofdstuk || 0, h.vers || 0] : [999, 0, 0];
+}
+
 function gefilterdeBijbelgedeelten() {
-  const veld = state.bijbelSortBy;
-  const richting = state.bijbelSortDir === "desc" ? -1 : 1;
-  // Numeriek-bewust sorteren, zodat "Psalm 23" vóór "Psalm 119" komt; lege waarden achteraan.
-  const lijst = state.bijbelgedeelten.slice().sort((a, b) => {
+  const q = normKey(state.bijbelZoek);
+  let lijst = state.bijbelgedeelten.filter((b) => {
+    const h = herkenBijbelboek(b.gedeelte);
+    if (state.bijbelTestament !== "alle" && (!h || h.boek.testament !== state.bijbelTestament)) return false;
+    if (state.bijbelBoek !== "" && (!h || String(h.boek.index) !== state.bijbelBoek)) return false;
+    return !q || BIJBEL_VELDEN.some((v) => normKey(b[v]).includes(q));
+  });
+  const tekstSort = (veld) => (a, b) => {
     const va = (a[veld] || "").trim(), vb = (b[veld] || "").trim();
     if (va && !vb) return -1;
     if (!va && vb) return 1;
-    return richting * va.localeCompare(vb, "nl", { numeric: true, sensitivity: "base" });
-  });
-  const q = normKey(state.bijbelZoek);
-  if (!q) return lijst;
-  return lijst.filter((b) => BIJBEL_VELDEN.some((v) => normKey(b[v]).includes(q)));
+    return va.localeCompare(vb, "nl", { numeric: true, sensitivity: "base" });
+  };
+  if (state.bijbelSortBy === "titel") lijst.sort(tekstSort("titel"));
+  else if (state.bijbelSortBy === "thema") lijst.sort(tekstSort("thema"));
+  else if (state.bijbelSortBy === "nieuwste") lijst.sort((a, b) => (b.aangemaaktOp || "").localeCompare(a.aangemaaktOp || ""));
+  else {
+    lijst.sort((a, b) => {
+      const sa = bijbelSorteerSleutel(a), sb = bijbelSorteerSleutel(b);
+      return (sa[0] - sb[0]) || (sa[1] - sb[1]) || (sa[2] - sb[2]) || tekstSort("gedeelte")(a, b);
+    });
+  }
+  return lijst;
+}
+
+function bijbelKaartHTML(b) {
+  const h = herkenBijbelboek(b.gedeelte);
+  const themas = themasVan(b);
+  return `
+    <article class="bijbel-kaart" data-bijbel-detail="${esc(b.id)}" tabindex="0">
+      <div class="bijbel-kaart-kop">
+        ${h ? `<span class="testament-chip testament-${h.boek.testament}" title="${TESTAMENT_NAAM[h.boek.testament]}">${h.boek.testament}</span>` : ""}
+        <span class="bijbel-ref">${esc(b.gedeelte || "Zonder gedeelte")}</span>
+        ${b.tekst ? `<span class="bijbel-vers">${esc(b.tekst)}</span>` : ""}
+      </div>
+      ${b.titel ? `<h3 class="bijbel-titel">${esc(b.titel)}</h3>` : ""}
+      ${b.samenvatting ? `<p class="bijbel-samenvatting">${esc(b.samenvatting)}</p>` : ""}
+      ${themas.length ? `<div class="bijbel-themas">${themas.map((t) => `<span class="thema-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+    </article>`;
+}
+
+// Compacte rij voor de lijstweergave: gedeelte, titel met het begin van de samenvatting, thema's.
+function bijbelRijHTML(b) {
+  const h = herkenBijbelboek(b.gedeelte);
+  const themas = themasVan(b);
+  return `
+    <div class="bijbel-rij" data-bijbel-detail="${esc(b.id)}" tabindex="0" role="button">
+      <div class="bijbel-rij-ref">
+        ${h ? `<span class="testament-chip testament-${h.boek.testament}" title="${TESTAMENT_NAAM[h.boek.testament]}">${h.boek.testament}</span>` : `<span class="testament-chip testament-leeg"></span>`}
+        <span class="bijbel-ref">${esc(b.gedeelte || "Zonder gedeelte")}</span>
+        ${b.tekst ? `<span class="bijbel-vers">${esc(b.tekst)}</span>` : ""}
+      </div>
+      <div class="bijbel-rij-tekst">
+        ${b.titel ? `<span class="bijbel-rij-titel">${esc(b.titel)}</span>` : ""}
+        ${b.samenvatting ? `<span class="bijbel-rij-samenvatting">${esc(b.samenvatting.replace(/\s+/g, " "))}</span>` : ""}
+        ${!b.titel && !b.samenvatting ? `<span class="bijbel-rij-samenvatting">Nog geen titel of samenvatting</span>` : ""}
+      </div>
+      <div class="bijbel-rij-themas">${themas.map((t) => `<span class="thema-chip">${esc(t)}</span>`).join("")}</div>
+    </div>`;
+}
+
+// Wordt al bij het opbouwen van state aangeroepen, dus zonder constanten van verderop.
+function leesBijbelWeergave() {
+  try {
+    const w = localStorage.getItem("contactplanner-bijbelweergave");
+    if (w === "kaarten" || w === "lijst") return w;
+  } catch (e) { /* bv. privévenster */ }
+  return "kaarten";
+}
+
+function bijbelItemsHTML(items) {
+  if (state.bijbelWeergave === "lijst") return `<div class="bijbel-rijen">${items.map(bijbelRijHTML).join("")}</div>`;
+  return `<div class="bijbel-raster">${items.map(bijbelKaartHTML).join("")}</div>`;
 }
 
 function bijbelLijstHTML() {
   if (!state.bijbelgedeelten.length) {
-    return `<div class="empty-state">Nog geen bijbelgedeelten. Klik op "+ Nieuw bijbelgedeelte" om je eerste toe te voegen.</div>`;
+    return `
+      <div class="bijbel-leeg">
+        <div class="bijbel-leeg-icoon">${DOSSIER_ICOON.boek}</div>
+        <h3>Nog geen bijbelgedeelten</h3>
+        <p>Leg vast welke gedeelten je bespreekt, met een titel, thema's en een korte samenvatting. Zo bouw je je eigen naslag op.</p>
+        <button class="btn-primary" id="btnBijbelNieuwLeeg">+ Eerste bijbelgedeelte toevoegen</button>
+      </div>`;
   }
   const lijst = gefilterdeBijbelgedeelten();
-  if (!lijst.length) return `<div class="empty-state">Niets gevonden voor deze zoekopdracht.</div>`;
-  const koppen = BIJBEL_KOLOMMEN.map((k) => {
-    const actief = state.bijbelSortBy === k.key;
-    const pijl = actief ? (state.bijbelSortDir === "desc" ? " ↓" : " ↑") : "";
-    return `<th><span class="th-inner" data-bijbel-sort="${k.key}" style="cursor:pointer;">${esc(k.label)}${pijl}</span></th>`;
-  }).join("");
-  const rijen = lijst.map((b) => `
-    <tr data-bijbel-detail="${esc(b.id)}" title="Klik voor de volledige inhoud">
-      <td class="td-clip">${esc(b.gedeelte)}</td>
-      <td class="td-clip">${esc(b.tekst)}</td>
-      <td class="td-clip">${esc(b.titel)}</td>
-      <td class="td-clip">${b.thema ? `<span class="tag-grey" style="margin:0;">${esc(b.thema)}</span>` : ""}</td>
-    </tr>`).join("");
-  return `
-    <p style="font-size:12px;color:var(--text-soft);margin:0 0 8px;">${lijst.length} van ${state.bijbelgedeelten.length} gedeelte${state.bijbelgedeelten.length === 1 ? "" : "n"} · klik op een rij voor de volledige inhoud</p>
-    <div class="preview-wrap" style="max-height:none;">
-      <table class="gezin-table">
-        <thead><tr>${koppen}</tr></thead>
-        <tbody>${rijen}</tbody>
-      </table>
-    </div>`;
+  if (!lijst.length) return `<div class="bijbel-leeg bijbel-leeg-klein"><p>Niets gevonden met deze filters of zoekopdracht.</p></div>`;
+  if (state.bijbelSortBy !== "bijbel") return bijbelItemsHTML(lijst);
+  // In bijbelvolgorde: per boek een kopje, zodat je door de Bijbel heen bladert.
+  const groepen = [];
+  lijst.forEach((b) => {
+    const h = herkenBijbelboek(b.gedeelte);
+    const sleutel = h ? h.boek.naam : "Overig";
+    let groep = groepen.find((g) => g.sleutel === sleutel);
+    if (!groep) groepen.push(groep = { sleutel, testament: h ? h.boek.testament : "", items: [] });
+    groep.items.push(b);
+  });
+  return groepen.map((g) => `
+    <section class="bijbel-groep">
+      <div class="bijbel-groep-kop">
+        <h2>${esc(g.sleutel)}</h2>
+        ${g.testament ? `<span class="bijbel-groep-testament">${TESTAMENT_NAAM[g.testament]}</span>` : ""}
+        <span class="teller">${g.items.length}</span>
+      </div>
+      ${bijbelItemsHTML(g.items)}
+    </section>`).join("");
 }
 
 function bijbelgedeeltenHTML() {
+  // Boekenlijst: alleen boeken waar iets bij staat, in bijbelvolgorde, binnen het gekozen testament.
+  const telling = {};
+  state.bijbelgedeelten.forEach((b) => {
+    const h = herkenBijbelboek(b.gedeelte);
+    if (h) telling[h.boek.index] = (telling[h.boek.index] || 0) + 1;
+  });
+  const boeken = BIJBELBOEKEN.filter((b) => telling[b.index] && (state.bijbelTestament === "alle" || b.testament === state.bijbelTestament));
+  const aantalPer = (t) => state.bijbelgedeelten.filter((b) => { const h = herkenBijbelboek(b.gedeelte); return h && h.boek.testament === t; }).length;
+  const zichtbaar = state.bijbelgedeelten.length ? gefilterdeBijbelgedeelten().length : 0;
   return `
     ${paginaSluitKnopHTML("btnBijbelgedeeltenSluiten")}
-    <h2 style="font-size:22px;margin:0 0 4px;">Bijbelgedeelten</h2>
-    <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px;max-width:860px;">
-      Je eigen naslag van besproken bijbelgedeelten. Sorteer via de kolomkoppen, zoek over alle
-      velden (ook de samenvatting) en klik op een rij voor de volledige inhoud.
-    </p>
-    <div class="toolbar" style="max-width:860px;">
+    <div class="bijbel-kop">
+      <div>
+        <h2 class="pagina-titel">Bijbelgedeelten</h2>
+        <p class="pagina-intro">Je eigen naslag van besproken gedeelten: wat lees je waar, en wat kun je erbij vertellen.</p>
+      </div>
       <button class="btn-primary" id="btnBijbelNieuw">+ Nieuw bijbelgedeelte</button>
-      <div class="search-box" style="flex:1;">
-        <input id="bijbelZoek" placeholder="Zoek op gedeelte, tekst, titel, thema of samenvatting…" value="${esc(state.bijbelZoek)}" />
+    </div>
+    ${state.bijbelgedeelten.length ? `
+    <div class="bijbel-filters">
+      <div class="view-toggle">
+        <button class="btn-sm ${state.bijbelTestament === "alle" ? "active" : ""}" data-bijbel-testament="alle">Alle <span class="filter-teller">${state.bijbelgedeelten.length}</span></button>
+        <button class="btn-sm ${state.bijbelTestament === "OT" ? "active" : ""}" data-bijbel-testament="OT">Oude Testament <span class="filter-teller">${aantalPer("OT")}</span></button>
+        <button class="btn-sm ${state.bijbelTestament === "NT" ? "active" : ""}" data-bijbel-testament="NT">Nieuwe Testament <span class="filter-teller">${aantalPer("NT")}</span></button>
+      </div>
+      <div class="sort-select-wrap">
+        <select class="filter-select" id="bijbelBoekSelect" aria-label="Bijbelboek">
+          <option value="">Alle bijbelboeken</option>
+          ${boeken.map((b) => `<option value="${b.index}" ${state.bijbelBoek === String(b.index) ? "selected" : ""}>${esc(b.naam)} (${telling[b.index]})</option>`).join("")}
+        </select>
+      </div>
+      <div class="sort-select-wrap">
+        <select class="filter-select" id="bijbelSortSelect" aria-label="Sorteren">
+          ${BIJBEL_SORTERINGEN.map((s) => `<option value="${s.key}" ${state.bijbelSortBy === s.key ? "selected" : ""}>Sorteer: ${s.label.toLowerCase()}</option>`).join("")}
+        </select>
+      </div>
+      <div class="view-toggle bijbel-weergave" role="group" aria-label="Weergave">
+        <button class="btn-sm ${state.bijbelWeergave === "kaarten" ? "active" : ""}" data-bijbel-weergave="kaarten" title="Kaarten" aria-label="Kaarten">${SVG_ICOON('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>')}</button>
+        <button class="btn-sm ${state.bijbelWeergave === "lijst" ? "active" : ""}" data-bijbel-weergave="lijst" title="Lijst" aria-label="Lijst">${SVG_ICOON('<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>')}</button>
+      </div>
+      <div class="search-box">
+        <input id="bijbelZoek" placeholder="Zoek op gedeelte, titel, thema of samenvatting…" value="${esc(state.bijbelZoek)}" />
         <button class="search-clear ${state.bijbelZoek ? "" : "verborgen"}" id="btnBijbelZoekWissen" title="Zoekopdracht wissen">✕</button>
       </div>
     </div>
-    <div id="bijbelLijst" style="max-width:860px;">${bijbelLijstHTML()}</div>`;
+    <p class="bijbel-aantal" id="bijbelAantal">${zichtbaar} van ${state.bijbelgedeelten.length} gedeelte${state.bijbelgedeelten.length === 1 ? "" : "n"}</p>` : ""}
+    <div id="bijbelLijst">${bijbelLijstHTML()}</div>`;
 }
 
-// Detail- en formulier-venster (boven de tabel): klik op een rij → volledige inhoud;
-// "+ Nieuw" of "Bewerken" → het formulier.
+// ---- Editor voor een bijbelgedeelte ----
+// Openen = meteen bewerken: het zijpaneel oogt als een leesweergave, maar alle velden en de
+// samenvatting (met eenvoudige opmaak) zijn direct aan te passen en worden automatisch bewaard.
+// De samenvatting staat als opgemaakte HTML in samenvattingHtml (alleen een vaste set tags) en
+// als platte tekst in samenvatting, voor zoeken, de kaartjes en oudere versies van de app.
+
+const EDITOR_TAGS = { P: "p", BR: "br", STRONG: "strong", B: "strong", EM: "em", I: "em", U: "u", H1: "h3", H2: "h3", H3: "h3", H4: "h3", UL: "ul", OL: "ol", LI: "li", BLOCKQUOTE: "blockquote", DIV: "p" };
+
+function schoonHtml(html) {
+  const doc = new DOMParser().parseFromString(`<body>${html || ""}</body>`, "text/html");
+  const kopieer = (bron, doel) => {
+    bron.childNodes.forEach((n) => {
+      if (n.nodeType === 3) { doel.appendChild(doc.createTextNode(n.textContent)); return; }
+      if (n.nodeType !== 1 || ["SCRIPT", "STYLE", "IFRAME", "OBJECT"].includes(n.tagName)) return;
+      const tag = EDITOR_TAGS[n.tagName];
+      if (!tag) { kopieer(n, doel); return; } // onbekende tag: alleen de inhoud houden
+      const el = doc.createElement(tag);
+      doel.appendChild(el);
+      kopieer(n, el);
+    });
+  };
+  const uit = doc.createElement("div");
+  kopieer(doc.body, uit);
+  return uit.innerHTML;
+}
+
+function tekstNaarHtml(tekst) {
+  const t = String(tekst || "").trim();
+  if (!t) return "";
+  return t.split(/\n\s*\n/).map((alinea) => `<p>${esc(alinea).replace(/\n/g, "<br>")}</p>`).join("");
+}
+
+function htmlNaarTekst(html) {
+  const div = document.createElement("div");
+  div.innerHTML = String(html || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|h3|li|blockquote)>/gi, "\n");
+  return div.textContent.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function samenvattingHtmlVan(b) {
+  return b.samenvattingHtml != null ? b.samenvattingHtml : tekstNaarHtml(b.samenvatting);
+}
+
+const EDITOR_KNOPPEN = [
+  { cmd: "bold", label: "Vet", icoon: '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h7a3.5 3.5 0 0 1 0 7H7z"/>' },
+  { cmd: "italic", label: "Cursief", icoon: '<path d="M14 5h-4M14 19h-4M14 5l-4 14"/>' },
+  { cmd: "kop", label: "Tussenkop", icoon: '<path d="M6 5v14M16 5v14M6 12h10"/><path d="M19.5 19V13l-1.5 1"/>' },
+  { cmd: "insertUnorderedList", label: "Opsomming", icoon: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/>' },
+  { cmd: "insertOrderedList", label: "Genummerde lijst", icoon: '<path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 4.5 5 4v4M4 10.5a1 1 0 1 1 1.8.6L4 13h2M4 16h1.5a.8.8 0 0 1 0 1.6H5a.8.8 0 0 1 0 1.6H4"/>' },
+  { cmd: "citaat", label: "Citaat", icoon: '<path d="M7 7h4v5c0 2.5-1.5 4-4 5M14 7h4v5c0 2.5-1.5 4-4 5"/>' },
+];
+
 function bijbelModalHTML() {
-  if (state.bijbelFormOpen) {
-    const bewerken = !!state.bijbelBewerkId;
-    const d = state.bijbelDraft;
-    return `
-    <div class="modal-overlay" id="bijbelFormOverlay">
-      <div class="modal-box" style="max-width:560px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <h3 style="margin:0;font-size:18px;">${bewerken ? "Bijbelgedeelte bewerken" : "Nieuw bijbelgedeelte"}</h3>
-          <button class="btn-ghost btn-sm" id="btnBijbelAnnuleer">✕</button>
-        </div>
-        <div class="field-grid2">
-          <div class="field-row"><label>Bijbelgedeelte</label><input data-bijbel-veld="gedeelte" placeholder="Bijv. Johannes 3" value="${esc(d.gedeelte)}" /></div>
-          <div class="field-row"><label>Bijbeltekst</label><input data-bijbel-veld="tekst" placeholder="Bijv. vers 16" value="${esc(d.tekst)}" /></div>
-        </div>
-        <div class="field-grid2">
-          <div class="field-row"><label>Titel</label><input data-bijbel-veld="titel" placeholder="Bijv. De liefde van God" value="${esc(d.titel)}" /></div>
-          <div class="field-row"><label>Thema</label><input data-bijbel-veld="thema" placeholder="Bijv. troost, genade" value="${esc(d.thema)}" /></div>
-        </div>
-        <div class="field-row">
-          <label>Samenvatting</label>
-          <textarea data-bijbel-veld="samenvatting" style="min-height:140px;" placeholder="Kort verslag: wat kun je bij dit gedeelte vertellen?">${esc(d.samenvatting)}</textarea>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-primary" id="btnBijbelOpslaan">${bewerken ? "Wijzigingen opslaan" : "Toevoegen"}</button>
-          <button class="btn-ghost" id="btnBijbelAnnuleer2">Annuleren</button>
-        </div>
-      </div>
-    </div>`;
-  }
   if (!state.bijbelDetailId) return "";
   const b = state.bijbelgedeelten.find((x) => x.id === state.bijbelDetailId);
   if (!b) return "";
+  const animeer = state.bijbelNetGeopend;
+  state.bijbelNetGeopend = false;
   return `
-  <div class="modal-overlay" id="bijbelDetailOverlay">
-    <div class="modal-box" style="max-width:560px;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-        <div>
-          <h3 style="margin:0;font-size:18px;">${esc(b.titel || b.gedeelte || "Zonder titel")}</h3>
-          <div style="font-size:12.5px;color:var(--text-soft);margin-top:2px;">
-            ${esc(b.gedeelte)}${b.tekst ? ` · ${esc(b.tekst)}` : ""}${b.aangemaaktOp ? ` · toegevoegd ${fmtDatum(b.aangemaaktOp)}` : ""}
+    <div class="detail-overlay${animeer ? " detail-animeer" : ""}" id="bijbelDetailOverlay">
+      <div class="detail-panel bijbel-paneel">
+        <div class="bijbel-paneel-kop">
+          <div class="bijbel-paneel-label" id="bijbelHerkend">${bijbelHerkendHTML(b.gedeelte)}</div>
+          <div class="dossier-kop-acties">
+            <span class="bijbel-opslagstatus" id="bijbelOpslagStatus">Wijzigingen worden automatisch bewaard</span>
+            <button class="btn-ghost btn-icoon" id="btnBijbelDetailSluiten" title="Sluiten" aria-label="Sluiten">${DOSSIER_ICOON.kruis}</button>
           </div>
         </div>
-        <button class="btn-ghost btn-sm" id="btnBijbelDetailSluiten">✕</button>
+        <div class="bijbel-paneel-body">
+          <div class="bijbel-ref-velden">
+            <input class="bijbel-veld-gedeelte" data-bijbel-veld="gedeelte" placeholder="Bijbelgedeelte, bijv. Johannes 3" value="${esc(b.gedeelte || "")}" aria-label="Bijbelgedeelte" />
+            <input class="bijbel-veld-tekst" data-bijbel-veld="tekst" placeholder="vers, bijv. 16" value="${esc(b.tekst || "")}" aria-label="Bijbeltekst" />
+          </div>
+          <input class="bijbel-veld-titel" data-bijbel-veld="titel" placeholder="Titel" value="${esc(b.titel || "")}" aria-label="Titel" />
+          <div class="bijbel-veld-thema-wrap">
+            ${SVG_ICOON('<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>')}
+            <input class="bijbel-veld-thema" data-bijbel-veld="thema" placeholder="Thema's, gescheiden door een komma" value="${esc(b.thema || "")}" aria-label="Thema's" />
+          </div>
+          <div class="editor">
+            <div class="editor-balk" role="toolbar" aria-label="Opmaak">
+              ${EDITOR_KNOPPEN.map((k, i) => `${i === 2 || i === 3 || i === 5 ? '<span class="editor-scheiding"></span>' : ""}<button type="button" class="editor-knop" data-editor-cmd="${k.cmd}" title="${k.label}" aria-label="${k.label}">${SVG_ICOON(k.icoon)}</button>`).join("")}
+            </div>
+            <div class="editor-inhoud" id="bijbelEditor" contenteditable="true" role="textbox" aria-multiline="true"
+              data-placeholder="Wat kun je bij dit gedeelte vertellen? Kernpunten, toepassing, vragen voor het gesprek…">${samenvattingHtmlVan(b)}</div>
+          </div>
+          <div class="bijbel-voet">
+            <span>${b.aangemaaktOp ? `Toegevoegd op ${esc(fmtDatum(b.aangemaaktOp))}` : ""}</span>
+            <button class="btn-ghost btn-sm btn-danger" id="btnBijbelDetailVerwijder">${DOSSIER_ICOON.prullenbak}Verwijderen</button>
+          </div>
+        </div>
       </div>
-      ${b.thema ? `<span class="tag-grey" style="margin:0 0 8px;">${esc(b.thema)}</span>` : ""}
-      ${b.samenvatting
-        ? `<div style="font-size:13.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap;">${esc(b.samenvatting)}</div>`
-        : `<p style="font-size:12.5px;color:var(--text-soft);margin-top:8px;">Nog geen samenvatting.</p>`}
-      <div style="display:flex;gap:6px;margin-top:16px;">
-        <button class="btn-primary" id="btnBijbelDetailBewerk">Bewerken</button>
-        <button class="btn-ghost btn-sm btn-danger" id="btnBijbelDetailVerwijder">Verwijderen</button>
-      </div>
-    </div>
-  </div>`;
+    </div>`;
 }
 
-async function bewaarBijbelgedeelte() {
-  const d = {};
-  BIJBEL_VELDEN.forEach((veld) => { d[veld] = (state.bijbelDraft[veld] || "").trim(); });
-  if (!d.gedeelte && !d.titel) { alert("Vul minstens een bijbelgedeelte of een titel in."); return; }
-  if (state.bijbelBewerkId) {
-    const idx = state.bijbelgedeelten.findIndex((b) => b.id === state.bijbelBewerkId);
-    if (idx !== -1) state.bijbelgedeelten[idx] = { ...state.bijbelgedeelten[idx], ...d };
-  } else {
-    state.bijbelgedeelten.push({ id: uid(), ...d, aangemaaktOp: todayISO() });
+function bijbelHerkendHTML(gedeelte) {
+  if (!String(gedeelte || "").trim()) return `<span class="bijbel-herkend-niet">Nieuw bijbelgedeelte</span>`;
+  const h = herkenBijbelboek(gedeelte);
+  return h
+    ? `<span class="testament-chip testament-${h.boek.testament}">${h.boek.testament}</span>${esc(h.boek.naam)} · ${TESTAMENT_NAAM[h.boek.testament]}`
+    : `<span class="bijbel-herkend-niet">Geen bijbelboek herkend; komt onder "Overig"</span>`;
+}
+
+// Automatisch bewaren zonder de pagina opnieuw te tekenen (dat zou de cursor uit de editor
+// halen). Na een korte pauze in het typen; bij sluiten of verlaten meteen.
+let bijbelBewaarTimer = null;
+function zetBijbelOpslagStatus(tekst) {
+  const el = document.getElementById("bijbelOpslagStatus");
+  if (el) el.textContent = tekst;
+}
+function planBijbelBewaren() {
+  zetBijbelOpslagStatus("Opslaan…");
+  clearTimeout(bijbelBewaarTimer);
+  bijbelBewaarTimer = setTimeout(bewaarBijbelStil, 700);
+}
+async function bewaarBijbelStil() {
+  clearTimeout(bijbelBewaarTimer);
+  bijbelBewaarTimer = null;
+  opslagBezigTeller++;
+  try {
+    await bewaarGegevens();
+    state.laatsteWijzigingOp = Date.now();
+    dbSetInstelling("laatsteWijzigingOp", state.laatsteWijzigingOp).catch((e) => logDebug("fout", "Kon wijzigingstijdstip niet opslaan: " + e.message));
+    planOnlineBackup();
+    zetBijbelOpslagStatus("Opgeslagen");
+  } catch (err) {
+    logDebug("fout", `Opslaan mislukt (bijbelgedeelte): ${err.message}`, { stack: err.stack });
+    zetBijbelOpslagStatus("Niet opgeslagen, zie Debug");
+    toonFoutBanner("Let op: deze wijziging (bijbelgedeelte) is NIET opgeslagen. Probeer het opnieuw, of klik op 'Debug' voor details.");
+  } finally {
+    opslagBezigTeller--;
   }
-  state.bijbelBewerkId = null;
-  state.bijbelDraft = leegBijbelDraft();
-  state.bijbelFormOpen = false;
-  await veiligOpslaan(bewaarGegevens, "bijbelgedeelte opslaan");
+}
+
+function huidigBijbelgedeelte() {
+  return state.bijbelgedeelten.find((x) => x.id === state.bijbelDetailId);
+}
+
+function nieuwBijbelgedeelte() {
+  const b = { id: uid(), gedeelte: "", tekst: "", titel: "", thema: "", samenvatting: "", samenvattingHtml: "", aangemaaktOp: todayISO() };
+  state.bijbelgedeelten.push(b);
+  state.bijbelDetailId = b.id;
+  state.bijbelNetGeopend = true;
+  state.bijbelFocusVeld = "gedeelte";
+  render();
+}
+
+// Sluiten: openstaande wijziging meteen bewaren; een helemaal leeg nieuw gedeelte verdwijnt weer.
+async function sluitBijbelgedeelte() {
+  const b = huidigBijbelgedeelte();
+  state.bijbelDetailId = null;
+  if (b && !BIJBEL_VELDEN.some((v) => String(b[v] || "").trim())) {
+    state.bijbelgedeelten = state.bijbelgedeelten.filter((x) => x.id !== b.id);
+    await bewaarBijbelStil();
+  } else if (bijbelBewaarTimer) {
+    await bewaarBijbelStil();
+  }
   render();
 }
 
@@ -2994,29 +3403,81 @@ async function verwijderBijbelgedeelte(id) {
   const b = state.bijbelgedeelten.find((x) => x.id === id);
   if (!b) return;
   if (!confirm(`"${b.titel || b.gedeelte || "dit bijbelgedeelte"}" verwijderen?`)) return;
+  clearTimeout(bijbelBewaarTimer);
+  bijbelBewaarTimer = null;
   state.bijbelgedeelten = state.bijbelgedeelten.filter((x) => x.id !== id);
-  if (state.bijbelBewerkId === id) { state.bijbelBewerkId = null; state.bijbelDraft = leegBijbelDraft(); state.bijbelFormOpen = false; }
   if (state.bijbelDetailId === id) state.bijbelDetailId = null;
   await veiligOpslaan(bewaarGegevens, "bijbelgedeelte verwijderen");
   render();
 }
 
+function attachBijbelEditorEvents() {
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const editor = $("#bijbelEditor");
+  if (!editor) return;
+  document.execCommand("defaultParagraphSeparator", false, "p");
+  $$("[data-bijbel-veld]").forEach((el) => el.addEventListener("input", (e) => {
+    const b = huidigBijbelgedeelte();
+    if (!b) return;
+    b[e.currentTarget.dataset.bijbelVeld] = e.target.value;
+    if (e.currentTarget.dataset.bijbelVeld === "gedeelte") $("#bijbelHerkend").innerHTML = bijbelHerkendHTML(b.gedeelte);
+    planBijbelBewaren();
+  }));
+  editor.addEventListener("input", () => {
+    const b = huidigBijbelgedeelte();
+    if (!b) return;
+    b.samenvattingHtml = schoonHtml(editor.innerHTML);
+    b.samenvatting = htmlNaarTekst(b.samenvattingHtml);
+    planBijbelBewaren();
+  });
+  // Plakken altijd als gewone tekst: geen rommelige opmaak uit Word of een website.
+  editor.addEventListener("paste", (e) => {
+    e.preventDefault();
+    document.execCommand("insertText", false, (e.clipboardData || window.clipboardData).getData("text/plain"));
+  });
+  const blokVan = () => {
+    const sel = window.getSelection();
+    let n = sel && sel.anchorNode;
+    while (n && n !== editor) { if (n.nodeType === 1 && ["H3", "BLOCKQUOTE"].includes(n.tagName)) return n.tagName; n = n.parentNode; }
+    return "";
+  };
+  const werkKnoppenBij = () => {
+    const blok = blokVan();
+    $$("[data-editor-cmd]").forEach((k) => {
+      const cmd = k.dataset.editorCmd;
+      const aan = cmd === "kop" ? blok === "H3" : cmd === "citaat" ? blok === "BLOCKQUOTE" : document.queryCommandState(cmd);
+      k.classList.toggle("active", !!aan);
+    });
+  };
+  $$("[data-editor-cmd]").forEach((k) => {
+    k.addEventListener("mousedown", (e) => e.preventDefault()); // selectie in de editor houden
+    k.addEventListener("click", () => {
+      editor.focus();
+      const cmd = k.dataset.editorCmd;
+      if (cmd === "kop") document.execCommand("formatBlock", false, blokVan() === "H3" ? "p" : "h3");
+      else if (cmd === "citaat") document.execCommand("formatBlock", false, blokVan() === "BLOCKQUOTE" ? "p" : "blockquote");
+      else document.execCommand(cmd, false, null);
+      editor.dispatchEvent(new Event("input"));
+      werkKnoppenBij();
+    });
+  });
+  editor.addEventListener("keyup", werkKnoppenBij);
+  editor.addEventListener("mouseup", werkKnoppenBij);
+  if (state.bijbelFocusVeld) {
+    const veld = $(`[data-bijbel-veld="${state.bijbelFocusVeld}"]`);
+    if (veld) veld.focus();
+    state.bijbelFocusVeld = null;
+  }
+}
+
 function attachBijbelLijstEvents() {
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-  $$("[data-bijbel-sort]").forEach((el) => el.addEventListener("click", (e) => {
-    const key = e.currentTarget.dataset.bijbelSort;
-    if (state.bijbelSortBy === key) {
-      state.bijbelSortDir = state.bijbelSortDir === "asc" ? "desc" : "asc";
-    } else {
-      state.bijbelSortBy = key;
-      state.bijbelSortDir = "asc";
-    }
-    render();
-  }));
-  $$("[data-bijbel-detail]").forEach((el) => el.addEventListener("click", (e) => {
-    state.bijbelDetailId = e.currentTarget.dataset.bijbelDetail;
-    render();
-  }));
+  const open = (id) => { state.bijbelDetailId = id; state.bijbelNetGeopend = true; render(); };
+  $$("[data-bijbel-detail]").forEach((el) => {
+    el.addEventListener("click", (e) => open(e.currentTarget.dataset.bijbelDetail));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") open(e.currentTarget.dataset.bijbelDetail); });
+  });
 }
 
 function versieMeldingModalHTML() {
@@ -3777,7 +4238,8 @@ function openGezinDetail(gezinsKey) {
   state.detailTab = "gezin";
   state.noteDraft = { datum: todayISO(), tijd: "19:30", soort: "Huisbezoek", notitie: "", gelezen: "" };
   state.bewerkNotitieId = null;
-  state.geplandDraft = { datum: "", tijd: "", soort: "Ziekenhuisbezoek", betreft: "", notitie: "" };
+  state.bewerkGeplandId = null;
+  state.geplandDraft = legeGeplandDraft();
   const aanhef = aanhefVoorGezin(gezinsKey);
   const ingevuld = pasAfspraakSjabloonToe(haalAfspraakSjabloon(state.afspraakSjabloonId), aanhef);
   state.afspraakDraft = {
@@ -4069,11 +4531,23 @@ function dossierLoggenTabHTML(gd) {
     </ol>` : `<div class="dossier-leeg">Nog geen contactmomenten gelogd.</div>`}`;
 }
 
+// "22 okt" binnen het huidige jaar, anders met jaartal.
+function kortDatum(iso) {
+  if (!iso) return "";
+  if (iso.slice(0, 4) !== todayISO().slice(0, 4)) return fmtDatum(iso);
+  return new Date(iso + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" }).replace(".", "");
+}
+
+const VERZET_ICOON = SVG_ICOON('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>');
+
 function geplandItemHTML(g) {
   const d = new Date((g.datum || todayISO()) + "T00:00:00");
   const verstreken = g.datum && g.datum < todayISO();
+  const verzet = g.oorspronkelijk
+    ? `<div class="gepland-regel gepland-verzet" title="In AfspraakPlanner staat nog het oorspronkelijke moment">${VERZET_ICOON}<span>Verzet, was <span class="gepland-verzet-moment">${esc(kortDatum(g.oorspronkelijk.datum))}${g.oorspronkelijk.tijd ? ` ${esc(g.oorspronkelijk.tijd)}` : ""}</span></span></div>`
+    : "";
   return `
-    <div class="gepland-item${verstreken ? " gepland-item-verstreken" : ""}">
+    <div class="gepland-item${verstreken ? " gepland-item-verstreken" : ""}${state.bewerkGeplandId === g.id ? " gepland-item-actief" : ""}">
       <div class="datum-blok">
         <span class="datum-blok-maand">${esc(d.toLocaleDateString("nl-NL", { month: "short" }).replace(".", ""))}</span>
         <span class="datum-blok-dag">${d.getDate()}</span>
@@ -4086,9 +4560,11 @@ function geplandItemHTML(g) {
         </div>
         ${g.betreft ? `<div class="gepland-regel"><strong>Betreft:</strong> ${esc(g.betreft)}</div>` : ""}
         ${g.notitie ? `<div class="gepland-regel">${esc(g.notitie)}</div>` : ""}
+        ${verzet}
       </div>
       <div class="gepland-acties">
         <button class="btn-sm btn-primary" data-gepland-gedaan="${esc(g.id)}" title="Gedaan: dit moment als contactmoment loggen">${DOSSIER_ICOON.vink}Gedaan</button>
+        <button class="btn-ghost btn-icoon btn-icoon-klein" data-gepland-bewerk="${esc(g.id)}" title="Bewerken: datum, tijd of gegevens aanpassen" aria-label="Bewerken">${DOSSIER_ICOON.potlood}</button>
         <button class="btn-ghost btn-icoon btn-icoon-klein btn-danger" data-gepland-verwijder="${esc(g.id)}" title="Verwijderen" aria-label="Verwijderen">${DOSSIER_ICOON.prullenbak}</button>
       </div>
     </div>`;
@@ -4101,9 +4577,12 @@ function dossierPlannenTabHTML(gezin, gd) {
       <div class="dossier-sectie-kop" style="margin-top:0;"><h3>Gepland</h3><span class="teller">${gd.gepland.length}</span></div>
       <div class="gepland-lijst">${gd.gepland.map(geplandItemHTML).join("")}</div>` : ""}
 
-    <section class="dossier-kaart dossier-formulier">
+    <section class="dossier-kaart dossier-formulier${state.bewerkGeplandId ? " dossier-formulier-bewerken" : ""}" id="geplandFormulier">
+      ${state.bewerkGeplandId ? `
+      <div class="dossier-kaart-kop"><h3>Gepland moment bewerken</h3></div>
+      <p class="dossier-hint">Pas de datum, tijd of gegevens aan. Bij een tijdvak schuift de eindtijd mee met de begintijd.</p>` : `
       <div class="dossier-kaart-kop"><h3>(Bijzonder) contactmoment inplannen</h3></div>
-      <p class="dossier-hint">Voor iets buiten het gewone ritme, bijvoorbeeld een ziekenhuisopname. Staat los van het terugkeerschema.</p>
+      <p class="dossier-hint">Voor iets buiten het gewone ritme, bijvoorbeeld een ziekenhuisopname. Staat los van het terugkeerschema.</p>`}
       <div class="field-grid2">
         <div class="field-row"><label>Datum</label>${datumVeldHTML(`id="geplandDatum"`, state.geplandDraft.datum)}</div>
         <div class="field-row"><label>Tijd (optioneel)</label><input ${TIJDVELD_ATTR} id="geplandTijd" value="${esc(state.geplandDraft.tijd)}" /></div>
@@ -4117,10 +4596,13 @@ function dossierPlannenTabHTML(gezin, gd) {
         <div class="field-row"><label>Betreft (optioneel)</label><input id="geplandBetreft" placeholder="Bijv. Piet" value="${esc(state.geplandDraft.betreft)}" /></div>
       </div>
       <div class="field-row"><label>Notitie</label><textarea id="geplandNotitie" placeholder="Bijv. wordt geopereerd, graag even langsgaan…">${esc(state.geplandDraft.notitie)}</textarea></div>
-      <div class="dossier-formulier-acties"><button class="btn-primary" id="btnPlanGepland">Inplannen</button></div>
+      <div class="dossier-formulier-acties">
+        <button class="btn-primary" id="btnPlanGepland">${state.bewerkGeplandId ? "Wijziging opslaan" : "Inplannen"}</button>
+        ${state.bewerkGeplandId ? `<button class="btn-ghost" id="btnAnnuleerBewerkGepland">Annuleren</button>` : ""}
+      </div>
     </section>
 
-    <section class="dossier-kaart dossier-formulier">
+    <section class="dossier-kaart dossier-formulier" id="afspraakVoorstellen">
       <div class="dossier-kaart-kop"><h3>Datum afspraak voorstellen</h3></div>
       <p class="dossier-hint">
         Vul een datum en tijd in en pas de tekst zo nodig aan; <span class="plekhouder">[datum]</span> en
@@ -4438,43 +4920,34 @@ function attachEvents() {
     state.stage = state.bijbelTerug || (state.personen.length ? "dashboard" : "upload");
     render();
   });
-  $$("[data-bijbel-veld]").forEach((el) => el.addEventListener("input", (e) => {
-    state.bijbelDraft[e.currentTarget.dataset.bijbelVeld] = e.target.value;
-  }));
-  if ($("#btnBijbelNieuw")) $("#btnBijbelNieuw").addEventListener("click", () => {
-    state.bijbelBewerkId = null;
-    state.bijbelDraft = leegBijbelDraft();
-    state.bijbelFormOpen = true;
-    render();
-  });
-  if ($("#btnBijbelOpslaan")) $("#btnBijbelOpslaan").addEventListener("click", bewaarBijbelgedeelte);
-  const sluitBijbelForm = () => {
-    state.bijbelFormOpen = false;
-    state.bijbelBewerkId = null;
-    state.bijbelDraft = leegBijbelDraft();
-    render();
-  };
-  if ($("#btnBijbelAnnuleer")) $("#btnBijbelAnnuleer").addEventListener("click", sluitBijbelForm);
-  if ($("#btnBijbelAnnuleer2")) $("#btnBijbelAnnuleer2").addEventListener("click", sluitBijbelForm);
-  if ($("#bijbelFormOverlay")) $("#bijbelFormOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "bijbelFormOverlay") sluitBijbelForm(); });
-  if ($("#btnBijbelDetailSluiten")) $("#btnBijbelDetailSluiten").addEventListener("click", () => { state.bijbelDetailId = null; render(); });
-  if ($("#bijbelDetailOverlay")) $("#bijbelDetailOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "bijbelDetailOverlay") { state.bijbelDetailId = null; render(); } });
-  if ($("#btnBijbelDetailBewerk")) $("#btnBijbelDetailBewerk").addEventListener("click", () => {
-    const b = state.bijbelgedeelten.find((x) => x.id === state.bijbelDetailId);
-    if (!b) return;
-    state.bijbelBewerkId = b.id;
-    state.bijbelDraft = { gedeelte: b.gedeelte || "", tekst: b.tekst || "", titel: b.titel || "", thema: b.thema || "", samenvatting: b.samenvatting || "" };
-    state.bijbelDetailId = null;
-    state.bijbelFormOpen = true;
-    render();
-  });
+  if ($("#btnBijbelNieuw")) $("#btnBijbelNieuw").addEventListener("click", nieuwBijbelgedeelte);
+  if ($("#btnBijbelNieuwLeeg")) $("#btnBijbelNieuwLeeg").addEventListener("click", nieuwBijbelgedeelte);
+  if ($("#btnBijbelDetailSluiten")) $("#btnBijbelDetailSluiten").addEventListener("click", sluitBijbelgedeelte);
+  if ($("#bijbelDetailOverlay")) $("#bijbelDetailOverlay").addEventListener("mousedown", (e) => { if (e.target.id === "bijbelDetailOverlay") sluitBijbelgedeelte(); });
   if ($("#btnBijbelDetailVerwijder")) $("#btnBijbelDetailVerwijder").addEventListener("click", () => verwijderBijbelgedeelte(state.bijbelDetailId));
+  attachBijbelEditorEvents();
+  $$("[data-bijbel-testament]").forEach((el) => el.addEventListener("click", (e) => {
+    state.bijbelTestament = e.currentTarget.dataset.bijbelTestament;
+    // Een gekozen boek uit het andere testament past niet meer bij dit filter.
+    const boek = BIJBELBOEKEN[+state.bijbelBoek];
+    if (state.bijbelBoek !== "" && boek && state.bijbelTestament !== "alle" && boek.testament !== state.bijbelTestament) state.bijbelBoek = "";
+    render();
+  }));
+  if ($("#bijbelBoekSelect")) $("#bijbelBoekSelect").addEventListener("change", (e) => { state.bijbelBoek = e.target.value; render(); });
+  if ($("#bijbelSortSelect")) $("#bijbelSortSelect").addEventListener("change", (e) => { state.bijbelSortBy = e.target.value; render(); });
+  $$("[data-bijbel-weergave]").forEach((el) => el.addEventListener("click", (e) => {
+    state.bijbelWeergave = e.currentTarget.dataset.bijbelWeergave;
+    try { localStorage.setItem("contactplanner-bijbelweergave", state.bijbelWeergave); } catch (err) { /* bv. privévenster */ }
+    render();
+  }));
   // Zoeken ververst alleen de lijst, zodat de focus in het zoekveld blijft.
   if ($("#bijbelZoek")) $("#bijbelZoek").addEventListener("input", (e) => {
     state.bijbelZoek = e.target.value;
     if ($("#btnBijbelZoekWissen")) $("#btnBijbelZoekWissen").classList.toggle("verborgen", !state.bijbelZoek);
     const lijstEl = document.getElementById("bijbelLijst");
     if (lijstEl) { lijstEl.innerHTML = bijbelLijstHTML(); attachBijbelLijstEvents(); }
+    const aantalEl = document.getElementById("bijbelAantal");
+    if (aantalEl) aantalEl.textContent = `${gefilterdeBijbelgedeelten().length} van ${state.bijbelgedeelten.length} gedeelte${state.bijbelgedeelten.length === 1 ? "" : "n"}`;
   });
   if ($("#btnBijbelZoekWissen")) $("#btnBijbelZoekWissen").addEventListener("click", () => { state.bijbelZoek = ""; render(); });
   attachBijbelLijstEvents();
@@ -4826,6 +5299,8 @@ function attachEvents() {
   if ($("#geplandBetreft")) $("#geplandBetreft").addEventListener("input", (e) => { state.geplandDraft.betreft = e.target.value; });
   if ($("#geplandNotitie")) $("#geplandNotitie").addEventListener("input", (e) => { state.geplandDraft.notitie = e.target.value; });
   if ($("#btnPlanGepland")) $("#btnPlanGepland").addEventListener("click", () => plandGepland(state.selectedGezinsKey));
+  if ($("#btnAnnuleerBewerkGepland")) $("#btnAnnuleerBewerkGepland").addEventListener("click", annuleerBewerkGepland);
+  $$("[data-gepland-bewerk]").forEach((el) => el.addEventListener("click", (e) => bewerkGeplandMoment(state.selectedGezinsKey, e.currentTarget.dataset.geplandBewerk)));
   $$("[data-gepland-gedaan]").forEach((el) => el.addEventListener("click", (e) => markeerGeplandGedaan(state.selectedGezinsKey, e.currentTarget.dataset.geplandGedaan)));
   $$("[data-gepland-verwijder]").forEach((el) => el.addEventListener("click", (e) => verwijderGeplandMoment(state.selectedGezinsKey, e.currentTarget.dataset.geplandVerwijder)));
 
@@ -5509,6 +5984,7 @@ function geplandeMomentenVoorKaart(gd) {
       // Momenten van vóór het tijd- en bron-veld hebben hun herkomst alleen in de notitie staan.
       viaAfspraakplanner: g.bron === "afspraakplanner" || /via AfspraakPlanner/.test(g.notitie || ""),
       verstreken: !!g.datum && g.datum < vandaag,
+      verzet: !!g.oorspronkelijk,
     }));
 }
 
@@ -5526,7 +6002,7 @@ function geplandBadgesHTML(momenten) {
     const herkomst = m.viaAfspraakplanner
       ? "Het gezin koos dit tijdslot zelf via AfspraakPlanner"
       : "Zelf ingepland in het gezinsdossier";
-    const titel = `Gepland bijzonder contactmoment: ${herkomst}${m.verstreken ? ". De datum is verstreken; log het moment of verwijder het." : ""}`;
+    const titel = `Gepland bijzonder contactmoment: ${herkomst}${m.verzet ? ". Verzet: in AfspraakPlanner staat nog het oude moment" : ""}${m.verstreken ? ". De datum is verstreken; log het moment of verwijder het." : ""}`;
     return `<span class="tag-afspraak tag-afspraak-gekozen" title="${esc(titel)}">${DOSSIER_ICOON.kalender}${esc(fmtDatum(m.datum))}${m.tijd ? ` ${esc(m.tijd)}` : ""} · ${esc(m.soort)}</span>`;
   }).join("");
 }
@@ -5792,7 +6268,8 @@ let autoVergrendelTimer = null;
 
 function plantAutoVergrendel(overMs) {
   if (autoVergrendelTimer) clearTimeout(autoVergrendelTimer);
-  autoVergrendelTimer = setTimeout(() => {
+  autoVergrendelTimer = setTimeout(async () => {
+    if (bijbelBewaarTimer) await bewaarBijbelStil();
     cryptoRuntime.sleutel = null;
     dbDeleteInstelling("sessieSleutel").catch((e) => logDebug("fout", "Kon sessiesleutel niet verwijderen: " + e.message));
     state.vergrendeld = true;
@@ -5963,6 +6440,9 @@ async function pinWijzigen() {
 }
 
 function vergrendelNu() {
+  // Een wijziging uit de bijbel-editor die nog in de wachtrij staat eerst bewaren: na het
+  // vergrendelen is de sleutel weg.
+  if (bijbelBewaarTimer) { bewaarBijbelStil().finally(vergrendelNu); return; }
   if (autoVergrendelTimer) clearTimeout(autoVergrendelTimer);
   cryptoRuntime.sleutel = null;
   dbSetInstelling("ontgrendeldTot", 0).catch((e) => logDebug("fout", "Kon vergrendel-tijdstip niet opslaan: " + e.message));
